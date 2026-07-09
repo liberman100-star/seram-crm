@@ -1,8 +1,11 @@
-﻿/************************************************************
- * V2_REFACTOR_STAGE1
- * נוצר מאיחוד של שלושת חלקי V2.
- * ניקוי שמרני: הוסרו רק מופעים ישנים של פונקציות כפולות,
- * כאשר נשמרה הגרסה המאוחרת בקובץ — כפי ש-Apps Script היה מפעיל בפועל.
+/************************************************************
+ * V2.gs — main application logic.
+ *
+ * Canonical CRM server API for the HTML UI, Apps Script triggers,
+ * calendar integration, permissions, settings, archive, timeline,
+ * and compatibility wrappers. Earlier duplicate function bodies were
+ * removed only where a later same-name implementation already overrode
+ * them in Apps Script.
  ************************************************************/
 
 const CONFIG = {
@@ -26,65 +29,9 @@ function doGet() {
   return HtmlService.createHtmlOutputFromFile("Index")
     .setTitle(CONFIG.SYSTEM_NAME)
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
-}function קבלת_נתונים_Build3() {
-  const projects = readSheet_(SHEETS.PROJECTS);
-  const contacts = readSheet_(SHEETS.CONTACTS);
-  const links = readSheet_(SHEETS.LINKS);
-  const tasks = readSheet_(SHEETS.TASKS);
-  const notes = readSheet_(SHEETS.TASK_NOTES);
-  const settingsRows = readSheet_(SHEETS.SETTINGS);
-  const settings = activeSettings_(settingsRows);
-
-  let categories = [];
-  let realSettings = {};
-  let fields = [];
-  let permissions = {};
-
-  try {
-    categories = קבלת_קטגוריות_לבחירה_Build4_4();
-  } catch (e) {
-    Logger.log(e);
-  }
-
-  try {
-    realSettings = קבלת_הגדרות_לממשק_Build4_3();
-  } catch (e) {
-    Logger.log(e);
-  }
-
-  try {
-    fields = readSheet_("הגדרות_שדות");
-  } catch (e) {
-    Logger.log(e);
-  }
-
-  try {
-    permissions = קבלת_הרשאות_Build6();
-  } catch (e) {
-    Logger.log(e);
-  }
-
-  return {
-    system: {
-      name: getSettingValue_("מיתוג", "שם מערכת") || CONFIG.SYSTEM_NAME,
-      primaryColor: getSettingValue_("מיתוג", "צבע ראשי") || "#1f4e79"
-    },
-
-    projects,
-    contacts,
-    links,
-    tasks,
-    notes,
-
-    settings,
-    categories,
-    realSettings,
-    fields,
-    permissions,
-
-    dashboard: calcDashboard_(projects, contacts, tasks)
-  };
 }
+
+/* Compatibility note: earlier duplicate implementation removed; canonical function is defined later in this file. */
 
 /* פרויקטים */
 
@@ -301,7 +248,9 @@ function makeId_(prefix) {
 function log_(action, details) {
   const sh = getSS_().getSheetByName(SHEETS.LOGS);
   if (sh) sh.appendRow([new Date(), action, details]);
-}function התקנת_הגדרת_שדות_Build4() {
+}
+
+function התקנת_הגדרת_שדות_Build4() {
   const ss = getSS_();
   let sh = ss.getSheetByName("הגדרת שדות");
   if (!sh) sh = ss.insertSheet("הגדרת שדות");
@@ -426,7 +375,9 @@ function שמירת_שדה_Build4(data) {
   upsert_("הגדרת שדות", "מזהה שדה", row["מזהה שדה"], row);
   log_("שמירת שדה", data.entity + " | " + data.name);
   return true;
-}function styleHeader_(sh) {
+}
+
+function styleHeader_(sh) {
   const cols = sh.getLastColumn();
   if (cols < 1) return;
 
@@ -697,9 +648,13 @@ function שמירת_הרשאה_Build4_3(rowArray) {
   };
 
   upsert_(SETTINGS_SHEETS.PERMISSIONS, "תפקיד", row["תפקיד"], row);
-}function קבלת_הגדרות_לממשק_Build4_3() {
+}
+
+function קבלת_הגדרות_לממשק_Build4_3() {
   return קבלת_הגדרות_אמיתיות_Build4_3();
-}function שדרוג_הגדרות_ערכים_ושדות_Build4_4() {
+}
+
+function שדרוג_הגדרות_ערכים_ושדות_Build4_4() {
   שדרוג_מבנה_הגדרות_ערכים_();
   מילוי_שדות_ברירת_מחדל_Build4_4_();
   log_("שדרוג הגדרות ערכים ושדות", "Build4.4 הושלם");
@@ -813,39 +768,9 @@ function מילוי_שדות_ברירת_מחדל_Build4_4_() {
   sh.getRange(2, 1, rows.length, headers.length).setValues(rows);
   styleHeader_(sh);
   sh.autoResizeColumns(1, headers.length);
-}function קבלת_קטגוריות_לבחירה_Build4_4() {
-  const rows = readSheet_("הגדרות_ערכים");
-
-  const map = {};
-  rows.forEach(r => {
-    const type = r["סוג ערך"];
-    if (!type) return;
-
-    if (!map[type]) {
-      map[type] = {
-        name: type,
-        categoryOrder: Number(r["סדר קטגוריה"] || 999),
-        values: []
-      };
-    }
-
-    if (r["פעיל"] === "כן") {
-      map[type].values.push({
-        id: r["מזהה ערך"],
-        value: r["ערך"],
-        order: Number(r["סדר ערך"] || 999),
-        active: r["פעיל"]
-      });
-    }
-  });
-
-  return Object.values(map)
-    .sort((a, b) => a.categoryOrder - b.categoryOrder)
-    .map(cat => ({
-      ...cat,
-      values: cat.values.sort((a, b) => a.order - b.order)
-    }));
 }
+
+/* Compatibility note: earlier duplicate implementation removed; canonical function is defined later in this file. */
 
 
 /* הוסר: מופע ישן של function שמירת_שדה_הגדרה_Build4_4 — נשמרה הגרסה המאוחרת בקובץ */
@@ -862,7 +787,9 @@ function בדיקת_קטגוריות_Build4_4() {
   const cats = קבלת_קטגוריות_לבחירה_Build4_4();
   Logger.log("מספר קטגוריות: " + cats.length);
   Logger.log(JSON.stringify(cats.slice(0, 3), null, 2));
-}function התקנת_הרשאות_מתקדמות_Build6() {
+}
+
+function התקנת_הרשאות_מתקדמות_Build6() {
   const ss = getSS_();
 
   יצירת_גיליון_אם_חסר_(ss, "הרשאות_תפקידים", [

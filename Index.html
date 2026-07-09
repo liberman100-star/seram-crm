@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html dir="rtl" lang="he">
 <head>
   <base target="_top">
@@ -466,12 +466,7 @@ let DATA = {};
 let SETTINGS_TAB = 'categories';
 
 function goDashboard(){ tab('dashboard', document.getElementById('btn_dashboard')); }
-function tab(id,b){
-  document.querySelectorAll('main section').forEach(s=>s.classList.add('hidden'));
-  document.getElementById(id).classList.remove('hidden');
-  document.querySelectorAll('nav button').forEach(x=>x.classList.remove('active'));
-  b.classList.add('active');
-}
+/* Compatibility note: earlier duplicate implementation removed; canonical function is defined later in this file. */
 function modalBackdropClose(e){ if(e.target.id === 'modal') closeM(); }
 function closeM(){ modal.classList.add('hidden'); }
 
@@ -785,25 +780,7 @@ function toggleRowMenu(event, id){
 document.addEventListener('click', closeAllRowMenus);
 
 /* Dashboard */
-function renderDashboard(){
-  const d = DATA.dashboard || {};
-  const notice = DATA.accessNotice ? `<div class="card"><b>הודעת הרשאות:</b> ${esc(DATA.accessNotice)}</div>` : '';
-  if (notice && typeof dashboard !== 'undefined') {
-    const existing = document.getElementById('accessNoticeBox');
-    if (!existing) {
-      const box = document.createElement('div');
-      box.id = 'accessNoticeBox';
-      box.innerHTML = notice;
-      dashboard.insertBefore(box, dashboard.children[1] || null);
-    } else {
-      existing.innerHTML = notice;
-    }
-  }
-  lateBox.innerHTML = dashList(d.lateTasks, 'task');
-  todayBox.innerHTML = dashList(d.todayTasks, 'task');
-  weekBox.innerHTML = dashList(d.weekTasks, 'task');
-  activeProjectsBox.innerHTML = dashList(d.activeProjects, 'project');
-}
+/* Compatibility note: earlier duplicate implementation removed; canonical function is defined later in this file. */
 function dashList(rows,type){
   if(!rows || !rows.length) return '<p>אין נתונים.</p>';
   let html = `<b>${rows.length}</b><ul>`;
@@ -815,12 +792,7 @@ function dashList(rows,type){
 }
 
 /* Projects */
-function tableProjects(){
-  const rows=filtered(DATA.projects||[], projectSearch?.value, ['שם פרויקט','עיר','תחום','סטטוס','תגיות','אחראי']);
-  projectsTable.innerHTML=tableHtml(rows,[
-    {key:'שם פרויקט',label:'שם פרויקט'},{key:'עיר',label:'עיר'},{key:'תחום',label:'תחום'},{key:'סטטוס',label:'סטטוס'}
-  ], r=>`openProjectCard('${esc(r['מזהה פרויקט'])}')`, null);
-}
+/* Compatibility note: earlier duplicate implementation removed; canonical function is defined later in this file. */
 function openProject(r={}){
   modalBox.className='box small';
   modalBox.innerHTML=`
@@ -936,17 +908,7 @@ loadProjectNotesOnly(p['מזהה פרויקט']);
 }
 
 /* Contacts */
-function tableContacts(){
-  const rows=filtered(DATA.contacts||[], contactSearch?.value, ['שם מלא','טלפון','אימייל','סוג איש קשר','סטטוס לקוח','תגיות','הרשאת מערכת']);
-  contactsTable.innerHTML=tableHtml(rows,[
-    {key:'שם מלא',label:'שם מלא'},
-    {key:'טלפון',label:'טלפון'},
-    {key:'אימייל',label:'אימייל'},
-    {key:'סוג איש קשר',label:'סוג'},
-    {key:'סטטוס לקוח',label:'סטטוס'},
-    {key:'הרשאת מערכת',label:'הרשאה'}
-  ], r=>`openContactCard('${esc(r['מזהה איש קשר'])}')`, null);
-}
+/* Compatibility note: earlier duplicate implementation removed; canonical function is defined later in this file. */
 function openContact(r={}){
   modalBox.className='box small';
   modalBox.innerHTML=`
@@ -1010,73 +972,7 @@ function renderContactCard(d){
 }
 
 /* Tasks */
-function tableTasks(){
-  if(window.taskProjectFilter){
-    const current = taskProjectFilter.value || '';
-    const options = ['<option value="">כל הפרויקטים</option>']
-      .concat((DATA.projects || [])
-        .filter(p => String(p['בארכיון'] || '') !== 'כן')
-        .map(p => `<option value="${esc(p['מזהה פרויקט'])}">${esc(p['שם פרויקט'] || '')}</option>`));
-
-    taskProjectFilter.innerHTML = options.join('');
-    taskProjectFilter.value = current;
-  }
-
-  const projectsById = {};
-  (DATA.projects || []).forEach(p=>{
-    projectsById[String(p['מזהה פרויקט'] || '')] = p['שם פרויקט'] || '';
-  });
-
-  let rows = (DATA.tasks || []).filter(r => String(r['בארכיון'] || '') !== 'כן');
-
-  const selectedProject = window.taskProjectFilter ? taskProjectFilter.value : '';
-  if(selectedProject){
-    rows = rows.filter(t => String(t['מזהה פרויקט'] || '') === String(selectedProject));
-  }
-
-  const f=taskFilter?.value||'all';
-  const today=new Date(); today.setHours(0,0,0,0);
-  const week=new Date(today); week.setDate(week.getDate()+7);
-
-  rows=rows.filter(t=>{
-    const d=t['תאריך']?parseDateOnly(t['תאריך']):null;
-    if(f==='open') return t['סטטוס']!=='בוצע'&&t['סטטוס']!=='בוטל';
-    if(f==='done') return t['סטטוס']==='בוצע';
-    if(f==='late') return d&&d<today&&t['סטטוס']!=='בוצע'&&t['סטטוס']!=='בוטל';
-    if(f==='today') return d&&d.getTime()===today.getTime()&&t['סטטוס']!=='בוצע'&&t['סטטוס']!=='בוטל';
-    if(f==='week') return d&&d>today&&d<=week&&t['סטטוס']!=='בוצע'&&t['סטטוס']!=='בוטל';
-    return true;
-  });
-
-  rows = rows.map(t=>{
-    const copy = Object.assign({}, t);
-    copy['משויך לפרויקט'] = projectsById[String(t['מזהה פרויקט'] || '')] || '';
-    copy['כותרת'] = `<span title="${esc(t['הערות למשימה'] || '')}">${esc(t['כותרת'] || '')}</span>`;
-    return copy;
-  });
-
-  tasksTable.innerHTML=tableHtml(rows,[
-    {key:'כותרת',label:'כותרת'},
-    {key:'משויך לפרויקט',label:'משויך לפרויקט'},
-    {key:'סוג משימה',label:'סוג'},
-    {key:'עדיפות',label:'עדיפות'},
-    {key:'תאריך',label:'תאריך'},
-    {key:'שעה',label:'שעה'},
-    {key:'סטטוס',label:'סטטוס'}
-  ], r=>`openTaskCard('${esc(r['מזהה משימה'])}')`, r=>{
-    const id=esc(r['מזהה משימה']);
-    const isDone = r['סטטוס']==='בוצע';
-
-    return `
-      <button onclick="openTaskCard('${id}')">ערוך</button>
-      ${isDone
-        ? `<button onclick="reactivateTask('${id}')">החזר לפעיל</button>`
-        : `<button onclick="doneTask('${id}')">בוצע</button>`
-      }
-      <button class="danger" onclick="delTask('${id}')">העבר לארכיון</button>
-    `;
-  });
-}
+/* Compatibility note: earlier duplicate implementation removed; canonical function is defined later in this file. */
 
 function projectOptions(selected=''){
   return `<option value="">ללא פרויקט</option>`+
@@ -1094,37 +990,7 @@ function openTaskCard(id){
   if(local){ renderTaskCard({task:local, projectName:projectNameById(local['מזהה פרויקט']), contactName:contactNameById(local['מזהה איש קשר']), notes:(DATA.notes||[]).filter(n=>n['מזהה משימה']===id)}); return; }
   google.script.run.withSuccessHandler(renderTaskCard).withFailureHandler(e=>alert(e.message)).קבלת_כרטיס_משימה_Build10(id);
 }
-function renderTaskCard(d){
-  const t=d.task||{};
-  const id=esc(t['מזהה משימה']||'');
-  const isDone=t['סטטוס']==='בוצע';
-  modalBox.className='box small';
-  modalBox.innerHTML=`
-    <h2>${esc(t['כותרת']||'משימה')}</h2>
-    <div class="toolbar">
-      <button class="primary" onclick='openTask(${JSON.stringify(t)})'>ערוך</button>
-      ${isDone ? `<button class="ok" onclick="reactivateTask('${id}')">החזר לפעיל</button>` : `<button class="ok" onclick="doneTask('${id}')">סמן בוצע</button>`}
-      <button class="danger" onclick="delTask('${id}')">העבר לארכיון</button>
-      <button onclick="closeM()">סגור</button>
-    </div>
-    <div class="grid2">
-      <div><b>סוג:</b> ${esc(t['סוג משימה']||'')}</div>
-      <div><b>סטטוס:</b> ${esc(t['סטטוס']||'')}</div>
-      <div><b>תאריך:</b> ${esc(t['תאריך']||'')}</div>
-      <div><b>שעה:</b> ${esc(t['שעה']||'')}</div>
-      <div><b>שעת סיום:</b> ${esc(t['שעת סיום']||'')}</div>
-      <div><b>יומן:</b> ${esc(t['כניסה ליומן']||'לא')}</div>
-      <div><b>פרויקט:</b> ${esc(d.projectName||'')}</div>
-      <div><b>איש קשר:</b> ${esc(d.contactName||'')}</div>
-      <div><b>אחראי:</b> ${esc(t['אחראי']||'')}</div>
-    </div>
-    <h3 class="sectionTitle">הערות / ציר זמן המשימה</h3>
-    ${renderTaskNotes(d.notes||[])}
-    <h3>הוסף הערה</h3>
-    <textarea id="taskNoteText" placeholder="הערה למשימה"></textarea>
-    <button class="primary" onclick="saveTaskNote('${id}')">שמור הערה</button>`;
-  modal.classList.remove('hidden');
-}
+/* Compatibility note: earlier duplicate implementation removed; canonical function is defined later in this file. */
 function renderTaskNotes(rows){
   if(!rows.length) return '<p>אין הערות למשימה.</p>';
   return smallTable(rows,['תאריך ושעת עדכון','הערה'],['תאריך ושעה','הערה']);
@@ -1153,76 +1019,11 @@ function reactivateTask(id){
   google.script.run.withSuccessHandler(()=>{load();closeM();}).withFailureHandler(e=>alert(e.message)).החזרת_משימה_לפעילה(id);
 }
 
-function openTask(r={}, preset={}){
-  r={...r,...preset};
-  const allowedIds = preset.allowedContactIds || null;
-  const isMeeting = (r['סוג משימה'] || 'משימה') === 'פגישה';
-  const hasDate = !!r['תאריך'];
-  const calendarValue = r['כניסה ליומן'] || (isMeeting ? 'כן' : 'לא');
-  modalBox.className='box small';
-  modalBox.innerHTML=`
-    <h2>${r['מזהה משימה']?'עריכת משימה':'משימה חדשה'}</h2>
-    <label>כותרת</label><input id="tTitle" value="${esc(r['כותרת'])}">
-    <label>סוג משימה</label><select id="tType" onchange="updateTaskFields()">${opts('סוג משימה',r['סוג משימה']||'משימה')}</select>
-    <label>תאריך</label><input id="tDate" type="date" value="${esc(r['תאריך'])}" onchange="updateTaskFields()">
-    <div id="taskTimeBlock" class="${hasDate?'':'hidden'}">
-      <label>שעה</label><input id="tTime" type="time" value="${esc(r['שעה'])}">
-      <div id="taskEndTimeBlock" class="${isMeeting && hasDate ? '' : 'hidden'}">
-        <label>שעת סיום</label><input id="tEndTime" type="time" value="${esc(r['שעת סיום'])}">
-      </div>
-      <label>להכניס ליומן?</label>
-      <select id="tCalendar">
-        <option ${calendarValue!=='כן'?'selected':''}>לא</option>
-        <option ${calendarValue==='כן'?'selected':''}>כן</option>
-      </select>
-    </div>
-    <label>סטטוס</label><select id="tStatus">${opts('סטטוס משימה',r['סטטוס']||'פתוח')}</select>
-    <label>פרויקט</label><select id="tProject">${projectOptions(r['מזהה פרויקט'])}</select>
-    <label>איש קשר</label><select id="tContact">${contactOptions(r['מזהה איש קשר'], allowedIds)}</select>
-    <label>אחראי</label><select id="tOwner">${activeUsersOptions(r['אחראי'])}</select>
-    <p class="muted">אם הוזן תאריך — חובה להזין שעה. “שיחה” תופסת 30 דקות ביומן, “משימה” 15 דקות, ו“פגישה” דורשת שעת סיום.</p>
-    <button class="primary" onclick='saveTask("${esc(r['מזהה משימה']||'')}")'>שמור</button>
-    <button onclick="closeM()">ביטול</button>`;
-  modal.classList.remove('hidden');
-  updateTaskFields();
-}
-﻿
-function updateTaskFields(){
-  if(typeof tDate === 'undefined' || typeof tType === 'undefined') return;
-  const hasDate = !!tDate.value;
-  const isMeeting = tType.value === 'פגישה';
-  taskTimeBlock.classList.toggle('hidden', !hasDate);
-  taskEndTimeBlock.classList.toggle('hidden', !(hasDate && isMeeting));
-  if(hasDate && typeof tCalendar !== 'undefined'){
-    if(isMeeting && !tCalendar.dataset.touched){ tCalendar.value = 'כן'; }
-  }
-  if(typeof tCalendar !== 'undefined'){
-    tCalendar.onchange = () => { tCalendar.dataset.touched = '1'; };
-  }
-}
+/* Compatibility note: earlier duplicate implementation removed; canonical function is defined later in this file. */
 
-function saveTask(id){
-  const hasDate = !!tDate.value;
-  const isMeeting = tType.value === 'פגישה';
-  if(hasDate && !tTime.value){ alert('כאשר מזינים תאריך, חובה להזין שעה'); return; }
-  if(hasDate && isMeeting && !tEndTime.value){ alert('בפגישה חובה להזין שעת סיום'); return; }
+/* Compatibility note: earlier duplicate implementation removed; canonical function is defined later in this file. */
 
-  google.script.run.withSuccessHandler(()=>{closeM();refreshCore();})
-    .withFailureHandler(e=>alert(e.message))
-    .שמירת_משימה({
-      id,
-      title:tTitle.value,
-      taskType:tType.value,
-      date:tDate.value,
-      time:hasDate ? tTime.value : '',
-      endTime:(hasDate && isMeeting) ? tEndTime.value : '',
-      addToCalendar:hasDate ? tCalendar.value : 'לא',
-      status:tStatus.value,
-      projectId:tProject.value,
-      contactId:tContact.value,
-      owner:tOwner.value
-    });
-}
+/* Compatibility note: earlier duplicate implementation removed; canonical function is defined later in this file. */
 function doneTask(id){ google.script.run.withSuccessHandler(()=>refreshCore()).withFailureHandler(e=>alert(e.message)).סימון_משימה_בוצעה(id); }
 function delTask(id){ if(confirm('למחוק משימה?')) google.script.run.withSuccessHandler(()=>refreshCore()).withFailureHandler(e=>alert(e.message)).מחיקת_משימה(id); }
 
@@ -1533,16 +1334,7 @@ function saveCalendar(id=''){
   google.script.run.withSuccessHandler(()=>{closeM();refreshCore();}).withFailureHandler(e=>alert(e.message))
     .שמירת_יומן_Build4_3({id,name:calName.value,calendarId:calId.value,active:calActive.value});
 }
-function renderPermissionsSettings(){
-  const p = DATA.permissions || {};
-  let html = `<h3>הרשאות לפי תפקיד</h3>`;
-  html += smallTable(p.rolePermissions||[], ['תפקיד','דשבורד','פרויקטים','אנשי קשר','משימות','הערות','הגדרות','משתמשים','הרשאות','מחיקה'], ['תפקיד','דשבורד','פרויקטים','אנשי קשר','משימות','הערות','הגדרות','משתמשים','הרשאות','מחיקה']);
-  html += `<h3 class="sectionTitle">הרשאות פרטניות למשתמש</h3>`;
-  html += smallTable(p.userPermissions||[], ['מזהה משתמש','השתמש בהרשאות תפקיד','פרויקטים','אנשי קשר','משימות','הגדרות','רואה רק משויך','פעיל'], ['משתמש','לפי תפקיד','פרויקטים','אנשי קשר','משימות','הגדרות','רק משויך','פעיל']);
-  html += `<h3 class="sectionTitle">שיוך משתמשים לפרויקטים</h3><button class="primary" onclick="openUserProjectLink()">+ שיוך משתמש לפרויקט</button>`;
-  html += smallTable((p.projectUserLinks||[]).map(x=>({...x,'איש קשר':contactNameById(x['מזהה משתמש']),'פרויקט':projectNameById(x['מזהה פרויקט'])})), ['איש קשר','פרויקט','תפקיד בפרויקט','פעיל'], ['איש קשר','פרויקט','תפקיד בפרויקט','פעיל']);
-  settingsBox.innerHTML = html;
-}
+/* Compatibility note: earlier duplicate implementation removed; canonical function is defined later in this file. */
 function openUserProjectLink(){
   modalBox.className='box small';
   modalBox.innerHTML=`
@@ -1666,14 +1458,7 @@ function hebrewNumLetters(n){
   const t=Math.floor(n/10), o=n%10;
   return (tens[t]||'') + '״' + (ones[o]||'');
 }
-function hebrewDate(d){
-  try {
-    const parts = new Intl.DateTimeFormat('he-u-ca-hebrew',{day:'numeric',month:'long'}).formatToParts(d);
-    const day = parts.find(x=>x.type==='day')?.value || '';
-    const month = parts.find(x=>x.type==='month')?.value || '';
-    return `${hebrewNumLetters(day)} ${month}`.trim();
-  } catch(e){ return ''; }
-}
+/* Compatibility note: earlier duplicate implementation removed; canonical function is defined later in this file. */
 function dayName(d){ return new Intl.DateTimeFormat('he',{weekday:'short'}).format(d); }
 function priorityClass(t){ return 'prio-' + String(t['עדיפות'] || 'רגילה').replace(/\s+/g,''); }
 function priorityMark(p){ if(p==='דחופה') return '🔴 '; if(p==='גבוהה') return '🟠 '; if(p==='נמוכה') return '⚪ '; return '🟢 '; }
@@ -1688,36 +1473,7 @@ function moveCalendar(dir){
   CAL_DATE=d; renderCalendarDashboard();
 }
 function startOfWeek(d){ const x=new Date(d); const day=x.getDay(); x.setDate(x.getDate()-day); x.setHours(0,0,0,0); return x; }
-function renderCalendarDashboard(){
-  if(typeof calendarBox === 'undefined') return;
-  updateCalendarViewButtons();
-  let days=[]; const base=new Date(CAL_DATE); let gridClass='';
-  if(CAL_VIEW==='day') {
-    days=[base];
-    calendarTitle.textContent=fmtDateDMY(base);
-  }
-  if(CAL_VIEW==='week') {
-    const s=startOfWeek(base);
-    for(let i=0;i<7;i++){const d=new Date(s);d.setDate(s.getDate()+i);days.push(d);}
-    calendarTitle.textContent=fmtWeekRange(days[0], days[6]);
-  }
-  if(CAL_VIEW==='month') {
-    const first=new Date(base.getFullYear(),base.getMonth(),1);
-    const last=new Date(base.getFullYear(),base.getMonth()+1,0);
-    for(let i=1;i<=last.getDate();i++){ days.push(new Date(base.getFullYear(),base.getMonth(),i)); }
-    calendarTitle.textContent=new Intl.DateTimeFormat('he',{month:'long',year:'numeric'}).format(base);
-    gridClass=' month-only';
-  }
-  const today=new Date(); today.setHours(0,0,0,0);
-  calendarBox.innerHTML = `<div class="calendar-grid${gridClass}">` + days.map(d=>{
-    const tasks=calendarTasksForDate(d);
-    return `<div class="calendar-day ${sameDate(d,today)?'today':''}">
-      <div class="calendar-day-head">${dayName(d)} · ${fmtDateDMY(d)}</div>
-      <div class="calendar-hebrew">${hebrewDate(d)}</div>
-      ${tasks.map(t=>`<span class="calendar-event ${priorityClass(t)}" onclick="openTaskCard('${esc(t['מזהה משימה'])}')">${esc(t['שעה']||'')} ${priorityMark(t['עדיפות'])}${esc(t['סוג משימה']||'משימה')} - ${esc(t['כותרת']||'')}</span>`).join('')}
-    </div>`;
-  }).join('') + `</div>`;
-}
+/* Compatibility note: earlier duplicate implementation removed; canonical function is defined later in this file. */
 
 function renderDashboard(){
   const d = DATA.dashboard || {};
@@ -1923,56 +1679,10 @@ function participantCandidatesForTask(r={}){
   }
   return out;
 }
-function calendarGuestsSelect(r={}){
-  const selected=String(r['משתתפי יומן']||'').split(',').map(x=>x.trim().toLowerCase()).filter(Boolean);
-  const opts=participantCandidatesForTask(r).map(p=>`<option value="${esc(p.email)}" ${selected.includes(p.email.toLowerCase())?'selected':''}>${esc(p.label)} · ${esc(p.email)}</option>`).join('');
-  return opts || '<option value="">אין משתתפים עם מייל</option>';
-}
-function selectedCalendarGuests(){
-  if(typeof tCalendarGuests === 'undefined') return [];
-  return Array.from(tCalendarGuests.selectedOptions).map(o=>o.value).filter(Boolean);
-}
-function openTask(r={}, preset={}){
-  r={...r,...preset};
-  const allowedIds = preset.allowedContactIds || null;
-  const isMeeting = (r['סוג משימה'] || 'משימה') === 'פגישה';
-  const hasDate = !!r['תאריך'];
-  const calendarValue = r['כניסה ליומן'] || (isMeeting ? 'כן' : 'לא');
-  modalBox.className='box small';
-  modalBox.innerHTML=`
-    <h2>${r['מזהה משימה']?'עריכת משימה':'משימה חדשה'}</h2>
-    <label>כותרת</label><input id="tTitle" value="${esc(r['כותרת'])}">
-    <label>סוג משימה</label><select id="tType" onchange="updateTaskFields()">${opts('סוג משימה',r['סוג משימה']||'משימה')}</select>
-    <label>עדיפות</label><select id="tPriority">${priorityOptions(r['עדיפות']||'רגילה')}</select>
-    <label>תאריך</label><input id="tDate" type="date" value="${esc(r['תאריך'])}" onchange="updateTaskFields()">
-    <div id="taskTimeBlock" class="${hasDate?'':'hidden'}">
-      <label>שעה</label><input id="tTime" type="time" value="${esc(r['שעה'])}">
-      <div id="taskEndTimeBlock" class="${isMeeting && hasDate ? '' : 'hidden'}">
-        <label>שעת סיום</label><input id="tEndTime" type="time" value="${esc(r['שעת סיום'])}">
-      </div>
-      <label>להכניס ליומן?</label>
-      <select id="tCalendar" onchange="updateTaskFields()"><option ${calendarValue!=='כן'?'selected':''}>לא</option><option ${calendarValue==='כן'?'selected':''}>כן</option></select>
-      <div id="calendarGuestsBlock" class="${hasDate && calendarValue==='כן' ? '' : 'hidden'}">
-        <label>משתתפים ביומן</label>
-        <select id="tCalendarGuests" multiple size="5">${calendarGuestsSelect(r)}</select>
-        <p class="muted">Google Calendar ישלח הזמנה רגילה למשתתפים שנבחרו, עם תזכורת 60 דקות לפני.</p>
-      </div>
-    </div>
-    <label>סטטוס</label><select id="tStatus">${opts('סטטוס משימה',r['סטטוס']||'פתוח')}</select>
-    <label>פרויקט</label><select id="tProject" onchange="refreshCalendarGuestOptions()">${projectOptions(r['מזהה פרויקט'])}</select>
-    <label>איש קשר</label><select id="tContact" onchange="refreshCalendarGuestOptions()">${contactOptions(r['מזהה איש קשר'], allowedIds)}</select>
-    <label>אחראי</label><select id="tOwner" onchange="refreshCalendarGuestOptions()">${activeUsersOptions(r['אחראי'])}</select>
-    <label>הערות למשימה</label><textarea id="tTaskNotes" placeholder="הערות שיופיעו גם בתיאור האירוע ביומן, אם נכנס ליומן">${esc(r['הערות למשימה']||'')}</textarea>
-    <p class="muted">אם הוזן תאריך — חובה להזין שעה. “שיחה” תופסת 30 דקות ביומן, “משימה” 15 דקות, ו“פגישה” דורשת שעת סיום.</p>
-    <button class="primary" onclick='saveTask("${esc(r['מזהה משימה']||'')}")'>שמור</button>
-    <button onclick="closeM()">ביטול</button>`;
-  modal.classList.remove('hidden'); updateTaskFields();
-}
-function refreshCalendarGuestOptions(){
-  if(typeof tCalendarGuests==='undefined') return;
-  const r={'מזהה פרויקט':tProject.value,'מזהה איש קשר':tContact.value,'אחראי':tOwner.value,'משתתפי יומן':Array.from(tCalendarGuests.selectedOptions).map(o=>o.value).join(',')};
-  tCalendarGuests.innerHTML=calendarGuestsSelect(r);
-}
+/* Compatibility note: earlier duplicate implementation removed; canonical function is defined later in this file. */
+/* Compatibility note: earlier duplicate implementation removed; canonical function is defined later in this file. */
+/* Compatibility note: earlier duplicate implementation removed; canonical function is defined later in this file. */
+/* Compatibility note: earlier duplicate implementation removed; canonical function is defined later in this file. */
 function updateTaskFields(){
   if(typeof tDate === 'undefined' || typeof tType === 'undefined') return;
   const hasDate = !!tDate.value; const isMeeting = tType.value === 'פגישה';
@@ -1992,22 +1702,8 @@ function saveTask(id){
     .withFailureHandler(e=>alert(e.message))
     .שמירת_משימה({id,title:tTitle.value,taskType:tType.value,priority:tPriority.value,date:tDate.value,time:hasDate?tTime.value:'',endTime:(hasDate&&isMeeting)?tEndTime.value:'',addToCalendar:hasDate?tCalendar.value:'לא',calendarGuests:selectedCalendarGuests(),taskNotes:tTaskNotes.value,status:tStatus.value,projectId:tProject.value,contactId:tContact.value,owner:tOwner.value});
 }
-function renderTaskCard(d){
-  const t=d.task||{}; const id=esc(t['מזהה משימה']||''); const isDone=t['סטטוס']==='בוצע';
-  modalBox.className='box small';
-  modalBox.innerHTML=`
-    <h2>${priorityMark(t['עדיפות'])}${esc(t['כותרת']||'משימה')}</h2>
-    <div class="toolbar"><button class="primary" onclick='openTask(${JSON.stringify(t)})'>ערוך</button>${isDone?`<button class="ok" onclick="reactivateTask('${id}')">החזר לפעיל</button>`:`<button class="ok" onclick="doneTask('${id}')">סמן בוצע</button>`}<button class="danger" onclick="delTask('${id}')">העבר לארכיון</button><button onclick="closeM()">סגור</button></div>
-    <div class="grid2"><div><b>סוג:</b> ${esc(t['סוג משימה']||'')}</div><div><b>עדיפות:</b> ${esc(t['עדיפות']||'רגילה')}</div><div><b>סטטוס:</b> ${esc(t['סטטוס']||'')}</div><div><b>תאריך:</b> ${esc(t['תאריך']||'')}</div><div><b>שעה:</b> ${esc(t['שעה']||'')}</div><div><b>שעת סיום:</b> ${esc(t['שעת סיום']||'')}</div><div><b>יומן:</b> ${esc(t['כניסה ליומן']||'לא')}</div><div><b>פרויקט:</b> ${esc(d.projectName||'')}</div><div><b>איש קשר:</b> ${esc(d.contactName||'')}</div><div><b>אחראי:</b> ${esc(t['אחראי']||'')}</div></div>
-    <h3 class="sectionTitle">הערות למשימה</h3><div class="card">${esc(t['הערות למשימה']||'אין הערות קבועות למשימה')}</div>
-    <h3 class="sectionTitle">הערות / ציר זמן המשימה</h3>${renderTaskNotes(d.notes||[])}<h3>הוסף הערה</h3><textarea id="taskNoteText" placeholder="הערה למשימה"></textarea><button class="primary" onclick="saveTaskNote('${id}')">שמור הערה</button>`;
-  modal.classList.remove('hidden');
-}
-function tableTasks(){
-  let rows=DATA.tasks||[]; const f=taskFilter?.value||'all'; const today=new Date(); today.setHours(0,0,0,0); const week=new Date(today); week.setDate(week.getDate()+7);
-  rows=rows.filter(t=>{ const d=t['תאריך']?parseDateOnly(t['תאריך']):null; if(f==='open') return t['סטטוס']!=='בוצע'&&t['סטטוס']!=='בוטל'; if(f==='done') return t['סטטוס']==='בוצע'; if(f==='late') return d&&d<today&&t['סטטוס']!=='בוצע'&&t['סטטוס']!=='בוטל'; if(f==='today') return d&&d.getTime()===today.getTime()&&t['סטטוס']!=='בוצע'&&t['סטטוס']!=='בוטל'; if(f==='week') return d&&d>today&&d<=week&&t['סטטוס']!=='בוצע'&&t['סטטוס']!=='בוטל'; return true; });
-  tasksTable.innerHTML=tableHtml(rows,[{key:'כותרת',label:'כותרת'},{key:'סוג משימה',label:'סוג'},{key:'עדיפות',label:'עדיפות'},{key:'תאריך',label:'תאריך'},{key:'שעה',label:'שעה'},{key:'סטטוס',label:'סטטוס'}], r=>`openTaskCard('${esc(r['מזהה משימה'])}')`, r=>{ const id=esc(r['מזהה משימה']); const doneBtn=r['סטטוס']==='בוצע'?`<button class="ok" onclick='reactivateTask("${id}")'>החזר לפעיל</button>`:`<button class="ok" onclick='doneTask("${id}")'>בוצע</button>`; return `${doneBtn} <button class="danger" onclick='delTask("${id}")'>העבר לארכיון</button>`; });
-}
+/* Compatibility note: earlier duplicate implementation removed; canonical function is defined later in this file. */
+/* Compatibility note: earlier duplicate implementation removed; canonical function is defined later in this file. */
 
 
 /***********************
@@ -2383,7 +2079,7 @@ render = function(d){
     const x=firstVisibleTab(); tab(x[0],x[1]);
   }
 };
-﻿
+
 const __renderProjectCard_secure_base = renderProjectCard;
 renderProjectCard = function(d){ __renderProjectCard_secure_base(d); setTimeout(applySecurityUI,0); };
 const __renderContactCard_secure_base = renderContactCard;
@@ -2587,6 +2283,7 @@ const readOnly = isArchived || !canWriteProject;
   <h3 class="sectionTitle">ציר זמן</h3>
   <button class="primary" onclick="openEntityTimeline('פרויקט','${esc(p['מזהה פרויקט'])}','openProjectCard(\\'${esc(p['מזהה פרויקט'])}\\')')">פתח ציר זמן</button>
 ` : ''}
+  `;
   modal.classList.remove('hidden');
   loadProjectNotesAndTimeline(p['מזהה פרויקט']);
 };

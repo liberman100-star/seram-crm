@@ -1,7 +1,9 @@
-﻿/**
- * GS.gs — גרסת ניקוי 1
- * נבנה מתוך הקוד הראשון שנשלח.
- * בוצע ניקוי כפילויות בלבד: כאשר פונקציה הופיעה כמה פעמים, נשמרה הגרסה האחרונה.
+/**
+ * Code.gs — infrastructure/base layer.
+ *
+ * Contains legacy-compatible spreadsheet setup, sheet formatting,
+ * maintenance utilities, and infrastructure helpers. Public Apps Script
+ * entry points are preserved; internal helper names remain backward-compatible.
  */
 
 const מזהה_הגיליון = "1ovsZH2dt-DMqVrRcamcxns2p8pTaeKPtu9bfEn-yKzU";
