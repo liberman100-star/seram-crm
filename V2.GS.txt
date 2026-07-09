@@ -1,0 +1,4533 @@
+﻿/************************************************************
+ * V2_REFACTOR_STAGE1
+ * נוצר מאיחוד של שלושת חלקי V2.
+ * ניקוי שמרני: הוסרו רק מופעים ישנים של פונקציות כפולות,
+ * כאשר נשמרה הגרסה המאוחרת בקובץ — כפי ש-Apps Script היה מפעיל בפועל.
+ ************************************************************/
+
+const CONFIG = {
+  SPREADSHEET_ID: "1xBn3BnYwFKF3O7pVJyUbZlnJVhXWGv-Qf6jlM9_Cchk",
+  CALENDAR_ID: "primary",
+  TIMEZONE: "Asia/Jerusalem",
+  SYSTEM_NAME: "CRM סרם נדל״ן"
+};
+
+const SHEETS = {
+  PROJECTS: "פרויקטים",
+  CONTACTS: "אנשי קשר",
+  LINKS: "שיוכים",
+  TASKS: "משימות",
+  TASK_NOTES: "הערות משימה",
+  SETTINGS: "הגדרות",
+  LOGS: "יומן מערכת"
+};
+
+function doGet() {
+  return HtmlService.createHtmlOutputFromFile("Index")
+    .setTitle(CONFIG.SYSTEM_NAME)
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+}function קבלת_נתונים_Build3() {
+  const projects = readSheet_(SHEETS.PROJECTS);
+  const contacts = readSheet_(SHEETS.CONTACTS);
+  const links = readSheet_(SHEETS.LINKS);
+  const tasks = readSheet_(SHEETS.TASKS);
+  const notes = readSheet_(SHEETS.TASK_NOTES);
+  const settingsRows = readSheet_(SHEETS.SETTINGS);
+  const settings = activeSettings_(settingsRows);
+
+  let categories = [];
+  let realSettings = {};
+  let fields = [];
+  let permissions = {};
+
+  try {
+    categories = קבלת_קטגוריות_לבחירה_Build4_4();
+  } catch (e) {
+    Logger.log(e);
+  }
+
+  try {
+    realSettings = קבלת_הגדרות_לממשק_Build4_3();
+  } catch (e) {
+    Logger.log(e);
+  }
+
+  try {
+    fields = readSheet_("הגדרות_שדות");
+  } catch (e) {
+    Logger.log(e);
+  }
+
+  try {
+    permissions = קבלת_הרשאות_Build6();
+  } catch (e) {
+    Logger.log(e);
+  }
+
+  return {
+    system: {
+      name: getSettingValue_("מיתוג", "שם מערכת") || CONFIG.SYSTEM_NAME,
+      primaryColor: getSettingValue_("מיתוג", "צבע ראשי") || "#1f4e79"
+    },
+
+    projects,
+    contacts,
+    links,
+    tasks,
+    notes,
+
+    settings,
+    categories,
+    realSettings,
+    fields,
+    permissions,
+
+    dashboard: calcDashboard_(projects, contacts, tasks)
+  };
+}
+
+/* פרויקטים */
+
+
+/* הוסר: מופע ישן של function שמירת_פרויקט — נשמרה הגרסה המאוחרת בקובץ */
+
+/* הוסר: מופע ישן של function מחיקת_פרויקט — נשמרה הגרסה המאוחרת בקובץ */
+/* אנשי קשר */
+
+
+/* הוסר: מופע ישן של function מחיקת_איש_קשר — נשמרה הגרסה המאוחרת בקובץ */
+/* שיוכים */
+
+
+/* הוסר: מופע ישן של function שמירת_שיוך — נשמרה הגרסה המאוחרת בקובץ */
+
+/* הוסר: מופע ישן של function מחיקת_שיוך — נשמרה הגרסה המאוחרת בקובץ */
+/* משימות + יומן */
+
+
+/* הוסר: מופע ישן של function סימון_משימה_בוצעה — נשמרה הגרסה המאוחרת בקובץ */
+
+/* הוסר: מופע ישן של function מחיקת_משימה — נשמרה הגרסה המאוחרת בקובץ */
+function שמירת_הערת_משימה(data) {
+  validateRequired_(data.taskId, "משימה");
+  validateRequired_(data.note, "הערה");
+
+  const row = {
+    "מזהה הערה": makeId_("הע"),
+    "מזהה משימה": data.taskId,
+    "תאריך ושעת עדכון": new Date(),
+    "הערה": data.note
+  };
+
+  appendObject_(SHEETS.TASK_NOTES, row);
+
+  const task = readSheet_(SHEETS.TASKS).find(t => t["מזהה משימה"] === data.taskId);
+  if (task) {
+    task["עדכון אחרון"] = new Date();
+    upsert_(SHEETS.TASKS, "מזהה משימה", data.taskId, task);
+  }
+
+  log_("שמירת הערת משימה", data.taskId);
+  return true;
+}
+
+/* הגדרות */
+
+function שמירת_הגדרה(data) {
+  validateRequired_(data.type, "סוג הגדרה");
+  validateRequired_(data.value, "ערך");
+
+  const rows = readSheet_(SHEETS.SETTINGS);
+  const existing = rows.find(r => r["סוג הגדרה"] === data.type && r["ערך"] === data.value);
+
+  if (existing) {
+    existing["פעיל"] = data.active || "כן";
+    upsertSetting_(existing);
+  } else {
+    appendObject_(SHEETS.SETTINGS, {
+      "סוג הגדרה": data.type,
+      "ערך": data.value,
+      "פעיל": data.active || "כן"
+    });
+  }
+
+  log_("שמירת הגדרה", data.type + " | " + data.value);
+  return true;
+}
+
+function השבתת_הגדרה(type, value) {
+  const rows = readSheet_(SHEETS.SETTINGS);
+  const row = rows.find(r => r["סוג הגדרה"] === type && r["ערך"] === value);
+  if (!row) return false;
+
+  row["פעיל"] = row["פעיל"] === "כן" ? "לא" : "כן";
+  upsertSetting_(row);
+  return true;
+}
+
+/* Calendar */
+
+
+/* הוסר: מופע ישן של function buildTaskEndDateTime_ — נשמרה הגרסה המאוחרת בקובץ */
+function ברירת_מחדל_משך_משימה_(taskType) {
+  if (taskType === "שיחה") return 30;
+  if (taskType === "משימה") return 15;
+  return 15;
+}
+
+function בניית_כותרת_אירוע_יומן_(task) {
+  const type = task["סוג משימה"] || "משימה";
+  const title = task["כותרת"] || "";
+  let target = "";
+
+  if (task["מזהה פרויקט"]) {
+    const project = readSheet_(SHEETS.PROJECTS).find(p => p["מזהה פרויקט"] === task["מזהה פרויקט"]);
+    if (project) target = "פרויקט " + (project["שם פרויקט"] || "");
+  }
+
+  if (!target && task["מזהה איש קשר"]) {
+    const contact = readSheet_(SHEETS.CONTACTS).find(c => c["מזהה איש קשר"] === task["מזהה איש קשר"]);
+    if (contact) target = "איש קשר " + (contact["שם מלא"] || "");
+  }
+
+  return target ? `${type} - ${target} - ${title}` : `${type} - ${title}`;
+}
+
+function מחיקת_אירוע_יומן_אם_קיים_(eventId) {
+  try {
+    const ev = CalendarApp.getCalendarById(CONFIG.CALENDAR_ID).getEventById(eventId);
+    if (ev) ev.deleteEvent();
+  } catch (e) {}
+}
+
+function buildDateTime_(dateValue, timeValue) {
+  const d = new Date(dateValue);
+  if (isNaN(d.getTime())) throw new Error("תאריך לא תקין");
+
+  const parts = String(timeValue || "09:00").split(":");
+  d.setHours(Number(parts[0] || 9), Number(parts[1] || 0), 0, 0);
+  return d;
+}
+
+/* Utilities */
+
+function הבטח_עמודה_אם_חסרה_(sheetName, headerName) {
+  const sh = getSS_().getSheetByName(sheetName);
+  if (!sh) return false;
+  const lastCol = Math.max(sh.getLastColumn(), 1);
+  const headers = sh.getRange(1, 1, 1, lastCol).getValues()[0];
+  if (!headers.includes(headerName)) {
+    sh.getRange(1, lastCol + 1).setValue(headerName);
+    try { styleHeader_(sh); } catch (e) {}
+  }
+  return true;
+}
+
+function getSS_() {
+  return SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
+}
+
+
+/* הוסר: מופע ישן של function formatValue_ — נשמרה הגרסה המאוחרת בקובץ */
+
+/* הוסר: מופע ישן של function appendObject_ — נשמרה הגרסה המאוחרת בקובץ */
+
+/* הוסר: מופע ישן של function deleteById_ — נשמרה הגרסה המאוחרת בקובץ */
+
+/* הוסר: מופע ישן של function deleteWhere_ — נשמרה הגרסה המאוחרת בקובץ */
+function activeSettings_(rows) {
+  const out = {};
+  rows.forEach(r => {
+    if (r["פעיל"] !== "כן") return;
+    const type = r["סוג הגדרה"];
+    if (!out[type]) out[type] = [];
+    out[type].push(r["ערך"]);
+  });
+  return out;
+}
+
+function getSettingValue_(type, key) {
+  const row = readSheet_(SHEETS.SETTINGS).find(r =>
+    r["סוג הגדרה"] === type &&
+    r["ערך"].startsWith(key + "=") &&
+    r["פעיל"] === "כן"
+  );
+
+  if (!row) return "";
+  return String(row["ערך"]).split("=").slice(1).join("=");
+}
+
+
+/* הוסר: מופע ישן של function upsertSetting_ — נשמרה הגרסה המאוחרת בקובץ */
+function calcDashboard_(projects, contacts, tasks) {
+  projects = (projects || []).filter(p => String(p["בארכיון"] || "") !== "כן");
+  contacts = (contacts || []).filter(c => String(c["בארכיון"] || "") !== "כן");
+  tasks = (tasks || []).filter(t => String(t["בארכיון"] || "") !== "כן");
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const week = new Date(today);
+  week.setDate(week.getDate() + 7);
+
+  const open = tasks.filter(t => t["סטטוס"] !== "בוצע" && t["סטטוס"] !== "בוטל");
+
+  const toDate = t => {
+    if (!t["תאריך"]) return null;
+    const d = new Date(t["תאריך"]);
+    d.setHours(0, 0, 0, 0);
+    return d;
+  };
+
+  return {
+    projectsCount: projects.length,
+    contactsCount: contacts.length,
+    tasksCount: tasks.length,
+    lateTasks: open.filter(t => { const d = toDate(t); return d && d < today; }),
+    todayTasks: open.filter(t => { const d = toDate(t); return d && d.getTime() === today.getTime(); }),
+    weekTasks: open.filter(t => { const d = toDate(t); return d && d > today && d <= week; }),
+    activeProjects: projects.slice(0, 5)
+  };
+}
+
+function validateRequired_(value, label) {
+  if (!value) throw new Error("חסר שדה חובה: " + label);
+}
+
+function makeId_(prefix) {
+  return prefix + "-" + Utilities.getUuid().slice(0, 8).toUpperCase();
+}
+
+function log_(action, details) {
+  const sh = getSS_().getSheetByName(SHEETS.LOGS);
+  if (sh) sh.appendRow([new Date(), action, details]);
+}function התקנת_הגדרת_שדות_Build4() {
+  const ss = getSS_();
+  let sh = ss.getSheetByName("הגדרת שדות");
+  if (!sh) sh = ss.insertSheet("הגדרת שדות");
+
+  sh.clear();
+  sh.setRightToLeft(true);
+
+  const headers = [
+    "מזהה שדה",
+    "ישות",
+    "שם שדה",
+    "סוג שדה",
+    "סוג הגדרה קשור",
+    "חובה",
+    "פעיל",
+    "מוצג ברשימה",
+    "מוצג בכרטיס",
+    "ניתן לחיפוש",
+    "ניתן לסינון",
+    "סדר תצוגה"
+  ];
+
+  sh.getRange(1, 1, 1, headers.length).setValues([headers]);
+
+  const rows = [
+    ["שדה-001", "פרויקט", "שם פרויקט", "טקסט", "", "כן", "כן", "כן", "כן", "כן", "כן", 1],
+    ["שדה-002", "פרויקט", "עיר", "רשימת בחירה", "עיר", "לא", "כן", "כן", "כן", "כן", "כן", 2],
+    ["שדה-003", "פרויקט", "תחום", "רשימת בחירה", "תחום", "לא", "כן", "כן", "כן", "כן", "כן", 3],
+    ["שדה-004", "פרויקט", "סטטוס", "רשימת בחירה", "סטטוס פרויקט", "לא", "כן", "כן", "כן", "כן", "כן", 4],
+    ["שדה-005", "פרויקט", "אחראי", "רשימת בחירה", "משתמש", "לא", "כן", "כן", "כן", "כן", "כן", 5],
+    ["שדה-006", "פרויקט", "תגיות", "טקסט", "", "לא", "כן", "לא", "כן", "כן", "כן", 6],
+    ["שדה-007", "פרויקט", "תיקיית Drive", "קישור", "", "לא", "כן", "לא", "כן", "לא", "לא", 7],
+
+    ["שדה-101", "איש קשר", "שם מלא", "טקסט", "", "כן", "כן", "כן", "כן", "כן", "כן", 1],
+    ["שדה-102", "איש קשר", "טלפון", "טלפון", "", "לא", "כן", "כן", "כן", "כן", "לא", 2],
+    ["שדה-103", "איש קשר", "אימייל", "אימייל", "", "לא", "כן", "כן", "כן", "כן", "לא", 3],
+    ["שדה-104", "איש קשר", "כתובת", "טקסט", "", "לא", "כן", "לא", "כן", "כן", "לא", 4],
+    ["שדה-105", "איש קשר", "מקור הגעה", "רשימת בחירה", "מקור הגעה", "לא", "כן", "לא", "כן", "כן", "כן", 5],
+    ["שדה-106", "איש קשר", "סוג איש קשר", "רשימת בחירה", "סוג איש קשר", "לא", "כן", "כן", "כן", "כן", "כן", 6],
+    ["שדה-107", "איש קשר", "סטטוס לקוח", "רשימת בחירה", "סטטוס לקוח", "לא", "כן", "כן", "כן", "כן", "כן", 7],
+    ["שדה-108", "איש קשר", "תגיות", "טקסט", "", "לא", "כן", "לא", "כן", "כן", "כן", 8],
+    ["שדה-109", "איש קשר", "אחראי", "רשימת בחירה", "משתמש", "לא", "כן", "כן", "כן", "כן", "כן", 9],
+
+    ["שדה-201", "משימה", "כותרת", "טקסט", "", "כן", "כן", "כן", "כן", "כן", "כן", 1],
+    ["שדה-202", "משימה", "סוג משימה", "רשימת בחירה", "סוג משימה", "כן", "כן", "כן", "כן", "כן", "כן", 2],
+    ["שדה-203", "משימה", "תאריך", "תאריך", "", "לא", "כן", "כן", "כן", "כן", "כן", 3],
+    ["שדה-204", "משימה", "שעה", "שעה", "", "לא", "כן", "כן", "כן", "לא", "כן", 4],
+    ["שדה-205", "משימה", "סטטוס", "רשימת בחירה", "סטטוס משימה", "כן", "כן", "כן", "כן", "כן", "כן", 5],
+    ["שדה-206", "משימה", "אחראי", "רשימת בחירה", "משתמש", "לא", "כן", "כן", "כן", "כן", "כן", 6]
+  ];
+
+  sh.getRange(2, 1, rows.length, headers.length).setValues(rows);
+  styleHeader_(sh);
+
+  הוספת_הגדרות_בסיס_לשדות_();
+  log_("התקנת הגדרת שדות", "נוצרה טבלת הגדרת שדות Build4");
+}
+
+function הוספת_הגדרות_בסיס_לשדות_() {
+  const base = [
+    { type: "סוג שדה", value: "טקסט" },
+    { type: "סוג שדה", value: "טקסט ארוך" },
+    { type: "סוג שדה", value: "מספר" },
+    { type: "סוג שדה", value: "מטבע" },
+    { type: "סוג שדה", value: "אחוז" },
+    { type: "סוג שדה", value: "טלפון" },
+    { type: "סוג שדה", value: "אימייל" },
+    { type: "סוג שדה", value: "תאריך" },
+    { type: "סוג שדה", value: "שעה" },
+    { type: "סוג שדה", value: "תאריך ושעה" },
+    { type: "סוג שדה", value: "רשימת בחירה" },
+    { type: "סוג שדה", value: "בחירה מרובה" },
+    { type: "סוג שדה", value: "כן / לא" },
+    { type: "סוג שדה", value: "קישור" },
+    { type: "סוג שדה", value: "קובץ" },
+
+    { type: "ישות", value: "פרויקט" },
+    { type: "ישות", value: "איש קשר" },
+    { type: "ישות", value: "משימה" },
+
+    { type: "עיר", value: "ירושלים" },
+    { type: "עיר", value: "בני ברק" },
+    { type: "עיר", value: "פתח תקווה" },
+    { type: "עיר", value: "ירוחם" },
+
+    { type: "משתמש", value: "אברהם" }
+  ];
+
+  base.forEach(x => {
+    try {
+      שמירת_הגדרה({ type: x.type, value: x.value, active: "כן" });
+    } catch (e) {}
+  });
+}
+
+function קבלת_הגדרת_שדות_Build4() {
+  return readSheet_("הגדרת שדות")
+    .filter(r => r["פעיל"] === "כן")
+    .sort((a, b) => Number(a["סדר תצוגה"] || 999) - Number(b["סדר תצוגה"] || 999));
+}
+
+function שמירת_שדה_Build4(data) {
+  validateRequired_(data.entity, "ישות");
+  validateRequired_(data.name, "שם שדה");
+  validateRequired_(data.fieldType, "סוג שדה");
+
+  const row = {
+    "מזהה שדה": data.id || makeId_("שדה"),
+    "ישות": data.entity,
+    "שם שדה": data.name,
+    "סוג שדה": data.fieldType,
+    "סוג הגדרה קשור": data.settingType || "",
+    "חובה": data.required || "לא",
+    "פעיל": data.active || "כן",
+    "מוצג ברשימה": data.showList || "כן",
+    "מוצג בכרטיס": data.showCard || "כן",
+    "ניתן לחיפוש": data.searchable || "כן",
+    "ניתן לסינון": data.filterable || "לא",
+    "סדר תצוגה": data.order || 999
+  };
+
+  upsert_("הגדרת שדות", "מזהה שדה", row["מזהה שדה"], row);
+  log_("שמירת שדה", data.entity + " | " + data.name);
+  return true;
+}function styleHeader_(sh) {
+  const cols = sh.getLastColumn();
+  if (cols < 1) return;
+
+  sh.setFrozenRows(1);
+  sh.getRange(1, 1, 1, cols)
+    .setFontWeight("bold")
+    .setBackground("#1f4e79")
+    .setFontColor("#ffffff")
+    .setHorizontalAlignment("center");
+
+  sh.autoResizeColumns(1, cols);
+}const SETTINGS_SHEETS = {
+  VALUES: "הגדרות_ערכים",
+  FIELDS: "הגדרות_שדות",
+  USERS: "משתמשים",
+  BRANDING: "מיתוג",
+  CALENDARS: "יומנים",
+  PERMISSIONS: "הרשאות"
+};
+
+function התקנת_הגדרות_אמיתיות_Build4_3() {
+  const ss = getSS_();
+
+  יצירת_גיליון_אם_חסר_(ss, SETTINGS_SHEETS.VALUES, [
+    "מזהה ערך", "סוג ערך", "ערך", "פעיל", "סדר"
+  ]);
+
+  יצירת_גיליון_אם_חסר_(ss, SETTINGS_SHEETS.FIELDS, [
+    "מזהה שדה", "ישות", "שם שדה", "סוג שדה", "סוג ערך קשור",
+    "חובה", "פעיל", "מוצג ברשימה", "מוצג בכרטיס",
+    "ניתן לחיפוש", "ניתן לסינון", "סדר תצוגה"
+  ]);
+
+  יצירת_גיליון_אם_חסר_(ss, SETTINGS_SHEETS.USERS, [
+    "מזהה משתמש", "שם", "מייל", "תפקיד", "פעיל"
+  ]);
+
+  יצירת_גיליון_אם_חסר_(ss, SETTINGS_SHEETS.BRANDING, [
+    "מפתח", "ערך"
+  ]);
+
+  יצירת_גיליון_אם_חסר_(ss, SETTINGS_SHEETS.CALENDARS, [
+    "מזהה רשומה", "שם יומן", "מזהה יומן", "פעיל"
+  ]);
+
+  יצירת_גיליון_אם_חסר_(ss, SETTINGS_SHEETS.PERMISSIONS, [
+    "תפקיד", "פרויקטים", "אנשי קשר", "משימות", "הערות", "הגדרות", "הרשאות", "פורטל לקוח"
+  ]);
+
+  מילוי_ברירות_מחדל_הגדרות_אמיתיות_();
+  log_("התקנת הגדרות אמיתיות", "Build 4.3 הותקן");
+  return true;
+}
+
+function יצירת_גיליון_אם_חסר_(ss, name, headers) {
+  let sh = ss.getSheetByName(name);
+  if (!sh) sh = ss.insertSheet(name);
+
+  if (sh.getLastRow() === 0 || sh.getLastColumn() === 0) {
+    sh.clear();
+    sh.setRightToLeft(true);
+    sh.getRange(1, 1, 1, headers.length).setValues([headers]);
+    styleHeader_(sh);
+  }
+}
+
+function מילוי_ברירות_מחדל_הגדרות_אמיתיות_() {
+  const values = [
+    ["עיר", "ירושלים"],
+    ["עיר", "בני ברק"],
+    ["עיר", "פתח תקווה"],
+    ["עיר", "ירוחם"],
+
+    ["תחום", "יזמות"],
+    ["תחום", "התחדשות עירונית"],
+    ["תחום", "ליווי משקיעים"],
+    ["תחום", "ייעוץ / אחר"],
+
+    ["סטטוס פרויקט", "ללא סיווג"],
+    ["סטטוס פרויקט", "בדיקת היתכנות"],
+    ["סטטוס פרויקט", "משא ומתן"],
+    ["סטטוס פרויקט", "בדיקה משפטית ותכנונית"],
+    ["סטטוס פרויקט", "מימון ובנקים"],
+    ["סטטוס פרויקט", "ביצוע / סגירה"],
+
+    ["מקור הגעה", "פייסבוק"],
+    ["מקור הגעה", "אתר"],
+    ["מקור הגעה", "מפה לאוזן"],
+
+    ["סוג איש קשר", "משקיע"],
+    ["סוג איש קשר", "לקוח"],
+    ["סוג איש קשר", "עו״ד"],
+    ["סוג איש קשר", "שמאי"],
+    ["סוג איש קשר", "מתווך"],
+    ["סוג איש קשר", "אדריכל"],
+    ["סוג איש קשר", "בנק"],
+    ["סוג איש קשר", "קבלן"],
+    ["סוג איש קשר", "ספק"],
+    ["סוג איש קשר", "יזם"],
+    ["סוג איש קשר", "אחר"],
+
+    ["סטטוס לקוח", "ליד חדש"],
+    ["סטטוס לקוח", "משקיע פוטנציאלי"],
+    ["סטטוס לקוח", "לקוח פעיל"],
+
+    ["תפקיד / כובע", "משקיע"],
+    ["תפקיד / כובע", "יזם"],
+    ["תפקיד / כובע", "שותף"],
+    ["תפקיד / כובע", "עו״ד"],
+    ["תפקיד / כובע", "שמאי"],
+    ["תפקיד / כובע", "מתווך"],
+    ["תפקיד / כובע", "אחר"],
+
+    ["סוג משימה", "משימה"],
+    ["סוג משימה", "שיחה"],
+    ["סוג משימה", "פגישה"],
+
+    ["סטטוס משימה", "פתוח"],
+    ["סטטוס משימה", "בטיפול"],
+    ["סטטוס משימה", "ממתין"],
+    ["סטטוס משימה", "בוצע"],
+    ["סטטוס משימה", "נדחה"],
+    ["סטטוס משימה", "בוטל"],
+
+    ["סוג הערה", "שיחה"],
+    ["סוג הערה", "פגישה"],
+    ["סוג הערה", "ווטסאפ"],
+    ["סוג הערה", "מייל"],
+    ["סוג הערה", "עדכון"],
+    ["סוג הערה", "מסמך"],
+    ["סוג הערה", "אחר"],
+
+    ["חשיפה", "מנהל בלבד"],
+    ["חשיפה", "פנימי"],
+    ["חשיפה", "לקוח"]
+  ];
+
+  values.forEach((x, index) => {
+    שמירת_ערך_הגדרה_Build4_3({
+      type: x[0],
+      value: x[1],
+      active: "כן",
+      order: index + 1
+    });
+  });
+
+  const email = Session.getActiveUser().getEmail() || "";
+  שמירת_משתמש_Build4_3({
+    name: "אברהם",
+    email: email,
+    role: "מנהל ראשי",
+    active: "כן"
+  });
+
+  שמירת_מיתוג_Build4_3({
+    systemName: "CRM סרם נדל״ן",
+    primaryColor: "#1f4e79",
+    secondaryColor: "#e8eef5",
+    logo: ""
+  });
+
+  שמירת_יומן_Build4_3({
+    name: "יומן ראשי",
+    calendarId: "primary",
+    active: "כן"
+  });
+
+  [
+    ["מנהל ראשי", "כן", "כן", "כן", "כן", "כן", "כן", "כן"],
+    ["מנהל", "כן", "כן", "כן", "כן", "לא", "לא", "לא"],
+    ["משתמש", "כן", "כן", "כן", "פנימי", "לא", "לא", "לא"],
+    ["לקוח", "מוגבל", "לא", "לא", "לקוח בלבד", "לא", "לא", "כן"]
+  ].forEach(row => שמירת_הרשאה_Build4_3(row));
+}
+
+function קבלת_הגדרות_אמיתיות_Build4_3() {
+  return {
+    values: readSheet_(SETTINGS_SHEETS.VALUES),
+    fields: readSheet_(SETTINGS_SHEETS.FIELDS),
+    users: readSheet_(SETTINGS_SHEETS.USERS),
+    branding: readSheet_(SETTINGS_SHEETS.BRANDING),
+    calendars: readSheet_(SETTINGS_SHEETS.CALENDARS),
+    permissions: readSheet_(SETTINGS_SHEETS.PERMISSIONS)
+  };
+}
+
+function שמירת_ערך_הגדרה_Build4_3(data) {
+  validateRequired_(data.type, "סוג ערך");
+  validateRequired_(data.value, "ערך");
+
+  const rows = readSheet_(SETTINGS_SHEETS.VALUES);
+  const existing = rows.find(r => r["סוג ערך"] === data.type && r["ערך"] === data.value);
+
+  const row = {
+    "מזהה ערך": existing ? existing["מזהה ערך"] : makeId_("ערך"),
+    "סוג ערך": data.type,
+    "ערך": data.value,
+    "פעיל": data.active || "כן",
+    "סדר": data.order || 999
+  };
+
+  upsert_(SETTINGS_SHEETS.VALUES, "מזהה ערך", row["מזהה ערך"], row);
+  return true;
+}
+
+
+/* הוסר: מופע ישן של function השבתת_ערך_הגדרה_Build4_3 — נשמרה הגרסה המאוחרת בקובץ */
+function שמירת_משתמש_Build4_3(data) {
+  validateRequired_(data.name, "שם משתמש");
+
+  const rows = readSheet_(SETTINGS_SHEETS.USERS);
+  const existing = data.id
+    ? rows.find(r => r["מזהה משתמש"] === data.id)
+    : rows.find(r => r["שם"] === data.name);
+
+  const row = {
+    "מזהה משתמש": existing ? existing["מזהה משתמש"] : makeId_("משתמש"),
+    "שם": data.name,
+    "מייל": data.email || "",
+    "תפקיד": data.role || "משתמש",
+    "פעיל": data.active || "כן"
+  };
+
+  upsert_(SETTINGS_SHEETS.USERS, "מזהה משתמש", row["מזהה משתמש"], row);
+  return true;
+}
+
+function השבתת_משתמש_Build4_3(id) {
+  const rows = readSheet_(SETTINGS_SHEETS.USERS);
+  const row = rows.find(r => r["מזהה משתמש"] === id);
+  if (!row) throw new Error("המשתמש לא נמצא");
+
+  row["פעיל"] = row["פעיל"] === "כן" ? "לא" : "כן";
+  upsert_(SETTINGS_SHEETS.USERS, "מזהה משתמש", id, row);
+  return true;
+}
+
+function שמירת_יומן_Build4_3(data) {
+  validateRequired_(data.name, "שם יומן");
+  validateRequired_(data.calendarId, "מזהה יומן");
+
+  const rows = readSheet_(SETTINGS_SHEETS.CALENDARS);
+  const existing = data.id
+    ? rows.find(r => r["מזהה רשומה"] === data.id)
+    : rows.find(r => r["שם יומן"] === data.name);
+
+  const row = {
+    "מזהה רשומה": existing ? existing["מזהה רשומה"] : makeId_("יומן"),
+    "שם יומן": data.name,
+    "מזהה יומן": data.calendarId,
+    "פעיל": data.active || "כן"
+  };
+
+  upsert_(SETTINGS_SHEETS.CALENDARS, "מזהה רשומה", row["מזהה רשומה"], row);
+  return true;
+}
+
+function שמירת_הרשאה_Build4_3(rowArray) {
+  const row = {
+    "תפקיד": rowArray[0],
+    "פרויקטים": rowArray[1],
+    "אנשי קשר": rowArray[2],
+    "משימות": rowArray[3],
+    "הערות": rowArray[4],
+    "הגדרות": rowArray[5],
+    "הרשאות": rowArray[6],
+    "פורטל לקוח": rowArray[7]
+  };
+
+  upsert_(SETTINGS_SHEETS.PERMISSIONS, "תפקיד", row["תפקיד"], row);
+}function קבלת_הגדרות_לממשק_Build4_3() {
+  return קבלת_הגדרות_אמיתיות_Build4_3();
+}function שדרוג_הגדרות_ערכים_ושדות_Build4_4() {
+  שדרוג_מבנה_הגדרות_ערכים_();
+  מילוי_שדות_ברירת_מחדל_Build4_4_();
+  log_("שדרוג הגדרות ערכים ושדות", "Build4.4 הושלם");
+  return true;
+}
+
+function שדרוג_מבנה_הגדרות_ערכים_() {
+  const ss = getSS_();
+  const sh = ss.getSheetByName("הגדרות_ערכים");
+  if (!sh) throw new Error("לא נמצא גיליון הגדרות_ערכים");
+
+  const wantedHeaders = [
+    "מזהה ערך",
+    "סוג ערך",
+    "סדר קטגוריה",
+    "ערך",
+    "פעיל",
+    "סדר ערך"
+  ];
+
+  const oldData = sh.getDataRange().getValues();
+  const oldHeaders = oldData[0] || [];
+
+  const rows = oldData.slice(1).filter(r => r.some(c => c !== ""));
+
+  const categoryOrder = {};
+  let nextCategoryOrder = 1;
+
+  const newRows = rows.map(r => {
+    const oldObj = {};
+    oldHeaders.forEach((h, i) => oldObj[h] = r[i]);
+
+    const type = oldObj["סוג ערך"] || "";
+    if (!categoryOrder[type]) {
+      categoryOrder[type] = nextCategoryOrder++;
+    }
+
+    return [
+      oldObj["מזהה ערך"] || makeId_("ערך"),
+      type,
+      oldObj["סדר קטגוריה"] || categoryOrder[type],
+      oldObj["ערך"] || "",
+      oldObj["פעיל"] || "כן",
+      oldObj["סדר ערך"] || oldObj["סדר"] || 999
+    ];
+  });
+
+  sh.clear();
+  sh.setRightToLeft(true);
+  sh.getRange(1, 1, 1, wantedHeaders.length).setValues([wantedHeaders]);
+
+  if (newRows.length) {
+    sh.getRange(2, 1, newRows.length, wantedHeaders.length).setValues(newRows);
+  }
+
+  styleHeader_(sh);
+  sh.autoResizeColumns(1, wantedHeaders.length);
+}
+
+function מילוי_שדות_ברירת_מחדל_Build4_4_() {
+  const ss = getSS_();
+  let sh = ss.getSheetByName("הגדרות_שדות");
+  if (!sh) sh = ss.insertSheet("הגדרות_שדות");
+
+  const headers = [
+    "מזהה שדה",
+    "ישות",
+    "שם שדה",
+    "סוג שדה",
+    "סוג ערך קשור",
+    "חובה",
+    "פעיל",
+    "מוצג ברשימה",
+    "מוצג בכרטיס",
+    "ניתן לחיפוש",
+    "ניתן לסינון",
+    "סדר תצוגה"
+  ];
+
+  sh.clear();
+  sh.setRightToLeft(true);
+  sh.getRange(1, 1, 1, headers.length).setValues([headers]);
+
+  const rows = [
+    ["שדה-001", "פרויקט", "שם פרויקט", "טקסט", "", "כן", "כן", "כן", "כן", "כן", "כן", 1],
+    ["שדה-002", "פרויקט", "עיר", "רשימת בחירה", "עיר", "לא", "כן", "כן", "כן", "כן", "כן", 2],
+    ["שדה-003", "פרויקט", "תחום", "רשימת בחירה", "תחום", "לא", "כן", "כן", "כן", "כן", "כן", 3],
+    ["שדה-004", "פרויקט", "סטטוס", "רשימת בחירה", "סטטוס פרויקט", "לא", "כן", "כן", "כן", "כן", "כן", 4],
+    ["שדה-005", "פרויקט", "אחראי", "רשימת בחירה", "משתמש", "לא", "כן", "כן", "כן", "כן", "כן", 5],
+    ["שדה-006", "פרויקט", "תגיות", "טקסט", "", "לא", "כן", "לא", "כן", "כן", "כן", 6],
+    ["שדה-007", "פרויקט", "תיקיית Drive", "קישור", "", "לא", "כן", "לא", "כן", "לא", "לא", 7],
+
+    ["שדה-101", "איש קשר", "שם מלא", "טקסט", "", "כן", "כן", "כן", "כן", "כן", "כן", 1],
+    ["שדה-102", "איש קשר", "טלפון", "טלפון", "", "לא", "כן", "כן", "כן", "כן", "לא", 2],
+    ["שדה-103", "איש קשר", "אימייל", "אימייל", "", "לא", "כן", "כן", "כן", "כן", "לא", 3],
+    ["שדה-104", "איש קשר", "כתובת", "טקסט", "", "לא", "כן", "לא", "כן", "כן", "לא", 4],
+    ["שדה-105", "איש קשר", "מקור הגעה", "רשימת בחירה", "מקור הגעה", "לא", "כן", "לא", "כן", "כן", "כן", 5],
+    ["שדה-106", "איש קשר", "סוג איש קשר", "רשימת בחירה", "סוג איש קשר", "לא", "כן", "כן", "כן", "כן", "כן", 6],
+    ["שדה-107", "איש קשר", "סטטוס לקוח", "רשימת בחירה", "סטטוס לקוח", "לא", "כן", "כן", "כן", "כן", "כן", 7],
+    ["שדה-108", "איש קשר", "תגיות", "טקסט", "", "לא", "כן", "לא", "כן", "כן", "כן", 8],
+    ["שדה-109", "איש קשר", "אחראי", "רשימת בחירה", "משתמש", "לא", "כן", "כן", "כן", "כן", "כן", 9],
+
+    ["שדה-201", "משימה", "כותרת", "טקסט", "", "כן", "כן", "כן", "כן", "כן", "כן", 1],
+    ["שדה-202", "משימה", "סוג משימה", "רשימת בחירה", "סוג משימה", "כן", "כן", "כן", "כן", "כן", "כן", 2],
+    ["שדה-203", "משימה", "תאריך", "תאריך", "", "לא", "כן", "כן", "כן", "כן", "כן", 3],
+    ["שדה-204", "משימה", "שעה", "שעה", "", "לא", "כן", "כן", "כן", "לא", "כן", 4],
+    ["שדה-205", "משימה", "סטטוס", "רשימת בחירה", "סטטוס משימה", "כן", "כן", "כן", "כן", "כן", "כן", 5],
+    ["שדה-206", "משימה", "אחראי", "רשימת בחירה", "משתמש", "לא", "כן", "כן", "כן", "כן", "כן", 6]
+  ];
+
+  sh.getRange(2, 1, rows.length, headers.length).setValues(rows);
+  styleHeader_(sh);
+  sh.autoResizeColumns(1, headers.length);
+}function קבלת_קטגוריות_לבחירה_Build4_4() {
+  const rows = readSheet_("הגדרות_ערכים");
+
+  const map = {};
+  rows.forEach(r => {
+    const type = r["סוג ערך"];
+    if (!type) return;
+
+    if (!map[type]) {
+      map[type] = {
+        name: type,
+        categoryOrder: Number(r["סדר קטגוריה"] || 999),
+        values: []
+      };
+    }
+
+    if (r["פעיל"] === "כן") {
+      map[type].values.push({
+        id: r["מזהה ערך"],
+        value: r["ערך"],
+        order: Number(r["סדר ערך"] || 999),
+        active: r["פעיל"]
+      });
+    }
+  });
+
+  return Object.values(map)
+    .sort((a, b) => a.categoryOrder - b.categoryOrder)
+    .map(cat => ({
+      ...cat,
+      values: cat.values.sort((a, b) => a.order - b.order)
+    }));
+}
+
+
+/* הוסר: מופע ישן של function שמירת_שדה_הגדרה_Build4_4 — נשמרה הגרסה המאוחרת בקובץ */
+function השבתת_שדה_הגדרה_Build4_4(id) {
+  const rows = readSheet_("הגדרות_שדות");
+  const row = rows.find(r => r["מזהה שדה"] === id);
+  if (!row) throw new Error("השדה לא נמצא");
+
+  row["פעיל"] = row["פעיל"] === "כן" ? "לא" : "כן";
+  upsert_("הגדרות_שדות", "מזהה שדה", id, row);
+  return true;
+}
+function בדיקת_קטגוריות_Build4_4() {
+  const cats = קבלת_קטגוריות_לבחירה_Build4_4();
+  Logger.log("מספר קטגוריות: " + cats.length);
+  Logger.log(JSON.stringify(cats.slice(0, 3), null, 2));
+}function התקנת_הרשאות_מתקדמות_Build6() {
+  const ss = getSS_();
+
+  יצירת_גיליון_אם_חסר_(ss, "הרשאות_תפקידים", [
+    "תפקיד",
+    "דשבורד",
+    "פרויקטים",
+    "אנשי קשר",
+    "משימות",
+    "הערות",
+    "הגדרות",
+    "משתמשים",
+    "הרשאות",
+    "מחיקה"
+  ]);
+
+  יצירת_גיליון_אם_חסר_(ss, "הרשאות_משתמשים", [
+    "מזהה הרשאה",
+    "מזהה משתמש",
+    "השתמש בהרשאות תפקיד",
+    "דשבורד",
+    "פרויקטים",
+    "אנשי קשר",
+    "משימות",
+    "הערות",
+    "הגדרות",
+    "משתמשים",
+    "הרשאות",
+    "מחיקה",
+    "רואה רק משויך",
+    "פעיל"
+  ]);
+
+  יצירת_גיליון_אם_חסר_(ss, "שיוך_משתמשים_לפרויקטים", [
+    "מזהה שיוך",
+    "מזהה משתמש",
+    "מזהה פרויקט",
+    "תפקיד בפרויקט",
+    "פעיל",
+    "תאריך יצירה"
+  ]);
+
+  מילוי_הרשאות_תפקידים_Build6_();
+
+  log_("התקנת הרשאות מתקדמות", "Build6 הותקן");
+  return true;
+}
+
+function מילוי_הרשאות_תפקידים_Build6_() {
+  const rows = [
+    ["מנהל ראשי", "כן", "כן", "כן", "כן", "כן", "כן", "כן", "כן", "כן"],
+    ["מנהל", "כן", "כן", "כן", "כן", "כן", "לא", "לא", "לא", "כן"],
+    ["משתמש", "כן", "משויך", "משויך", "שלי", "פנימי", "לא", "לא", "לא", "לא"],
+    ["לקוח", "לא", "לקוח בלבד", "לא", "לא", "לקוח בלבד", "לא", "לא", "לא", "לא"]
+  ];
+
+  rows.forEach(r => {
+    const row = {
+      "תפקיד": r[0],
+      "דשבורד": r[1],
+      "פרויקטים": r[2],
+      "אנשי קשר": r[3],
+      "משימות": r[4],
+      "הערות": r[5],
+      "הגדרות": r[6],
+      "משתמשים": r[7],
+      "הרשאות": r[8],
+      "מחיקה": r[9]
+    };
+
+    upsert_("הרשאות_תפקידים", "תפקיד", row["תפקיד"], row);
+  });
+}
+
+function שמירת_הרשאת_משתמש_Build6(data) {
+  validateRequired_(data.userId, "משתמש");
+
+  const row = {
+    "מזהה הרשאה": data.id || makeId_("הרשאה"),
+    "מזהה משתמש": data.userId,
+    "השתמש בהרשאות תפקיד": data.useRolePermissions || "כן",
+    "דשבורד": data.dashboard || "",
+    "פרויקטים": data.projects || "",
+    "אנשי קשר": data.contacts || "",
+    "משימות": data.tasks || "",
+    "הערות": data.notes || "",
+    "הגדרות": data.settings || "",
+    "משתמשים": data.users || "",
+    "הרשאות": data.permissions || "",
+    "מחיקה": data.deletePermission || "",
+    "רואה רק משויך": data.onlyAssigned || "לא",
+    "פעיל": data.active || "כן"
+  };
+
+  upsert_("הרשאות_משתמשים", "מזהה הרשאה", row["מזהה הרשאה"], row);
+  return true;
+}
+
+function שיוך_משתמש_לפרויקט_Build6(data) {
+  validateRequired_(data.userId, "משתמש");
+  validateRequired_(data.projectId, "פרויקט");
+
+  const existing = readSheet_("שיוך_משתמשים_לפרויקטים").find(r =>
+    r["מזהה משתמש"] === data.userId &&
+    r["מזהה פרויקט"] === data.projectId
+  );
+
+  const row = {
+    "מזהה שיוך": existing ? existing["מזהה שיוך"] : makeId_("שימש"),
+    "מזהה משתמש": data.userId,
+    "מזהה פרויקט": data.projectId,
+    "תפקיד בפרויקט": data.role || "",
+    "פעיל": data.active || "כן",
+    "תאריך יצירה": existing ? existing["תאריך יצירה"] : new Date()
+  };
+
+  upsert_("שיוך_משתמשים_לפרויקטים", "מזהה שיוך", row["מזהה שיוך"], row);
+  return true;
+}
+
+
+/* הוסר: מופע ישן של function קבלת_הרשאות_Build6 — נשמרה הגרסה המאוחרת בקובץ */
+/***** Build 6.1 – ייצוב הגדרות, טלפון, מיתוג והרשאות בסיס *****/
+
+function התקנת_Build6_1_ייצוב() {
+  const ss = getSS_();
+  יצירת_גיליון_אם_חסר_(ss, "הגדרות_ערכים", ["מזהה ערך", "סוג ערך", "סדר קטגוריה", "ערך", "פעיל", "סדר ערך"]);
+  יצירת_גיליון_אם_חסר_(ss, "הגדרות_שדות", ["מזהה שדה", "ישות", "שם שדה", "סוג שדה", "סוג ערך קשור", "חובה", "פעיל", "מוצג ברשימה", "מוצג בכרטיס", "ניתן לחיפוש", "ניתן לסינון", "סדר תצוגה"]);
+  יצירת_גיליון_אם_חסר_(ss, "משתמשים", ["מזהה משתמש", "שם", "מייל", "תפקיד", "פעיל"]);
+  יצירת_גיליון_אם_חסר_(ss, "מיתוג", ["מפתח", "ערך"]);
+  יצירת_גיליון_אם_חסר_(ss, "יומנים", ["מזהה רשומה", "שם יומן", "מזהה יומן", "פעיל"]);
+  יצירת_גיליון_אם_חסר_(ss, "הרשאות_תפקידים", ["תפקיד", "דשבורד", "פרויקטים", "אנשי קשר", "משימות", "הערות", "הגדרות", "משתמשים", "הרשאות", "מחיקה"]);
+  יצירת_גיליון_אם_חסר_(ss, "הרשאות_משתמשים", ["מזהה הרשאה", "מזהה משתמש", "השתמש בהרשאות תפקיד", "דשבורד", "פרויקטים", "אנשי קשר", "משימות", "הערות", "הגדרות", "משתמשים", "הרשאות", "מחיקה", "רואה רק משויך", "פעיל"]);
+  יצירת_גיליון_אם_חסר_(ss, "שיוך_משתמשים_לפרויקטים", ["מזהה שיוך", "מזהה משתמש", "מזהה פרויקט", "תפקיד בפרויקט", "פעיל", "תאריך יצירה"]);
+  ודא_פורמט_טלפון_();
+  מילוי_הרשאות_תפקידים_Build6_();
+  try { התקנת_Build6_2_הרשאות_מאנשי_קשר(); } catch(e) { Logger.log(e); }
+  log_("Build6.1", "הותקן ייצוב הגדרות והרשאות בסיס");
+  return true;
+}
+
+
+/* הוסר: מופע ישן של function קבלת_נתונים_Build3 — נשמרה הגרסה המאוחרת בקובץ */
+function מפת_מיתוג_Build6_1_() {
+  const out = {};
+  try {
+    readSheet_("מיתוג").forEach(r => { if (r["מפתח"]) out[r["מפתח"]] = r["ערך"]; });
+  } catch(e) {}
+  return out;
+}
+
+
+/* הוסר: מופע ישן של function קבלת_משתמש_נוכחי_Build6_1 — נשמרה הגרסה המאוחרת בקובץ */
+function ודא_פורמט_טלפון_() {
+  ensureColumnTextFormat_(SHEETS.CONTACTS, "טלפון");
+}
+
+function ensureColumnTextFormat_(sheetName, header) {
+  const sh = getSS_().getSheetByName(sheetName);
+  if (!sh) return;
+  const headers = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+  const col = headers.indexOf(header) + 1;
+  if (col > 0) sh.getRange(1, col, Math.max(sh.getMaxRows(), 1), 1).setNumberFormat("@");
+}
+
+function normalizePhone_(v) {
+  let s = String(v || "").trim();
+  s = s.replace(/[\s\-]/g, "");
+  if (/^5\d{8}$/.test(s)) s = "0" + s;
+  if (/^\+9725\d{8}$/.test(s)) s = "0" + s.slice(4);
+  if (/^9725\d{8}$/.test(s)) s = "0" + s.slice(3);
+  return s;
+}
+
+function קבלת_קטגוריות_לבחירה_Build4_4() {
+  const rows = readSheet_("הגדרות_ערכים");
+  const map = {};
+  rows.forEach(r => {
+    const type = r["סוג ערך"];
+    if (!type) return;
+    if (!map[type]) map[type] = { name: type, categoryOrder: Number(r["סדר קטגוריה"] || 999), values: [] };
+    map[type].categoryOrder = Math.min(map[type].categoryOrder, Number(r["סדר קטגוריה"] || 999));
+    if (r["ערך"]) map[type].values.push({ id: r["מזהה ערך"], value: r["ערך"], order: Number(r["סדר ערך"] || 999), active: r["פעיל"] || "כן" });
+  });
+  return Object.values(map).sort((a,b)=>a.categoryOrder-b.categoryOrder).map(cat => ({...cat, values: cat.values.sort((a,b)=>a.order-b.order)}));
+}
+
+function קבלת_סדר_הבא_לקטגוריה_ראשית_Build6_1() {
+  const rows = readSheet_("הגדרות_ערכים");
+  const orders = {};
+  rows.forEach(r => { if (r["סוג ערך"]) orders[r["סוג ערך"]] = Number(r["סדר קטגוריה"] || 0); });
+  return Object.values(orders).reduce((m,n)=>Math.max(m, Number(n||0)),0) + 1;
+}
+
+function קבלת_סדר_הבא_לאפשרות_Build6_1(category) {
+  const rows = readSheet_("הגדרות_ערכים").filter(r => r["סוג ערך"] === category);
+  return rows.reduce((m,r)=>Math.max(m, Number(r["סדר ערך"] || 0)),0) + 1;
+}
+
+function קבלת_סדר_הבא_לשדה_מערכת_Build6_1(entity) {
+  const rows = readSheet_("הגדרות_שדות").filter(r => r["ישות"] === entity);
+  return rows.reduce((m,r)=>Math.max(m, Number(r["סדר תצוגה"] || 0)),0) + 1;
+}
+
+function בדיקת_סדר_אפשרות_בחירה_Build6_1(category, order, currentId) {
+  const exists = readSheet_("הגדרות_ערכים").find(r =>
+    r["סוג ערך"] === category && String(r["סדר ערך"]) === String(order) && r["מזהה ערך"] !== currentId
+  );
+  if (exists) throw new Error("כבר קיימת אפשרות עם אותו מספר סדר בקטגוריה הזו");
+}
+
+function בדיקת_סדר_שדה_מערכת_Build6_1(entity, order, currentId) {
+  const exists = readSheet_("הגדרות_שדות").find(r =>
+    r["ישות"] === entity && String(r["סדר תצוגה"]) === String(order) && r["מזהה שדה"] !== currentId
+  );
+  if (exists) throw new Error("כבר קיים שדה עם אותו מספר סדר בישות הזו");
+}
+
+function שמירת_פריט_קטגוריה_Build4_5(data) {
+  validateRequired_(data.category, "קטגוריה");
+  validateRequired_(data.item, "פריט");
+  const rows = readSheet_("הגדרות_ערכים");
+  const existing = data.id ? rows.find(r => r["מזהה ערך"] === data.id) : rows.find(r => r["סוג ערך"] === data.category && r["ערך"] === data.item);
+  const categoryOrder = data.categoryOrder || (existing && existing["סדר קטגוריה"]) || קבלת_סדר_הבא_לקטגוריה_ראשית_Build6_1();
+  const order = data.order || (existing && existing["סדר ערך"]) || קבלת_סדר_הבא_לאפשרות_Build6_1(data.category);
+  const row = {
+    "מזהה ערך": existing ? existing["מזהה ערך"] : makeId_("ערך"),
+    "סוג ערך": data.category,
+    "סדר קטגוריה": categoryOrder,
+    "ערך": data.item,
+    "פעיל": data.active || "כן",
+    "סדר ערך": order
+  };
+  בדיקת_סדר_אפשרות_בחירה_Build6_1(row["סוג ערך"], row["סדר ערך"], row["מזהה ערך"]);
+  upsert_("הגדרות_ערכים", "מזהה ערך", row["מזהה ערך"], row);
+  return true;
+}
+
+function שמירת_אפשרות_בחירה_Build4_5(data) { return שמירת_פריט_קטגוריה_Build4_5(data); }
+
+function שמירת_קטגוריה_Build6_1(data) {
+  validateRequired_(data.category, "שם קטגוריה");
+  const oldName = data.oldName || data.category;
+  const newName = data.category;
+  const newOrder = data.categoryOrder || קבלת_סדר_הבא_לקטגוריה_ראשית_Build6_1();
+  const rows = readSheet_("הגדרות_ערכים").filter(r => r["סוג ערך"] === oldName);
+  if (rows.length) {
+    rows.forEach(r => {
+      r["סוג ערך"] = newName;
+      r["סדר קטגוריה"] = newOrder;
+      upsert_("הגדרות_ערכים", "מזהה ערך", r["מזהה ערך"], r);
+    });
+    const fields = readSheet_("הגדרות_שדות");
+    fields.forEach(f => {
+      if (f["סוג ערך קשור"] === oldName) {
+        f["סוג ערך קשור"] = newName;
+        upsert_("הגדרות_שדות", "מזהה שדה", f["מזהה שדה"], f);
+      }
+    });
+    return true;
+  }
+  return שמירת_פריט_קטגוריה_Build4_5({category:newName, categoryOrder:newOrder, item:data.firstItem || "פריט ראשון", order:data.order || 1, active:"כן"});
+}
+
+function שמירת_קטגוריה_חדשה_Build4_5(data) { return שמירת_קטגוריה_Build6_1(data); }
+
+function החלפת_מצב_אפשרות_בחירה_Build6_1(id) {
+  const row = readSheet_("הגדרות_ערכים").find(r => r["מזהה ערך"] === id);
+  if (!row) throw new Error("האפשרות לא נמצאה");
+  row["פעיל"] = row["פעיל"] === "כן" ? "לא" : "כן";
+  upsert_("הגדרות_ערכים", "מזהה ערך", id, row);
+  return true;
+}
+
+function השבתת_ערך_הגדרה_Build4_3(id) { return החלפת_מצב_אפשרות_בחירה_Build6_1(id); }
+function מחיקת_אפשרות_בחירה_Build6_1(id) { deleteById_("הגדרות_ערכים", "מזהה ערך", id); return true; }
+function מחיקת_קטגוריה_Build6_1(category) { deleteWhere_("הגדרות_ערכים", "סוג ערך", category); return true; }
+
+function שמירת_שדה_הגדרה_Build4_4(data) {
+  validateRequired_(data.entity, "ישות");
+  validateRequired_(data.name, "שם שדה");
+  validateRequired_(data.fieldType, "סוג שדה");
+  const existing = data.id ? readSheet_("הגדרות_שדות").find(r => r["מזהה שדה"] === data.id) : null;
+  const row = {
+    "מזהה שדה": data.id || makeId_("שדה"),
+    "ישות": data.entity,
+    "שם שדה": data.name,
+    "סוג שדה": data.fieldType,
+    "סוג ערך קשור": data.settingType || "",
+    "חובה": data.required || "לא",
+    "פעיל": data.active || "כן",
+    "מוצג ברשימה": data.showList || "כן",
+    "מוצג בכרטיס": data.showCard || "כן",
+    "ניתן לחיפוש": data.searchable || "כן",
+    "ניתן לסינון": data.filterable || "לא",
+    "סדר תצוגה": data.order || (existing && existing["סדר תצוגה"]) || קבלת_סדר_הבא_לשדה_מערכת_Build6_1(data.entity)
+  };
+  בדיקת_סדר_שדה_מערכת_Build6_1(row["ישות"], row["סדר תצוגה"], row["מזהה שדה"]);
+  upsert_("הגדרות_שדות", "מזהה שדה", row["מזהה שדה"], row);
+  return true;
+}
+
+function החלפת_מצב_שדה_מערכת_Build6_1(id) { return השבתת_שדה_הגדרה_Build4_4(id); }
+function מחיקת_שדה_מערכת_Build6_1(id) { deleteById_("הגדרות_שדות", "מזהה שדה", id); return true; }
+
+/***** Build 6.2 – הרשאות מתוך אנשי קשר *****/
+
+function התקנת_Build6_2_הרשאות_מאנשי_קשר() {
+  הוספת_עמודה_אם_חסרה_(SHEETS.CONTACTS, "הרשאת מערכת");
+  הוספת_עמודה_אם_חסרה_(SHEETS.CONTACTS, "פעיל במערכת");
+
+  [
+    { category: "הרשאת מערכת", item: "ללא הרשאה", order: 1, active: "כן" },
+    { category: "הרשאת מערכת", item: "מנהל ראשי", order: 2, active: "כן" },
+    { category: "הרשאת מערכת", item: "מנהל", order: 3, active: "כן" },
+    { category: "הרשאת מערכת", item: "משתמש", order: 4, active: "כן" },
+    { category: "הרשאת מערכת", item: "לקוח", order: 5, active: "כן" }
+  ].forEach(x => {
+    try { שמירת_פריט_קטגוריה_Build4_5(x); } catch(e) { Logger.log(e); }
+  });
+
+  סנכרון_אנשי_קשר_לטבלת_משתמשים_Build6_2();
+  try { שמירת_שדה_הגדרה_Build4_4({entity:"איש קשר",name:"הרשאת מערכת",fieldType:"רשימת בחירה",settingType:"הרשאת מערכת",required:"לא",active:"כן",showList:"כן",showCard:"כן",searchable:"כן",filterable:"כן",order:10}); } catch(e) { Logger.log(e); }
+  log_("Build6.2", "הותקן מנגנון הרשאות מתוך אנשי קשר");
+  return true;
+}
+
+function הוספת_עמודה_אם_חסרה_(sheetName, header) {
+  const sh = getSS_().getSheetByName(sheetName);
+  if (!sh) return;
+  const lastCol = Math.max(sh.getLastColumn(), 1);
+  const headers = sh.getRange(1, 1, 1, lastCol).getValues()[0];
+  if (headers.indexOf(header) !== -1) return;
+  sh.getRange(1, lastCol + 1).setValue(header);
+  styleHeader_(sh);
+}
+
+function הרשאות_מערכת_תקפות_Build6_2_() {
+  return ["ללא הרשאה", "מנהל ראשי", "מנהל", "משתמש", "לקוח"];
+}
+
+function שמירת_איש_קשר_Build6_2(data) {
+  validateRequired_(data.name, "שם מלא");
+  ensureColumnTextFormat_(SHEETS.CONTACTS, "טלפון");
+  הוספת_עמודה_אם_חסרה_(SHEETS.CONTACTS, "הרשאת מערכת");
+  הוספת_עמודה_אם_חסרה_(SHEETS.CONTACTS, "פעיל במערכת");
+
+  const old = data.id ? readSheet_(SHEETS.CONTACTS).find(c => c["מזהה איש קשר"] === data.id) : null;
+  const permission = data.systemPermission || data.permission || (old ? old["הרשאת מערכת"] : "") || "ללא הרשאה";
+  if (הרשאות_מערכת_תקפות_Build6_2_().indexOf(permission) === -1) {
+    throw new Error("הרשאת מערכת לא תקינה");
+  }
+
+  const row = {
+    "מזהה איש קשר": data.id || makeId_("איש"),
+    "שם מלא": data.name,
+    "טלפון": normalizePhone_(data.phone),
+    "אימייל": data.email || "",
+    "כתובת": data.address || "",
+    "מקור הגעה": data.source || "",
+    "סוג איש קשר": data.contactType || "",
+    "סטטוס לקוח": data.status || "ליד חדש",
+    "תגיות": data.tags || "",
+    "אחראי": data.owner || "",
+    "הרשאת מערכת": permission,
+    "פעיל במערכת": permission === "ללא הרשאה" ? "לא" : "כן",
+    "תאריך יצירה": data.created || (old ? old["תאריך יצירה"] : new Date()),
+    "עדכון אחרון": new Date()
+  };
+
+  upsert_(SHEETS.CONTACTS, "מזהה איש קשר", row["מזהה איש קשר"], row);
+  סנכרון_איש_קשר_למשתמש_Build6_2(row);
+  log_("שמירת איש קשר", row["שם מלא"]);
+  return row["מזהה איש קשר"];
+}
+
+// דריסת פונקציית השמירה הקיימת: מכאן והלאה כל שמירת איש קשר תכלול הרשאת מערכת.
+
+function סנכרון_איש_קשר_למשתמש_Build6_2(contact) {
+  const role = contact["הרשאת מערכת"] || "ללא הרשאה";
+  const userId = contact["מזהה איש קשר"];
+
+  if (role === "ללא הרשאה") {
+    const existing = readSheet_("משתמשים").find(u => u["מזהה משתמש"] === userId);
+    if (existing) {
+      existing["פעיל"] = "לא";
+      upsert_("משתמשים", "מזהה משתמש", userId, existing);
+    }
+    return;
+  }
+
+  const row = {
+    "מזהה משתמש": userId,
+    "שם": contact["שם מלא"] || "",
+    "מייל": contact["אימייל"] || "",
+    "תפקיד": role,
+    "פעיל": contact["פעיל במערכת"] || "כן"
+  };
+  upsert_("משתמשים", "מזהה משתמש", userId, row);
+}
+
+function סנכרון_אנשי_קשר_לטבלת_משתמשים_Build6_2() {
+  readSheet_(SHEETS.CONTACTS).forEach(c => סנכרון_איש_קשר_למשתמש_Build6_2(c));
+  return true;
+}
+
+function קבלת_אנשי_קשר_עם_הרשאה_Build6_2() {
+  return readSheet_(SHEETS.CONTACTS).filter(c => {
+    const p = c["הרשאת מערכת"] || "ללא הרשאה";
+    return p && p !== "ללא הרשאה";
+  });
+}
+
+
+/* הוסר: מופע ישן של function קבלת_משתמש_נוכחי_Build6_1 — נשמרה הגרסה המאוחרת בקובץ */
+/***** Build 6.3 – הרשאות דרך השיוכים הקיימים + תיקוני שמירה סופיים *****/
+
+function התקנת_Build6_3_הרשאות_דרך_שיוכים() {
+  הוספת_עמודה_אם_חסרה_(SHEETS.CONTACTS, "הרשאת מערכת");
+  הוספת_עמודה_אם_חסרה_(SHEETS.CONTACTS, "פעיל במערכת");
+  הוספת_עמודה_אם_חסרה_(SHEETS.LINKS, "מורשה צפייה בפורטל");
+  הוספת_עמודה_אם_חסרה_(SHEETS.LINKS, "תפקיד / כובע");
+  ensureColumnTextFormat_(SHEETS.CONTACTS, "טלפון");
+  try { סנכרון_אנשי_קשר_לטבלת_משתמשים_Build6_2(); } catch (e) { Logger.log(e); }
+  log_("Build6.3", "הרשאות מחוברות לשיוכים קיימים");
+  return true;
+}
+
+
+/* הוסר: מופע ישן של function שמירת_טלפון_כטקסט_ — נשמרה הגרסה המאוחרת בקובץ */
+function שמירת_איש_קשר_Build6_3(data) {
+  validateRequired_(data.name, "שם מלא");
+
+  הוספת_עמודה_אם_חסרה_(SHEETS.CONTACTS, "הרשאת מערכת");
+  הוספת_עמודה_אם_חסרה_(SHEETS.CONTACTS, "פעיל במערכת");
+  ensureColumnTextFormat_(SHEETS.CONTACTS, "טלפון");
+
+  const old = data.id ? readSheet_(SHEETS.CONTACTS).find(c => c["מזהה איש קשר"] === data.id) : null;
+  const id = data.id || makeId_("איש");
+
+  const permissions = ["ללא הרשאה", "מנהל ראשי", "מנהל", "משתמש", "לקוח"];
+  const statuses = ["ליד חדש", "משקיע פוטנציאלי", "לקוח פעיל"];
+
+  let status = data.status || (old ? old["סטטוס לקוח"] : "") || "ליד חדש";
+  let permission = data.systemPermission || data.permission || (old ? old["הרשאת מערכת"] : "") || "ללא הרשאה";
+
+  // הגנה מפני בלבול של HTML/אימות: אם הרשאה נכנסה בטעות לסטטוס — מעבירים אותה למקום הנכון.
+  if (permissions.includes(status)) {
+    permission = status;
+    status = old && statuses.includes(old["סטטוס לקוח"]) ? old["סטטוס לקוח"] : "ליד חדש";
+  }
+
+  if (!statuses.includes(status)) status = "ליד חדש";
+  if (!permissions.includes(permission)) permission = "ללא הרשאה";
+
+  const row = {
+    "מזהה איש קשר": id,
+    "שם מלא": data.name,
+    "טלפון": שמירת_טלפון_כטקסט_(data.phone),
+    "אימייל": data.email || "",
+    "כתובת": data.address || "",
+    "מקור הגעה": data.source || "",
+    "סוג איש קשר": data.contactType || "",
+    "סטטוס לקוח": status,
+    "תגיות": data.tags || "",
+    "אחראי": data.owner || "",
+    "הרשאת מערכת": permission,
+    "פעיל במערכת": permission === "ללא הרשאה" ? "לא" : "כן",
+    "תאריך יצירה": data.created || (old ? old["תאריך יצירה"] : new Date()),
+    "עדכון אחרון": new Date()
+  };
+
+  upsert_ללא_אימות_(SHEETS.CONTACTS, "מזהה איש קשר", id, row);
+  סנכרון_איש_קשר_למשתמש_Build6_2(row);
+  log_("שמירת איש קשר", row["שם מלא"]);
+  return id;
+}
+
+
+/* הוסר: מופע ישן של function שמירת_שיוך — נשמרה הגרסה המאוחרת בקובץ */
+function פרויקטים_מותרים_למשתמש_Build6_3(userContactId) {
+  if (!userContactId) return [];
+  return readSheet_(SHEETS.LINKS)
+    .filter(l => l["מזהה איש קשר"] === userContactId && l["מורשה צפייה בפורטל"] === "כן")
+    .map(l => l["מזהה פרויקט"]);
+}
+
+function קבלת_משתמש_נוכחי_Build6_1() {
+  const email = (Session.getActiveUser().getEmail() || "").toLowerCase();
+  const contacts = readSheet_(SHEETS.CONTACTS);
+  const contact = contacts.find(c =>
+    String(c["אימייל"] || "").toLowerCase() === email &&
+    (c["הרשאת מערכת"] || "ללא הרשאה") !== "ללא הרשאה"
+  );
+
+  if (contact) {
+    const role = contact["הרשאת מערכת"] || "ללא הרשאה";
+    return {
+      email,
+      found: true,
+      id: contact["מזהה איש קשר"],
+      contactId: contact["מזהה איש קשר"],
+      name: contact["שם מלא"] || "",
+      role,
+      active: contact["פעיל במערכת"] || "כן",
+      allowedProjectIds: (role === "מנהל ראשי" || role === "מנהל") ? [] : פרויקטים_מותרים_למשתמש_Build6_3(contact["מזהה איש קשר"])
+    };
+  }
+
+  return { email, found: false, id: "", contactId: "", name: "", role: "ללא הרשאה", active: "לא", allowedProjectIds: [] };
+}
+
+
+/***** Build 7.0 – כניסה פנימית עם קוד למייל + Session עד התנתקות *****/
+
+const BUILD7_OWNER_EMAIL = "liberman600@gmail.com";
+const BUILD7_LOGIN_CODES_SHEET = "קודי כניסה";
+const BUILD7_SESSIONS_SHEET = "סשנים";
+
+function התקנת_Build7_כניסה_פנימית() {
+  const ss = getSS_();
+
+  יצירת_גיליון_אם_חסר_(ss, BUILD7_LOGIN_CODES_SHEET, [
+    "מזהה קוד",
+    "מייל",
+    "קוד",
+    "תפקיד",
+    "שם",
+    "תאריך יצירה",
+    "תאריך תפוגה",
+    "יצירה Timestamp",
+    "תפוגה Timestamp",
+    "פעיל",
+    "נוצל"
+  ]);
+
+  // אם הגיליון כבר היה קיים מגרסה קודמת — מוסיפים את עמודות ה-Timestamp בלי למחוק נתונים.
+  הוספת_עמודה_אם_חסרה_(BUILD7_LOGIN_CODES_SHEET, "יצירה Timestamp");
+  הוספת_עמודה_אם_חסרה_(BUILD7_LOGIN_CODES_SHEET, "תפוגה Timestamp");
+
+  יצירת_גיליון_אם_חסר_(ss, BUILD7_SESSIONS_SHEET, [
+    "Token",
+    "מייל",
+    "שם",
+    "תפקיד",
+    "מזהה איש קשר",
+    "תאריך יצירה",
+    "יצירה Timestamp",
+    "פעיל",
+    "עדכון אחרון"
+  ]);
+
+  הוספת_עמודה_אם_חסרה_(BUILD7_SESSIONS_SHEET, "יצירה Timestamp");
+
+  הוספת_עמודה_אם_חסרה_(SHEETS.CONTACTS, "הרשאת מערכת");
+  הוספת_עמודה_אם_חסרה_(SHEETS.CONTACTS, "פעיל במערכת");
+  הוספת_עמודה_אם_חסרה_(SHEETS.LINKS, "מורשה צפייה בפורטל");
+  ensureColumnTextFormat_(SHEETS.CONTACTS, "טלפון");
+
+  try { התקנת_Build6_3_הרשאות_דרך_שיוכים(); } catch (e) { Logger.log(e); }
+
+  log_("Build7", "כניסה פנימית הותקנה");
+  return true;
+}
+
+function נרמול_מייל_Build7_(email) {
+  return String(email || "").toLowerCase().trim();
+}
+
+
+
+function יצירת_קוד_6_ספרות_Build7_() {
+  return String(Math.floor(100000 + Math.random() * 900000));
+}
+
+function איתור_מורשה_לפי_מייל_Build7_(email) {
+  email = נרמול_מייל_Build7_(email);
+  if (!email) {
+    return { allowed: false, reason: "יש להזין כתובת מייל", email };
+  }
+
+  if (email === BUILD7_OWNER_EMAIL) {
+    return {
+      allowed: true,
+      email,
+      name: "אברהם",
+      role: "מנהל ראשי",
+      contactId: "",
+      isOwner: true
+    };
+  }
+
+  const contacts = readSheet_(SHEETS.CONTACTS);
+  const contact = contacts.find(c => נרמול_מייל_Build7_(c["אימייל"]) === email);
+
+  if (!contact) {
+    return { allowed: false, reason: "המייל לא רשום במערכת", email };
+  }
+
+  const role = contact["הרשאת מערכת"] || "ללא הרשאה";
+  const active = contact["פעיל במערכת"] || (role === "ללא הרשאה" ? "לא" : "כן");
+
+  if (!role || role === "ללא הרשאה") {
+    return { allowed: false, reason: "לא ניתנה הרשאת מערכת למייל זה", email };
+  }
+
+  if (active === "לא") {
+    return { allowed: false, reason: "המשתמש מושבת במערכת", email };
+  }
+
+  return {
+    allowed: true,
+    email,
+    name: contact["שם מלא"] || email,
+    role,
+    contactId: contact["מזהה איש קשר"] || "",
+    isOwner: false
+  };
+}
+
+
+/* הוסר: מופע ישן של function שליחת_קוד_כניסה_Build7 — נשמרה הגרסה המאוחרת בקובץ */
+function מספר_בטוח_(value) {
+  const n = Number(value);
+  return isNaN(n) ? 0 : n;
+}
+
+function אימות_קוד_כניסה_Build7(email, code) {
+  email = נרמול_מייל_Build7_(email);
+  code = String(code || "").trim();
+  if (!email || !code) return { ok: false, message: "יש להזין מייל וקוד" };
+
+  const user = איתור_מורשה_לפי_מייל_Build7_(email);
+  if (!user.allowed) return { ok: false, message: user.reason };
+
+  const rows = readSheet_(BUILD7_LOGIN_CODES_SHEET);
+  const matches = rows.filter(r =>
+    נרמול_מייל_Build7_(r["מייל"]) === email &&
+    String(r["קוד"] || "").trim() === code &&
+    String(r["פעיל"] || "") === "כן" &&
+    String(r["נוצל"] || "") !== "כן"
+  );
+
+  if (!matches.length) return { ok: false, message: "קוד שגוי או לא פעיל. אם ביקשת קוד חדש, יש להשתמש בקוד האחרון בלבד." };
+
+  // בוחרים את הקוד החדש ביותר לפי Timestamp מספרי, ולא לפי תאריך מפורמט מהגיליון.
+  matches.sort((a, b) => מספר_בטוח_(b["יצירה Timestamp"]) - מספר_בטוח_(a["יצירה Timestamp"]));
+  const latest = matches[0];
+
+  const expiresMs = מספר_בטוח_(latest["תפוגה Timestamp"]);
+  if (!expiresMs) {
+    latest["נוצל"] = "כן";
+    latest["פעיל"] = "לא";
+    upsert_(BUILD7_LOGIN_CODES_SHEET, "מזהה קוד", latest["מזהה קוד"], latest);
+    return { ok: false, message: "הקוד נוצר בגרסה ישנה של המערכת. יש לשלוח קוד חדש." };
+  }
+
+  if (Date.now() > expiresMs) {
+    latest["נוצל"] = "כן";
+    latest["פעיל"] = "לא";
+    upsert_(BUILD7_LOGIN_CODES_SHEET, "מזהה קוד", latest["מזהה קוד"], latest);
+    return { ok: false, message: "הקוד פג תוקף. יש לשלוח קוד חדש." };
+  }
+
+  latest["נוצל"] = "כן";
+  latest["פעיל"] = "לא";
+  upsert_(BUILD7_LOGIN_CODES_SHEET, "מזהה קוד", latest["מזהה קוד"], latest);
+
+  const token = "TOK-" + Utilities.getUuid();
+  const now = new Date();
+  appendObject_(BUILD7_SESSIONS_SHEET, {
+    "Token": token,
+    "מייל": email,
+    "שם": user.name,
+    "תפקיד": user.role,
+    "מזהה איש קשר": user.contactId || "",
+    "תאריך יצירה": now,
+    "יצירה Timestamp": now.getTime(),
+    "פעיל": "כן",
+    "עדכון אחרון": now
+  });
+
+  log_("כניסה למערכת", email + " | " + user.role);
+  return { ok: true, token, user };
+}
+
+function קבלת_משתמש_מסשן_Build7_(token) {
+  token = String(token || "").trim();
+  if (!token) return { allowed: false, reason: "לא נמצא Session פעיל" };
+
+  const session = readSheet_(BUILD7_SESSIONS_SHEET).find(s => s["Token"] === token && s["פעיל"] === "כן");
+  if (!session) return { allowed: false, reason: "Session לא פעיל או לא קיים" };
+
+  const email = נרמול_מייל_Build7_(session["מייל"]);
+  const user = איתור_מורשה_לפי_מייל_Build7_(email);
+  if (!user.allowed) return { allowed: false, reason: user.reason || "אין הרשאה", email };
+
+  session["עדכון אחרון"] = new Date();
+  upsert_(BUILD7_SESSIONS_SHEET, "Token", token, session);
+
+    return {
+    allowed: true,
+    email,
+    name: user.name || email || "",
+    role: String(user.role || user["הרשאת מערכת"] || user.permission || "").trim(),
+    contactId: user.contactId || "",
+    isOwner: !!user.isOwner,
+    token
+  };
+}
+
+function התנתקות_Build7(token) {
+  token = String(token || "").trim();
+  if (!token) return true;
+  const session = readSheet_(BUILD7_SESSIONS_SHEET).find(s => s["Token"] === token);
+  if (session) {
+    session["פעיל"] = "לא";
+    session["עדכון אחרון"] = new Date();
+    upsert_(BUILD7_SESSIONS_SHEET, "Token", token, session);
+  }
+  return true;
+}
+
+/***********************
+ * Build 8.0 – מערכת מלאה
+ * תוספות: הרשאות כרטיסיות, הרשאות פרטניות, גיבוי, לוג פעילות בסיסי, יומנים לפי סוג משימה
+ ***********************/
+
+function התקנת_Build8_הכל() {
+  try { התקנת_Build7_כניסה_פנימית(); } catch(e) { Logger.log(e); }
+  const ss = getSS_();
+
+  יצירת_גיליון_אם_חסר_(ss, "הגדרות_סוגי_משימות_יומן", [
+    "סוג משימה", "נכנס ליומן", "שם יומן", "מזהה יומן", "פעיל"
+  ]);
+
+  יצירת_גיליון_אם_חסר_(ss, "לוג פעולות", [
+    "תאריך ושעה", "משתמש", "מייל", "פעולה", "ישות", "מזהה ישות", "פירוט"
+  ]);
+
+  יצירת_גיליון_אם_חסר_(ss, "גיבויים", [
+    "תאריך ושעה", "משתמש", "שם גיבוי", "קישור"
+  ]);
+
+  // ברירות מחדל ליומנים לפי סוג משימה
+  const taskTypes = ["משימה", "שיחה", "פגישה"];
+  taskTypes.forEach(t => {
+    const exists = readSheet_("הגדרות_סוגי_משימות_יומן").find(r => r["סוג משימה"] === t);
+    if (!exists) {
+      appendObject_("הגדרות_סוגי_משימות_יומן", {
+        "סוג משימה": t,
+        "נכנס ליומן": t === "פגישה" ? "כן" : "לא",
+        "שם יומן": "יומן ראשי",
+        "מזהה יומן": CONFIG.CALENDAR_ID || "primary",
+        "פעיל": "כן"
+      });
+    }
+  });
+
+  log_("Build8", "התקנה מלאה הסתיימה");
+  return true;
+}
+
+function הרשאות_תפקיד_ברירת_מחדל_Build8() {
+  try { מילוי_הרשאות_תפקידים_Build6_(); } catch(e) { Logger.log(e); }
+  return readSheet_("הרשאות_תפקידים");
+}
+
+
+/* הוסר: מופע ישן של function שמירת_הרשאות_תפקיד_Build8 — נשמרה הגרסה המאוחרת בקובץ */
+function מחיקת_תפקיד_Build8(role) {
+  if (["מנהל ראשי", "מנהל", "משתמש", "לקוח"].includes(role)) {
+    throw new Error("לא ניתן למחוק תפקיד מערכת בסיסי");
+  }
+  deleteById_("הרשאות_תפקידים", "תפקיד", role);
+  return true;
+}
+
+
+/* הוסר: מופע ישן של function שמירת_הרשאה_פרטנית_לאיש_קשר_Build8 — נשמרה הגרסה המאוחרת בקובץ */
+function מחיקת_הרשאה_פרטנית_Build8(id) {
+  deleteById_("הרשאות_משתמשים", "מזהה הרשאה", id);
+  return true;
+}
+
+function קבלת_יומן_לסוג_משימה_Build8_(taskType) {
+  const rows = readSheet_("הגדרות_סוגי_משימות_יומן");
+  const row = rows.find(r => r["סוג משימה"] === taskType && r["פעיל"] !== "לא");
+  if (!row || row["נכנס ליומן"] !== "כן") return "";
+  return row["מזהה יומן"] || CONFIG.CALENDAR_ID || "primary";
+}
+
+function שמירת_הגדרת_יומן_לסוג_משימה_Build8(data) {
+  validateRequired_(data.taskType, "סוג משימה");
+  const row = {
+    "סוג משימה": data.taskType,
+    "נכנס ליומן": data.sync || "לא",
+    "שם יומן": data.calendarName || "",
+    "מזהה יומן": data.calendarId || "",
+    "פעיל": data.active || "כן"
+  };
+  upsert_("הגדרות_סוגי_משימות_יומן", "סוג משימה", row["סוג משימה"], row);
+  return true;
+}
+
+function גיבוי_מערכת_Build8(userName) {
+  const ss = getSS_();
+  const file = DriveApp.getFileById(CONFIG.SPREADSHEET_ID);
+  const name = "גיבוי CRM בית חכם - " + Utilities.formatDate(new Date(), CONFIG.TIMEZONE, "yyyy-MM-dd HH:mm");
+  const copy = file.makeCopy(name);
+  appendObject_("גיבויים", {
+    "תאריך ושעה": new Date(),
+    "משתמש": userName || "מערכת",
+    "שם גיבוי": name,
+    "קישור": copy.getUrl()
+  });
+  log_("גיבוי מערכת", name);
+  return { ok: true, name: name, url: copy.getUrl() };
+}
+
+function רישום_פעולה_Build8(user, action, entity, entityId, details) {
+  try {
+    appendObject_("לוג פעולות", {
+      "תאריך ושעה": new Date(),
+      "משתמש": user && user.name ? user.name : "מערכת",
+      "מייל": user && user.email ? user.email : "",
+      "פעולה": action || "",
+      "ישות": entity || "",
+      "מזהה ישות": entityId || "",
+      "פירוט": details || ""
+    });
+  } catch(e) { Logger.log(e); }
+  return true;
+}
+
+function התקנת_Build8_1_כניסה_יציבה() {
+  התקנת_Build8_הכל();
+  התקנת_Build7_כניסה_פנימית();
+  log_("Build8.1", "מנגנון כניסה יציב הותקן");
+  return true;
+}
+
+
+/***********************
+ * Build 9.0 – ייצוב מלא
+ * תיקונים: מיתוג מלא לכותרת, לוגו Drive/URL, כניסה יציבה, הרשאות גישה, טלפון כטקסט.
+ ***********************/
+function התקנת_Build9_יציב_מלא() {
+  try { התקנת_Build8_הכל(); } catch(e) { Logger.log(e); }
+  try { התקנת_Build7_כניסה_פנימית(); } catch(e) { Logger.log(e); }
+  try { התקנת_Build6_3_הרשאות_דרך_שיוכים(); } catch(e) { Logger.log(e); }
+  try { ensureColumnTextFormat_(SHEETS.CONTACTS, "טלפון"); } catch(e) { Logger.log(e); }
+  try { הוספת_עמודה_אם_חסרה_(SHEETS.CONTACTS, "הרשאת מערכת"); } catch(e) { Logger.log(e); }
+  try { הוספת_עמודה_אם_חסרה_(SHEETS.CONTACTS, "פעיל במערכת"); } catch(e) { Logger.log(e); }
+  log_("Build9", "התקנה יציבה מלאה הסתיימה");
+  return true;
+}
+
+function נרמול_גובה_לוגו_(h) {
+  h = String(h || "40").trim();
+  return /^\d+$/.test(h) ? h + "px" : h;
+}
+
+/***********************
+ * Build 10.0 – איחוד יציב וסופי
+ * מטרות: התאמת V2 ל-Index, מיתוג מלא, כניסה פנימית, הרשאות דרך אנשי קשר/שיוכים,
+ * טלפון כטקסט, ושמירה על הנתונים הקיימים ללא מחיקה.
+ ***********************/
+
+
+/* הוסר: מופע ישן של function התקנת_Build10_מאוחד_יציב — נשמרה הגרסה המאוחרת בקובץ */
+function מילוי_הרשאות_תפקידים_Build10_() {
+  const rows = [
+    ["מנהל ראשי", "כן", "כן", "כן", "כן", "כן", "כן", "כן", "כן", "כן"],
+    ["מנהל", "כן", "כן", "כן", "כן", "כן", "לא", "לא", "לא", "כן"],
+    ["משתמש", "כן", "משויך", "משויך", "שלי", "פנימי", "לא", "לא", "לא", "לא"],
+    ["לקוח", "לא", "לקוח בלבד", "לא", "לא", "לקוח בלבד", "לא", "לא", "לא", "לא"]
+  ];
+
+  rows.forEach(r => upsert_("הרשאות_תפקידים", "תפקיד", r[0], {
+    "תפקיד": r[0],
+    "דשבורד": r[1],
+    "פרויקטים": r[2],
+    "אנשי קשר": r[3],
+    "משימות": r[4],
+    "הערות": r[5],
+    "הגדרות": r[6],
+    "משתמשים": r[7],
+    "הרשאות": r[8],
+    "מחיקה": r[9]
+  }));
+}
+
+function השלמת_מיתוג_ברירת_מחדל_Build10_() {
+  const rows = readSheet_("מיתוג");
+  const keys = {};
+  rows.forEach(r => { if (r["מפתח"]) keys[r["מפתח"]] = true; });
+  const defaults = [
+    ["שם מערכת", "מערכת חכמה בית חכם"],
+    ["צבע ראשי", "#1f4e79"],
+    ["צבע משני", "#e8eef5"],
+    ["לוגו", ""],
+    ["גובה לוגו", "40"],
+    ["מיקום לוגו", "ימין"]
+  ];
+  defaults.forEach(x => {
+    if (!keys[x[0]]) appendObject_("מיתוג", { "מפתח": x[0], "ערך": x[1] });
+  });
+}
+
+function מפת_מיתוג_Build10_() {
+  const out = {};
+  readSheet_("מיתוג").forEach(r => {
+    if (r["מפתח"]) out[String(r["מפתח"]).trim()] = r["ערך"] || "";
+  });
+  return out;
+}
+
+function מיתוג_מערכת_Build7_() {
+  const branding = {};
+
+  try {
+    readSheet_("מיתוג").forEach(r => {
+      const key = String(r["מפתח"] || "").trim();
+      if (key) branding[key] = r["ערך"] || "";
+    });
+  } catch (e) {}
+
+  return {
+    name: branding["שם מערכת"] || CONFIG.SYSTEM_NAME,
+    primaryColor: branding["צבע ראשי"] || "#1f4e79",
+    secondaryColor: branding["צבע משני"] || "#e8eef5",
+    logo: branding["לוגו"] || "",
+    logoHeight: branding["גובה לוגו"] || "40",
+    logoPosition: branding["מיקום לוגו"] || "ימין"
+  };
+}
+
+function קבלת_הרשאות_Build6() {
+  const links = readSheet_(SHEETS.LINKS).map(l => ({
+    "מזהה שיוך": l["מזהה שיוך"],
+    "מזהה משתמש": l["מזהה איש קשר"],
+    "מזהה פרויקט": l["מזהה פרויקט"],
+    "תפקיד בפרויקט": l["תפקיד / כובע"] || l["תפקיד"] || "",
+    "פעיל": l["מורשה צפייה בפורטל"] === "כן" ? "כן" : "לא"
+  }));
+  return {
+    rolePermissions: readSheet_("הרשאות_תפקידים"),
+    userPermissions: readSheet_("הרשאות_משתמשים"),
+    projectUserLinks: links
+  };
+}
+
+function שמירת_טלפון_כטקסט_(phone) {
+  let p = String(phone || "").trim();
+  if (!p) return "";
+  p = p.replace(/[^\d+]/g, "");
+  if (/^5\d{8}$/.test(p)) p = "0" + p;
+  if (/^\+9725\d{8}$/.test(p)) p = "0" + p.slice(4);
+  if (/^9725\d{8}$/.test(p)) p = "0" + p.slice(3);
+  return p;
+}
+
+function קבלת_נתוני_מערכת_מלאים_Build10_() {
+  const projects = readSheet_(SHEETS.PROJECTS);
+  const contacts = readSheet_(SHEETS.CONTACTS);
+  const links = readSheet_(SHEETS.LINKS);
+  const tasks = readSheet_(SHEETS.TASKS);
+  const notes = readSheet_(SHEETS.TASK_NOTES);
+  const settingsRows = readSheet_(SHEETS.SETTINGS);
+  const settings = activeSettings_(settingsRows);
+
+  let categories = [], realSettings = {}, fields = [], permissions = {};
+  try { categories = קבלת_קטגוריות_לבחירה_Build4_4(); } catch(e) { Logger.log(e); }
+  try { realSettings = קבלת_הגדרות_לממשק_Build4_3(); } catch(e) { Logger.log(e); }
+  try { fields = readSheet_("הגדרות_שדות"); } catch(e) { Logger.log(e); }
+  try { permissions = קבלת_הרשאות_Build6(); } catch(e) { Logger.log(e); }
+
+  return {
+    system: מיתוג_מערכת_Build7_(),
+    projects,
+    contacts,
+    links,
+    tasks,
+    notes,
+    settings,
+    categories,
+    realSettings,
+    fields,
+    permissions,
+    dashboard: calcDashboard_(projects, contacts, tasks)
+  };
+}
+
+function קבלת_נתונים_Build3() {
+  return קבלת_נתוני_מערכת_מלאים_Build10_();
+}
+
+function התקנת_Build10_משימות_ויומן() {
+  הבטח_עמודה_אם_חסרה_(SHEETS.TASKS, "שעת סיום");
+  הבטח_עמודה_אם_חסרה_(SHEETS.TASKS, "כניסה ליומן");
+  log_("התקנת שדרוג משימות ויומן", "התווספו שעת סיום וכניסה ליומן");
+  return true;
+}
+
+/***********************
+ * Build10 Safe Patch – התקנה לא דורסת מיתוג + פונקציות קטגוריות חסרות
+ * מטרות:
+ * 1. רענון דף לא מוחק כלום.
+ * 2. גם הרצת התקנה לא דורסת מיתוג קיים.
+ * 3. פונקציות שדרוג קטגוריות קיימות כדי שלא יופיעו ReferenceError בלוג.
+ ***********************/
+
+function התקנת_Build10_מאוחד_יציב() {
+  const ss = getSS_();
+
+  // יצירת גליונות בלבד אם חסרים — ללא מחיקה וללא דריסת ערכים קיימים
+  יצירת_גיליון_אם_חסר_(ss, "הגדרות_ערכים", ["מזהה ערך", "סוג ערך", "סדר קטגוריה", "ערך", "פעיל", "סדר ערך"]);
+  יצירת_גיליון_אם_חסר_(ss, "הגדרות_שדות", ["מזהה שדה", "ישות", "שם שדה", "סוג שדה", "סוג ערך קשור", "חובה", "פעיל", "מוצג ברשימה", "מוצג בכרטיס", "ניתן לחיפוש", "ניתן לסינון", "סדר תצוגה"]);
+  יצירת_גיליון_אם_חסר_(ss, "משתמשים", ["מזהה משתמש", "שם", "מייל", "תפקיד", "פעיל", "מזהה איש קשר"]);
+  יצירת_גיליון_אם_חסר_(ss, "מיתוג", ["מפתח", "ערך"]);
+  יצירת_גיליון_אם_חסר_(ss, "יומנים", ["מזהה רשומה", "שם יומן", "מזהה יומן", "פעיל"]);
+  יצירת_גיליון_אם_חסר_(ss, "הרשאות_תפקידים", ["תפקיד", "דשבורד", "פרויקטים", "אנשי קשר", "משימות", "הערות", "הגדרות", "משתמשים", "הרשאות", "מחיקה"]);
+  יצירת_גיליון_אם_חסר_(ss, "הרשאות_משתמשים", ["מזהה הרשאה", "מזהה משתמש", "השתמש בהרשאות תפקיד", "דשבורד", "פרויקטים", "אנשי קשר", "משימות", "הערות", "הגדרות", "משתמשים", "הרשאות", "מחיקה", "רואה רק משויך", "פעיל"]);
+  יצירת_גיליון_אם_חסר_(ss, "קודי כניסה", ["מזהה קוד", "מייל", "קוד", "תפקיד", "שם", "תאריך יצירה", "תאריך תפוגה", "יצירה Timestamp", "תפוגה Timestamp", "פעיל", "נוצל"]);
+  יצירת_גיליון_אם_חסר_(ss, "סשנים", ["Token", "מייל", "שם", "תפקיד", "מזהה איש קשר", "תאריך יצירה", "יצירה Timestamp", "פעיל", "עדכון אחרון"]);
+  יצירת_גיליון_אם_חסר_(ss, "הגדרות_סוגי_משימות_יומן", ["סוג משימה", "נכנס ליומן", "שם יומן", "מזהה יומן", "פעיל"]);
+  יצירת_גיליון_אם_חסר_(ss, "לוג פעולות", ["תאריך ושעה", "משתמש", "מייל", "פעולה", "ישות", "מזהה ישות", "פירוט"]);
+  יצירת_גיליון_אם_חסר_(ss, "גיבויים", ["תאריך ושעה", "משתמש", "שם גיבוי", "קישור"]);
+
+  // עמודות חסרות בלבד — ללא שינוי ערכים קיימים
+  הוספת_עמודה_אם_חסרה_(SHEETS.CONTACTS, "הרשאת מערכת");
+  הוספת_עמודה_אם_חסרה_(SHEETS.CONTACTS, "פעיל במערכת");
+  הוספת_עמודה_אם_חסרה_(SHEETS.LINKS, "מורשה צפייה בפורטל");
+  הוספת_עמודה_אם_חסרה_(SHEETS.LINKS, "תפקיד / כובע");
+  הבטח_עמודה_אם_חסרה_(SHEETS.TASKS, "שעת סיום");
+  הבטח_עמודה_אם_חסרה_(SHEETS.TASKS, "כניסה ליומן");
+  ensureColumnTextFormat_(SHEETS.CONTACTS, "טלפון");
+
+  // מילוי ברירות מחדל רק אם חסר
+  מילוי_הרשאות_תפקידים_Build10_();
+  השלמת_מיתוג_ברירת_מחדל_Build10_();
+  השלמת_יומנים_ברירת_מחדל_Build10_SAFE_();
+  השלמת_סוגי_משימות_יומן_Build10_SAFE_();
+  try { שדרוג_קטגוריות_Build4_5(); } catch (e) { Logger.log(e); }
+  try { סנכרון_אנשי_קשר_לטבלת_משתמשים_Build6_2(); } catch (e) { Logger.log(e); }
+
+  log_("Build10", "התקנה בטוחה הושלמה — ללא דריסת מיתוג קיים");
+  return true;
+}
+
+function השלמת_יומנים_ברירת_מחדל_Build10_SAFE_() {
+  const rows = readSheet_("יומנים");
+  const exists = rows.some(r => String(r["שם יומן"] || "").trim() === "יומן ראשי");
+  if (!exists) {
+    appendObject_("יומנים", {
+      "מזהה רשומה": makeId_("יומן"),
+      "שם יומן": "יומן ראשי",
+      "מזהה יומן": CONFIG.CALENDAR_ID || "primary",
+      "פעיל": "כן"
+    });
+  }
+}
+
+function השלמת_סוגי_משימות_יומן_Build10_SAFE_() {
+  const defaults = [
+    { type: "משימה", calendar: "לא" },
+    { type: "שיחה", calendar: "לא" },
+    { type: "פגישה", calendar: "כן" }
+  ];
+
+  const rows = readSheet_("הגדרות_סוגי_משימות_יומן");
+  defaults.forEach(x => {
+    const exists = rows.some(r => String(r["סוג משימה"] || "").trim() === x.type);
+    if (!exists) {
+      appendObject_("הגדרות_סוגי_משימות_יומן", {
+        "סוג משימה": x.type,
+        "נכנס ליומן": x.calendar,
+        "שם יומן": "יומן ראשי",
+        "מזהה יומן": CONFIG.CALENDAR_ID || "primary",
+        "פעיל": "כן"
+      });
+    }
+  });
+}
+
+function שמירת_מיתוג_Build4_3(data) {
+  const items = [
+    ["שם מערכת", data.systemName || data.name || ""],
+    ["צבע ראשי", data.primaryColor || ""],
+    ["צבע משני", data.secondaryColor || ""],
+    ["לוגו", data.logo || ""],
+    ["גובה לוגו", data.logoHeight || "40"],
+    ["מיקום לוגו", data.logoPosition || "ימין"]
+  ];
+
+  const sh = getSS_().getSheetByName("מיתוג");
+  if (!sh) throw new Error("לא נמצא גיליון מיתוג");
+
+  sh.clearContents();
+  sh.getRange(1, 1, 1, 2).setValues([["מפתח", "ערך"]]);
+  sh.getRange(2, 1, items.length, 2).setValues(items);
+  styleHeader_(sh);
+
+  return true;
+}
+
+function שדרוג_קטגוריות_Build4_5() {
+  החלפת_שם_קטגוריה_("תפקיד / כובע", "תפקיד");
+  איפוס_סדר_פנימי_לקטגוריות_();
+  הוספת_קטגוריות_ברירת_מחדל_בלי_מסמכים_();
+  return true;
+}
+
+function החלפת_שם_קטגוריה_(oldName, newName) {
+  const sh = getSS_().getSheetByName("הגדרות_ערכים");
+  if (!sh) return true;
+  const data = sh.getDataRange().getValues();
+  if (data.length < 2) return true;
+  const headers = data[0];
+  const typeCol = headers.indexOf("סוג ערך");
+  if (typeCol === -1) return true;
+
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][typeCol] === oldName) {
+      sh.getRange(i + 1, typeCol + 1).setValue(newName);
+    }
+  }
+  return true;
+}
+
+function איפוס_סדר_פנימי_לקטגוריות_() {
+  const sh = getSS_().getSheetByName("הגדרות_ערכים");
+  if (!sh) return true;
+  const data = sh.getDataRange().getValues();
+  if (data.length < 2) return true;
+  const headers = data[0];
+  const typeCol = headers.indexOf("סוג ערך");
+  const itemOrderCol = headers.indexOf("סדר ערך");
+  if (typeCol === -1 || itemOrderCol === -1) return true;
+
+  const groups = {};
+  for (let i = 1; i < data.length; i++) {
+    const type = data[i][typeCol];
+    if (!type) continue;
+    if (!groups[type]) groups[type] = [];
+    groups[type].push({ row: i + 1, order: Number(data[i][itemOrderCol] || 999) });
+  }
+
+  Object.keys(groups).forEach(type => {
+    groups[type]
+      .sort((a, b) => a.order - b.order)
+      .forEach((item, index) => sh.getRange(item.row, itemOrderCol + 1).setValue(index + 1));
+  });
+  return true;
+}
+
+function הוספת_קטגוריות_ברירת_מחדל_בלי_מסמכים_() {
+  const defaults = [
+    { category: "סוג פגישה", items: ["פרונטלי", "טלפון", "זום", "באתר הפרויקט"] },
+    { category: "סטטוס פגישה", items: ["מתוכננת", "בוצעה", "נדחתה", "בוטלה", "לא הגיע"] }
+  ];
+
+  defaults.forEach(cat => {
+    cat.items.forEach((item, index) => {
+      שמירת_אפשרות_בחירה_Build10({
+        category: cat.category,
+        item: item,
+        order: index + 1,
+        active: "כן"
+      });
+    });
+  });
+  return true;
+}
+
+function שמירת_אפשרות_בחירה_Build10(data) {
+  validateRequired_(data.category, "קטגוריה");
+  validateRequired_(data.item || data.value, "אפשרות בחירה");
+
+  const category = data.category;
+  const item = data.item || data.value;
+  const rows = readSheet_("הגדרות_ערכים");
+  const existing = data.id
+    ? rows.find(r => r["מזהה ערך"] === data.id)
+    : rows.find(r => r["סוג ערך"] === category && r["ערך"] === item);
+
+  const categoryOrder = data.categoryOrder || קבלת_סדר_קטגוריה_קיים_או_חדש_Build10_(category);
+  const itemOrder = data.order || data.itemOrder || קבלת_סדר_הבא_לאפשרות_בחירה_Build10_(category);
+
+  const row = {
+    "מזהה ערך": existing ? existing["מזהה ערך"] : makeId_("ערך"),
+    "סוג ערך": category,
+    "סדר קטגוריה": categoryOrder,
+    "ערך": item,
+    "פעיל": data.active || (existing ? existing["פעיל"] : "כן"),
+    "סדר ערך": itemOrder
+  };
+
+  upsert_("הגדרות_ערכים", "מזהה ערך", row["מזהה ערך"], row);
+  return true;
+}
+
+function קבלת_סדר_קטגוריה_קיים_או_חדש_Build10_(category) {
+  const rows = readSheet_("הגדרות_ערכים");
+  const existing = rows.find(r => r["סוג ערך"] === category && r["סדר קטגוריה"]);
+  if (existing) return Number(existing["סדר קטגוריה"] || 999);
+  const max = rows.reduce((m, r) => Math.max(m, Number(r["סדר קטגוריה"] || 0)), 0);
+  return max + 1;
+}
+
+function קבלת_סדר_הבא_לאפשרות_בחירה_Build10_(category) {
+  const rows = readSheet_("הגדרות_ערכים").filter(r => r["סוג ערך"] === category);
+  const max = rows.reduce((m, r) => Math.max(m, Number(r["סדר ערך"] || 0)), 0);
+  return max + 1;
+}
+
+/***********************
+ * Build10 Task Card Fix – כרטיס משימה + החזרה לפעיל
+ ***********************/
+
+/* הוסר: מופע ישן של function החזרת_משימה_לפעילה — נשמרה הגרסה המאוחרת בקובץ */
+
+/* הוסר: מופע ישן של function קבלת_כרטיס_משימה_Build10 — נשמרה הגרסה המאוחרת בקובץ */
+function התקנת_Build10_כרטיס_משימה_ויומן() {
+  הבטח_עמודה_אם_חסרה_(SHEETS.TASKS, "שעת סיום");
+  הבטח_עמודה_אם_חסרה_(SHEETS.TASKS, "כניסה ליומן");
+  log_("Build10", "כרטיס משימה ויומן הותקנו");
+  return true;
+}
+
+
+/***********************
+ * Build 11 – לוח שנה בדשבורד + עדיפויות + יומן Google משודרג
+ * נבנה כתוספת יציבה על הגרסה העובדת: לא דורס מיתוג/כניסה/הרשאות קיימים.
+ ***********************/
+function התקנת_Build11_לוח_שנה_ועדיפויות() {
+  הבטח_עמודה_אם_חסרה_(SHEETS.TASKS, "שעת סיום");
+  הבטח_עמודה_אם_חסרה_(SHEETS.TASKS, "כניסה ליומן");
+  הבטח_עמודה_אם_חסרה_(SHEETS.TASKS, "הערות למשימה");
+  הבטח_עמודה_אם_חסרה_(SHEETS.TASKS, "עדיפות");
+  הבטח_עמודה_אם_חסרה_(SHEETS.TASKS, "משתתפי יומן");
+  הבטח_עמודה_אם_חסרה_(SHEETS.TASKS, "מזהה אירוע ביומן");
+  try { הוספת_אפשרות_בחירה_בטוח_Build11_("עדיפות", "נמוכה", 1); } catch(e) { Logger.log(e); }
+  try { הוספת_אפשרות_בחירה_בטוח_Build11_("עדיפות", "רגילה", 2); } catch(e) { Logger.log(e); }
+  try { הוספת_אפשרות_בחירה_בטוח_Build11_("עדיפות", "גבוהה", 3); } catch(e) { Logger.log(e); }
+  try { הוספת_אפשרות_בחירה_בטוח_Build11_("עדיפות", "דחופה", 4); } catch(e) { Logger.log(e); }
+  log_("Build11", "לוח שנה, עדיפויות ויומן Google הותקנו");
+  return true;
+}
+
+function הוספת_אפשרות_בחירה_בטוח_Build11_(category, value, order) {
+  const ss = getSS_();
+  let sh = ss.getSheetByName("הגדרות_ערכים");
+  if (!sh) {
+    sh = ss.insertSheet("הגדרות_ערכים");
+    sh.setRightToLeft(true);
+    sh.getRange(1,1,1,7).setValues([["מזהה ערך","סוג ערך","ערך","פעיל","סדר קטגוריה","סדר ערך","סדר"]]);
+    try { styleHeader_(sh); } catch(e) {}
+  }
+  const data = sh.getDataRange().getValues();
+  const headers = data[0];
+  const typeCol = headers.indexOf("סוג ערך");
+  const valueCol = headers.indexOf("ערך");
+  if (typeCol === -1 || valueCol === -1) return false;
+  for (let i=1;i<data.length;i++) {
+    if (String(data[i][typeCol]) === category && String(data[i][valueCol]) === value) return true;
+  }
+  const rowObj = {
+    "מזהה ערך": makeId_("ערך"),
+    "סוג ערך": category,
+    "ערך": value,
+    "פעיל": "כן",
+    "סדר קטגוריה": קבלת_סדר_קטגוריה_קיים_או_חדש_Build11_(category),
+    "סדר ערך": order || 999,
+    "סדר": order || 999
+  };
+  const row = headers.map(h => rowObj[h] !== undefined ? rowObj[h] : "");
+  sh.appendRow(row);
+  return true;
+}
+
+function קבלת_סדר_קטגוריה_קיים_או_חדש_Build11_(category) {
+  const rows = readSheet_("הגדרות_ערכים");
+  const existing = rows.find(r => r["סוג ערך"] === category && r["סדר קטגוריה"]);
+  if (existing) return Number(existing["סדר קטגוריה"] || 999);
+  return rows.reduce((m,r)=>Math.max(m, Number(r["סדר קטגוריה"] || 0)), 0) + 1;
+}
+
+function נרמול_רשימת_מיילים_Build11_(emails) {
+  const seen = {};
+  String(emails || "")
+    .split(/[;,\n]+/)
+    .map(e => String(e || "").trim().toLowerCase())
+    .filter(e => e && e.includes("@"))
+    .forEach(e => seen[e] = true);
+  return Object.keys(seen).join(",");
+}
+
+function הוספת_מוזמנים_לאירוע_Build11_(ev, guests) {
+  if (!guests) return true;
+  guests.split(",").forEach(email => {
+    email = email.trim();
+    if (!email) return;
+    try { ev.addGuest(email); } catch(e) {}
+  });
+  return true;
+}
+
+
+/* הוסר: מופע ישן של function עדכון_תזכורות_אירוע_Build11_ — נשמרה הגרסה המאוחרת בקובץ */
+
+/* הוסר: מופע ישן של function קבלת_כרטיס_משימה_Build10 — נשמרה הגרסה המאוחרת בקובץ */
+/***********************
+ * Build 11.1 – תיקוני יומן ומשימות
+ * שמירה אינה שולחת זימון; זימון/עדכון נשלח רק מכפתור ייעודי בכרטיס המשימה.
+ ***********************/
+
+
+/* הוסר: מופע ישן של function שליחת_זימון_יומן_למשימה_Build11 — נשמרה הגרסה המאוחרת בקובץ */
+function סנכרון_מוזמנים_לאירוע_Build11_(ev, guests) {
+  const wanted = {};
+  נרמול_רשימת_מיילים_Build11_(guests).split(",").filter(Boolean).forEach(e => wanted[e] = true);
+
+  try {
+    ev.getGuestList().forEach(g => {
+      const email = String(g.getEmail() || "").toLowerCase().trim();
+      if (email && !wanted[email]) {
+        try { ev.removeGuest(email); } catch(e) {}
+      }
+    });
+  } catch(e) {}
+
+  Object.keys(wanted).forEach(email => {
+    try { ev.addGuest(email); } catch(e) {}
+  });
+  return true;
+}
+
+function עדכון_תזכורות_אירוע_Build11_(ev) {
+  try { ev.removeAllReminders(); } catch(e) {}
+  try { ev.addEmailReminder(60); } catch(e) {}
+  try { ev.addPopupReminder(60); } catch(e) {}
+  return true;
+}
+
+function התקנת_Build11_1_לוח_ויומן_מתוקן() {
+  התקנת_Build11_לוח_שנה_ועדיפויות();
+  log_("Build11.1", "תוקנו לוח חודש, תאריך עברי, משתתפי יומן ועדכון ידני");
+  return true;
+}
+
+
+/***********************
+ * Build 11.2 – תיקון אבטחת הרשאות מלא
+ * מטרות:
+ * 1. לקוח = צפייה בלבד.
+ * 2. הסתרת דשבורד לפי הרשאות תפקיד.
+ * 3. מניעת העלאת הרשאות מעל דרגת המשתמש המחובר גם בצד השרת.
+ * 4. כל פעולת כתיבה חייבת Token תקף.
+ ***********************/
+function התקנת_Build11_2_אבטחת_הרשאות() {
+  try { התקנת_Build11_1_לוח_ויומן_מתוקן(); } catch(e) { Logger.log(e); }
+  try { מילוי_הרשאות_תפקידים_Build10_(); } catch(e) { Logger.log(e); }
+  log_("Build11.2", "אבטחת הרשאות הותקנה");
+  return true;
+}
+
+function דרגת_הרשאה_Build11_2_(role) {
+  const r = String(role || "ללא הרשאה").trim();
+  const map = {"ללא הרשאה":0, "לקוח":1, "משתמש":2, "מנהל":3, "מנהל ראשי":4};
+  return map[r] === undefined ? 0 : map[r];
+}
+
+function הרשאה_תפקיד_Build11_2_(role, key) {
+  const defaults = {
+    "מנהל ראשי": {"דשבורד":"כן","פרויקטים":"כן","אנשי קשר":"כן","משימות":"כן","הערות":"כן","הגדרות":"כן","משתמשים":"כן","הרשאות":"כן","מחיקה":"כן"},
+    "מנהל": {"דשבורד":"כן","פרויקטים":"כן","אנשי קשר":"כן","משימות":"כן","הערות":"כן","הגדרות":"לא","משתמשים":"לא","הרשאות":"לא","מחיקה":"כן"},
+    "משתמש": {"דשבורד":"כן","פרויקטים":"משויך","אנשי קשר":"משויך","משימות":"שלי","הערות":"פנימי","הגדרות":"לא","משתמשים":"לא","הרשאות":"לא","מחיקה":"לא"},
+    "לקוח": {"דשבורד":"לא","פרויקטים":"לקוח בלבד","אנשי קשר":"לא","משימות":"לא","הערות":"לקוח בלבד","הגדרות":"לא","משתמשים":"לא","הרשאות":"לא","מחיקה":"לא"}
+  };
+  try {
+    const row = readSheet_("הרשאות_תפקידים").find(r => String(r["תפקיד"] || "") === String(role || ""));
+    if (row && row[key] !== undefined && row[key] !== "") return row[key];
+  } catch(e) {}
+  return defaults[role] && defaults[role][key] !== undefined ? defaults[role][key] : "לא";
+}
+
+
+/* הוסר: מופע ישן של function פעולות_מותרות_Build11_2_ — נשמרה הגרסה המאוחרת בקובץ */
+function משתמש_מפועל_Build11_2_(token) {
+  const user = קבלת_משתמש_מסשן_Build7_(token || "");
+  if (!user || !user.allowed) throw new Error("אין הרשאה או שהחיבור פג. יש להתחבר מחדש.");
+  user.role = String(user.role || "").trim();
+  return user;
+}
+
+function דרוש_כתיבה_Build11_2_(token) {
+  const user = משתמש_מפועל_Build11_2_(token);
+  const perms = פעולות_מותרות_Build11_2_(user);
+  if (!perms.canCreate && !perms.canEdit) throw new Error("אין לך הרשאה לבצע שינוי במערכת");
+  return user;
+}
+
+function דרוש_מחיקה_Build11_2_(token) {
+  const user = משתמש_מפועל_Build11_2_(token);
+
+  if (!user || !user.role) {
+    throw new Error("אין הרשאה");
+  }
+
+  if (String(user.role).trim() === "לקוח") {
+    throw new Error("אין לך הרשאה למחיקה");
+  }
+
+  return user;
+}
+
+function חילוץ_מזהה_וטוקן_Build11_2_(arg) {
+  if (arg && typeof arg === "object") return { id: arg.id || arg.taskId || arg.projectId || arg.contactId || arg.linkId || "", token: arg.authToken || arg.token || "" };
+  return { id: arg, token: "" };
+}
+
+function משתמש_רשאי_לפרויקט_Build11_2_(user, projectId) {
+  const role = String(user.role || "").trim();
+
+  if (user.isOwner === true || role === "מנהל ראשי") return true;
+
+  const contactId = String(user.contactId || "").trim();
+  const userName = String(user.name || "").trim();
+
+  const project = readSheet_(SHEETS.PROJECTS)
+    .find(p => String(p["מזהה פרויקט"]) === String(projectId));
+
+  if (!project) return false;
+
+  if (
+    String(project["יוצר"] || "").trim() === userName ||
+    String(project["אחראי"] || "").trim() === userName
+  ) {
+    return true;
+  }
+
+  const allowed = פרויקטים_מותרים_למשתמש_Build6_3(contactId);
+  return allowed.includes(projectId);
+}
+
+function משתמש_רשאי_לאיש_קשר_Build11_2_(user, contactId) {
+  const role = String(user.role || "").trim();
+  if (user.isOwner === true || role === "מנהל ראשי" || role === "מנהל") return true;
+  if (user.contactId && user.contactId === contactId) return true;
+  const allowed = new Set(פרויקטים_מותרים_למשתמש_Build6_3(user.contactId || ""));
+  return readSheet_(SHEETS.LINKS).some(l => l["מזהה איש קשר"] === contactId && allowed.has(l["מזהה פרויקט"]));
+}
+
+function סינון_נתונים_לפי_משתמש_Build7_(data, user) {
+  const role = String((user && user.role) || "").trim();
+  const isSuperAdmin = user && (user.isOwner === true || role === "מנהל ראשי");
+  const isManager = role === "מנהל";
+  const isClient = role === "לקוח";
+  const contactId = String((user && user.contactId) || "").trim();
+  const userName = String((user && user.name) || "").trim();
+
+  const out = Object.assign({}, data);
+  out.auth = data.auth || { allowed: true };
+  out.system = data.system || מיתוג_מערכת_Build7_();
+  out.currentUser = data.currentUser || user || {};
+  out.currentUser.role = role;
+  out.canSeeSettings = isSuperAdmin;
+
+  if (isSuperAdmin) {
+    out.dashboard = calcDashboard_(out.projects || [], out.contacts || [], out.tasks || []);
+    return out;
+  }
+
+  if (isManager || role === "משתמש") {
+    const linkedProjectIds = פרויקטים_מותרים_למשתמש_Build6_3(contactId);
+
+    out.projects = (data.projects || []).filter(p =>
+      linkedProjectIds.includes(p["מזהה פרויקט"]) ||
+      String(p["יוצר"] || "").trim() === userName ||
+      String(p["אחראי"] || "").trim() === userName
+    );
+
+    const allowedProjectIds = out.projects.map(p => p["מזהה פרויקט"]).filter(Boolean);
+
+    out.links = (data.links || []).filter(l =>
+      allowedProjectIds.includes(l["מזהה פרויקט"])
+    );
+
+    const allowedContactIds = [...new Set(out.links.map(l => l["מזהה איש קשר"]).filter(Boolean))];
+
+    out.contacts = (data.contacts || []).filter(c =>
+      allowedContactIds.includes(c["מזהה איש קשר"]) ||
+      c["מזהה איש קשר"] === contactId
+    );
+
+    out.tasks = (data.tasks || []).filter(t =>
+      allowedProjectIds.includes(t["מזהה פרויקט"]) ||
+      t["מזהה איש קשר"] === contactId ||
+      String(t["אחראי"] || "").trim() === userName ||
+      String(t["יוצר"] || "").trim() === userName
+    );
+
+    out.notes = data.notes || [];
+    out.canSeeSettings = false;
+    out.dashboard = calcDashboard_(out.projects || [], out.contacts || [], out.tasks || []);
+    return out;
+  }
+
+  if (isClient) {
+    const clientLinks = (data.links || []).filter(l =>
+      l["מזהה איש קשר"] === contactId &&
+      String(l["מורשה צפייה בפורטל"] || "").trim() === "כן"
+    );
+
+    const allowedProjectIds = clientLinks.map(l => l["מזהה פרויקט"]).filter(Boolean);
+
+    out.projects = (data.projects || []).filter(p =>
+      allowedProjectIds.includes(p["מזהה פרויקט"])
+    );
+    out.links = clientLinks;
+    out.contacts = (data.contacts || []).filter(c => c["מזהה איש קשר"] === contactId);
+    out.tasks = [];
+    out.notes = [];
+    out.realSettings = {};
+    out.categories = [];
+    out.fields = [];
+    out.permissions = {};
+    out.canSeeSettings = false;
+    out.dashboard = calcDashboard_(out.projects || [], out.contacts || [], out.tasks || []);
+    return out;
+  }
+
+  out.projects = [];
+  out.contacts = [];
+  out.links = [];
+  out.tasks = [];
+  out.notes = [];
+  out.realSettings = {};
+  out.categories = [];
+  out.fields = [];
+  out.permissions = {};
+  out.canSeeSettings = false;
+  out.dashboard = calcDashboard_([], [], []);
+  return out;
+}
+
+
+/* הוסר: מופע ישן של function שמירת_פרויקט — נשמרה הגרסה המאוחרת בקובץ */
+function שמירת_שיוך(data) {
+  דרוש_כתיבה_Build11_2_(data && data.authToken);
+  validateRequired_(data.projectId, "פרויקט");
+  validateRequired_(data.contactId, "איש קשר");
+  const existing = readSheet_(SHEETS.LINKS).find(l => l["מזהה פרויקט"] === data.projectId && l["מזהה איש קשר"] === data.contactId);
+  if (existing && existing["מזהה שיוך"] !== data.id) throw new Error("איש הקשר כבר משויך לפרויקט הזה");
+  const row = {
+    "מזהה שיוך": data.id || makeId_("שיך"),
+    "מזהה פרויקט": data.projectId,
+    "מזהה איש קשר": data.contactId,
+    "תפקיד / כובע": data.role || "",
+    "מורשה צפייה בפורטל": data.portal || "לא",
+    "תאריך יצירה": data.created || (existing ? existing["תאריך יצירה"] : new Date()),
+    "עדכון אחרון": new Date()
+  };
+  upsert_(SHEETS.LINKS, "מזהה שיוך", row["מזהה שיוך"], row);
+  log_("שמירת שיוך", row["מזהה פרויקט"] + " ↔ " + row["מזהה איש קשר"]);
+  return true;
+}
+
+
+function BH20_העברה_לארכיון_(sheetName, idField, id, user, label){
+  const rows = readSheet_(sheetName);
+  const row = rows.find(r => String(r[idField] || "") === String(id || ""));
+  if (!row) return true;
+
+  הוספת_עמודה_אם_חסרה_(sheetName, "בארכיון");
+  הוספת_עמודה_אם_חסרה_(sheetName, "תאריך ארכיון");
+  הוספת_עמודה_אם_חסרה_(sheetName, "הועבר לארכיון על ידי");
+
+  const archivedAt = new Date();
+  const archivedBy = BH_FINAL_userName_(user);
+
+  row["בארכיון"] = "כן";
+  row["תאריך ארכיון"] = archivedAt;
+  row["הועבר לארכיון על ידי"] = archivedBy;
+  row["עדכון אחרון"] = archivedAt;
+
+  upsert_ללא_אימות_(sheetName, idField, id, row);
+
+  if(idField === "מזהה פרויקט"){
+    הוספת_עמודה_אם_חסרה_(SHEETS.TASKS, "בארכיון");
+    הוספת_עמודה_אם_חסרה_(SHEETS.TASKS, "תאריך ארכיון");
+    הוספת_עמודה_אם_חסרה_(SHEETS.TASKS, "הועבר לארכיון על ידי");
+
+    const projectName = String(row["שם פרויקט"] || "").trim();
+
+    const tasks = readSheet_(SHEETS.TASKS).filter(t => {
+      const taskProject = String(t["מזהה פרויקט"] || "").trim();
+      return taskProject === String(id || "").trim() || taskProject === projectName;
+    });
+
+    tasks.forEach(t => {
+      const taskId = String(t["מזהה משימה"] || "").trim();
+      if(!taskId) return;
+
+      t["בארכיון"] = "כן";
+      t["תאריך ארכיון"] = archivedAt;
+      t["הועבר לארכיון על ידי"] = archivedBy;
+      t["עדכון אחרון"] = archivedAt;
+
+      upsert_ללא_אימות_(SHEETS.TASKS, "מזהה משימה", taskId, t);
+    });
+
+    log_("העברת משימות פרויקט לארכיון", projectName + " / " + tasks.length);
+  }
+
+  log_("העברה לארכיון - " + label, id);
+  return true;
+}
+
+function מחיקת_פרויקט(arg) {
+  const x = חילוץ_מזהה_וטוקן_Build11_2_(arg);
+  const user = דרוש_מחיקה_Build11_2_(x.token);
+
+  const project = readSheet_(SHEETS.PROJECTS)
+    .find(p => String(p["מזהה פרויקט"]) === String(x.id));
+
+  if (!project) return true;
+
+  const role = String(user.role || "");
+  const currentUser = BH_FINAL_userName_(user);
+
+  if (!(user.isOwner === true || role === "מנהל ראשי")) {
+    if (role !== "מנהל") throw new Error("אין לך הרשאה להעביר פרויקט לארכיון");
+    if (String(project["יוצר"] || "") !== currentUser) {
+      throw new Error("ניתן להעביר לארכיון רק פרויקט שאתה יצרת");
+    }
+  }
+
+  return BH20_העברה_לארכיון_(SHEETS.PROJECTS, "מזהה פרויקט", x.id, user, "פרויקט");
+}
+
+function מחיקת_איש_קשר(arg) {
+  const x = חילוץ_מזהה_וטוקן_Build11_2_(arg);
+  const user = דרוש_מחיקה_Build11_2_(x.token);
+
+  const contact = readSheet_(SHEETS.CONTACTS)
+    .find(c => String(c["מזהה איש קשר"]) === String(x.id));
+
+  if (!contact) return true;
+
+  const role = String(user.role || "");
+  const currentUser = BH_FINAL_userName_(user);
+
+  if (!(user.isOwner === true || role === "מנהל ראשי")) {
+    if (role !== "מנהל") throw new Error("אין לך הרשאה להעביר איש קשר לארכיון");
+    if (String(contact["יוצר"] || "") !== currentUser) {
+      throw new Error("ניתן להעביר לארכיון רק איש קשר שאתה יצרת");
+    }
+  }
+
+  return BH20_העברה_לארכיון_(SHEETS.CONTACTS, "מזהה איש קשר", x.id, user, "איש קשר");
+}
+
+function מחיקת_שיוך(arg) {
+  const x = חילוץ_מזהה_וטוקן_Build11_2_(arg);
+  דרוש_מחיקה_Build11_2_(x.token);
+
+  deleteById_(SHEETS.LINKS, "מזהה שיוך", x.id);
+
+  log_("מחיקת שיוך", x.id);
+  return true;
+}
+
+function מחיקת_משימה(arg) {
+  const x = חילוץ_מזהה_וטוקן_Build11_2_(arg);
+  const user = דרוש_מחיקה_Build11_2_(x.token);
+
+  const task = readSheet_(SHEETS.TASKS)
+    .find(t => String(t["מזהה משימה"]) === String(x.id));
+
+  if (!task) return true;
+
+  const role = String(user.role || "");
+  const currentUser = BH_FINAL_userName_(user);
+
+  if (!(user.isOwner === true || role === "מנהל ראשי")) {
+    if (String(task["יוצר"] || "") !== currentUser) {
+      throw new Error("ניתן להעביר לארכיון רק משימה שאתה יצרת");
+    }
+  }
+
+  return BH20_העברה_לארכיון_(SHEETS.TASKS, "מזהה משימה", x.id, user, "משימה");
+}
+
+function סימון_משימה_בוצעה(arg) { const x = חילוץ_מזהה_וטוקן_Build11_2_(arg); דרוש_כתיבה_Build11_2_(x.token); const task = readSheet_(SHEETS.TASKS).find(t => t["מזהה משימה"] === x.id); if (!task) throw new Error("המשימה לא נמצאה"); task["סטטוס"] = "בוצע"; task["עדכון אחרון"] = new Date(); upsert_(SHEETS.TASKS, "מזהה משימה", x.id, task); log_("סימון משימה בוצעה", x.id); return true; }
+function החזרת_משימה_לפעילה(arg) { const x = חילוץ_מזהה_וטוקן_Build11_2_(arg); דרוש_כתיבה_Build11_2_(x.token); const task = readSheet_(SHEETS.TASKS).find(t => t["מזהה משימה"] === x.id); if (!task) throw new Error("המשימה לא נמצאה"); task["סטטוס"] = "פתוח"; task["עדכון אחרון"] = new Date(); upsert_(SHEETS.TASKS, "מזהה משימה", x.id, task); log_("החזרת משימה לפעילה", x.id); return true; }
+
+function קבלת_כרטיס_משימה_Build10(arg) {
+  const x = חילוץ_מזהה_וטוקן_Build11_2_(arg);
+  const user = משתמש_מפועל_Build11_2_(x.token);
+
+  const tasks = readSheet_(SHEETS.TASKS);
+  const projects = readSheet_(SHEETS.PROJECTS);
+  const contacts = readSheet_(SHEETS.CONTACTS);
+  const notes = readSheet_(SHEETS.TASK_NOTES);
+
+  const task = tasks.find(t => t["מזהה משימה"] === x.id);
+  if (!task) throw new Error("המשימה לא נמצאה");
+
+  const isArchived = String(task["בארכיון"] || "") === "כן";
+
+  if (task["מזהה פרויקט"] && !משתמש_רשאי_לפרויקט_Build11_2_(user, task["מזהה פרויקט"])) {
+    throw new Error("אין הרשאה לצפייה במשימה זו");
+  }
+
+  if (!task["מזהה פרויקט"] && task["מזהה איש קשר"] && !משתמש_רשאי_לאיש_קשר_Build11_2_(user, task["מזהה איש קשר"])) {
+    throw new Error("אין הרשאה לצפייה במשימה זו");
+  }
+
+  const project = projects.find(p => p["מזהה פרויקט"] === task["מזהה פרויקט"]) || {};
+  const contact = contacts.find(c => c["מזהה איש קשר"] === task["מזהה איש קשר"]) || {};
+
+  return {
+    task,
+    projectName: project["שם פרויקט"] || "",
+    contactName: contact["שם מלא"] || "",
+    notes: notes.filter(n => n["מזהה משימה"] === x.id),
+    readOnly: isArchived
+  };
+}
+
+function שליחת_זימון_יומן_למשימה_Build11(arg) { const x = חילוץ_מזהה_וטוקן_Build11_2_(arg); דרוש_כתיבה_Build11_2_(x.token); const rows = readSheet_(SHEETS.TASKS); const task = rows.find(t => t["מזהה משימה"] === x.id); if (!task) throw new Error("המשימה לא נמצאה"); if (task["כניסה ליומן"] !== "כן") throw new Error("המשימה אינה מסומנת לכניסה ליומן"); if (!task["תאריך"] || !task["שעה"]) throw new Error("כדי לשלוח זימון ליומן חובה למלא תאריך ושעה"); if (task["סוג משימה"] === "פגישה" && !task["שעת סיום"]) throw new Error("בפגישה חובה למלא שעת סיום"); const before = task["מזהה אירוע ביומן"] || ""; task["מזהה אירוע ביומן"] = syncCalendarEvent_(task); task["עדכון אחרון"] = new Date(); upsert_(SHEETS.TASKS, "מזהה משימה", x.id, task); return { ok: true, eventId: task["מזהה אירוע ביומן"], message: before ? "עדכון הזימון נשלח/עודכן ביומן" : "הזימון נשלח למשתתפים" }; }
+
+
+/* הוסר: מופע ישן של function שמירת_הרשאות_תפקיד_Build8 — נשמרה הגרסה המאוחרת בקובץ */
+/***********************
+ * Build 11.3 – תיקון הרשאות ו-Session
+ * מטרה: שמירת הרשאות תפקיד/פרטניות רק עם סשן תקף והרשאת ניהול.
+ ***********************/
+function התקנת_Build11_3_אבטחת_הרשאות_וסשן() {
+  try { התקנת_Build11_2_אבטחת_הרשאות(); } catch(e) { Logger.log(e); }
+  log_("התקנת Build11.3", "תוקן Session בשמירת הרשאות");
+  return true;
+}
+
+function פעולות_מותרות_Build11_2_(user) {
+  const role = String(user && user.role || "").trim();
+  const isAdmin = user && (user.isOwner === true || role === "מנהל ראשי");
+  const isClient = role === "לקוח";
+  const hasRole = !!role;
+
+  return {
+    canSeeDashboard: isAdmin || הרשאה_תפקיד_Build11_2_(role, "דשבורד") !== "לא",
+    canSeeSettings: isAdmin || הרשאה_תפקיד_Build11_2_(role, "הגדרות") !== "לא",
+    canManagePermissions: isAdmin || הרשאה_תפקיד_Build11_2_(role, "הרשאות") === "כן",
+    canCreate: !isClient && hasRole,
+    canEdit: !isClient && hasRole,
+    canDelete: !isClient && (isAdmin || הרשאה_תפקיד_Build11_2_(role, "מחיקה") === "כן"),
+    readOnly: isClient
+  };
+}
+
+function שמירת_הרשאות_תפקיד_Build8(data) {
+  const actor = משתמש_מפועל_Build11_2_(data && data.authToken);
+  if (!פעולות_מותרות_Build11_2_(actor).canManagePermissions) {
+    throw new Error("אין לך הרשאה לערוך הרשאות");
+  }
+
+  validateRequired_(data.role, "תפקיד");
+
+  const actorRank = דרגת_הרשאה_Build11_2_(actor.role);
+  const targetRank = דרגת_הרשאה_Build11_2_(data.role);
+
+  if (targetRank > actorRank) {
+    throw new Error("אין לך הרשאה לערוך תפקיד גבוה משלך");
+  }
+
+  if (actor.role !== "מנהל ראשי" && data.role === "מנהל ראשי") {
+    throw new Error("רק מנהל ראשי יכול לערוך הרשאות מנהל ראשי");
+  }
+
+  const row = {
+    "תפקיד": data.role,
+    "דשבורד": data.dashboard || "לא",
+    "פרויקטים": data.projects || "לא",
+    "אנשי קשר": data.contacts || "לא",
+    "משימות": data.tasks || "לא",
+    "הערות": data.notes || "לא",
+    "הגדרות": data.settings || "לא",
+    "משתמשים": data.users || "לא",
+    "הרשאות": data.permissions || "לא",
+    "מחיקה": data.deletePermission || "לא"
+  };
+
+  upsert_("הרשאות_תפקידים", "תפקיד", row["תפקיד"], row);
+  log_("שמירת הרשאות תפקיד", row["תפקיד"]);
+  return true;
+}
+
+function שמירת_הרשאה_פרטנית_לאיש_קשר_Build8(data) {
+  const actor = משתמש_מפועל_Build11_2_(data && data.authToken);
+  if (!פעולות_מותרות_Build11_2_(actor).canManagePermissions) {
+    throw new Error("אין לך הרשאה לערוך הרשאות פרטניות");
+  }
+
+  validateRequired_(data.contactId, "איש קשר");
+  const contact = readSheet_(SHEETS.CONTACTS).find(c => c["מזהה איש קשר"] === data.contactId);
+  if (!contact) throw new Error("איש הקשר לא נמצא");
+
+  const actorRank = דרגת_הרשאה_Build11_2_(actor.role);
+  const targetRank = דרגת_הרשאה_Build11_2_(contact["הרשאת מערכת"] || "ללא הרשאה");
+  if (targetRank > actorRank) {
+    throw new Error("אין לך הרשאה לערוך הרשאות של משתמש בדרגה גבוהה משלך");
+  }
+
+  const row = {
+    "מזהה הרשאה": data.id || makeId_("הרשאה"),
+    "מזהה משתמש": data.contactId,
+    "השתמש בהרשאות תפקיד": data.useRolePermissions || "כן",
+    "דשבורד": data.dashboard || "",
+    "פרויקטים": data.projects || "",
+    "אנשי קשר": data.contacts || "",
+    "משימות": data.tasks || "",
+    "הערות": data.notes || "",
+    "הגדרות": data.settings || "",
+    "משתמשים": data.users || "",
+    "הרשאות": data.permissions || "",
+    "מחיקה": data.deletePermission || "",
+    "רואה רק משויך": data.onlyAssigned || "לא",
+    "פעיל": data.active || "כן"
+  };
+
+  upsert_("הרשאות_משתמשים", "מזהה הרשאה", row["מזהה הרשאה"], row);
+  log_("שמירת הרשאה פרטנית", contact["שם מלא"] || data.contactId);
+  return true;
+}
+
+
+/***********************
+ * Build 11.4 – סגירת חשיפת נתונים בכרטיסים ללקוח/צפייה בלבד
+ ***********************/
+function התקנת_Build11_4_סגירת_הרשאות_צפייה() {
+  try { התקנת_Build11_3_אבטחת_הרשאות_וסשן(); } catch(e) { Logger.log(e); }
+  log_("התקנת Build11.4", "סגירת חשיפת רשימות הוספה בכרטיסים למשתמשי צפייה בלבד");
+  return true;
+}
+
+function כרטיס_פרויקט(arg) {
+  const x = חילוץ_מזהה_וטוקן_Build11_2_(arg);
+  const user = משתמש_מפועל_Build11_2_(x.token);
+  const actions = פעולות_מותרות_Build11_2_(user);
+
+  if (!משתמש_רשאי_לפרויקט_Build11_2_(user, x.id)) {
+    throw new Error("אין הרשאה לצפייה בפרויקט זה");
+  }
+
+  const projects = readSheet_(SHEETS.PROJECTS);
+  const contacts = readSheet_(SHEETS.CONTACTS);
+  const links = readSheet_(SHEETS.LINKS);
+  const tasks = readSheet_(SHEETS.TASKS);
+  const notes = readSheet_(SHEETS.TASK_NOTES);
+
+  const project = projects.find(p => p["מזהה פרויקט"] === x.id);
+  if (!project) throw new Error("הפרויקט לא נמצא");
+
+  const isArchived = String(project["בארכיון"] || "") === "כן";
+
+  const projectLinks = links.filter(l => l["מזהה פרויקט"] === x.id).map(l => {
+    const c = contacts.find(c => c["מזהה איש קשר"] === l["מזהה איש קשר"]) || {};
+    return {
+      linkId: l["מזהה שיוך"],
+      contactId: l["מזהה איש קשר"],
+      name: c["שם מלא"] || "",
+      phone: c["טלפון"] || "",
+      type: c["סוג איש קשר"] || "",
+      role: l["תפקיד / כובע"] || "",
+      portal: l["מורשה צפייה בפורטל"] || "לא"
+    };
+  });
+
+  const allowedContactIds = projectLinks.map(l => l.contactId);
+
+  const projectTasks = tasks.filter(t => t["מזהה פרויקט"] === x.id).map(t => ({
+    ...t,
+    notes: notes.filter(n => n["מזהה משימה"] === t["מזהה משימה"])
+  }));
+
+  return {
+    project,
+    links: projectLinks,
+    tasks: projectTasks,
+    allContacts: !isArchived && actions.canEdit
+  ? contacts.filter(c => String(c["בארכיון"] || "") !== "כן")
+  : [],
+    allowedContactIds,
+    readOnly: isArchived || actions.readOnly === true || actions.canEdit === false
+  };
+}
+
+function כרטיס_איש_קשר(arg) {
+  const x = חילוץ_מזהה_וטוקן_Build11_2_(arg);
+  const user = משתמש_מפועל_Build11_2_(x.token);
+  const actions = פעולות_מותרות_Build11_2_(user);
+
+  const contacts = readSheet_(SHEETS.CONTACTS);
+  const projects = readSheet_(SHEETS.PROJECTS);
+  const links = readSheet_(SHEETS.LINKS);
+  const tasks = readSheet_(SHEETS.TASKS);
+  const notes = readSheet_(SHEETS.TASK_NOTES);
+
+  const contact = contacts.find(c => c["מזהה איש קשר"] === x.id);
+  if (!contact) throw new Error("איש הקשר לא נמצא");
+
+  const isArchived = String(contact["בארכיון"] || "") === "כן";
+
+  if (!actions.canEdit && user.contactId !== x.id) {
+    throw new Error("אין הרשאה לצפייה באיש קשר זה");
+  }
+
+  const contactLinks = links.filter(l => l["מזהה איש קשר"] === x.id).map(l => {
+    const p = projects.find(p => p["מזהה פרויקט"] === l["מזהה פרויקט"]) || {};
+    return {
+      linkId: l["מזהה שיוך"],
+      projectId: l["מזהה פרויקט"],
+      name: p["שם פרויקט"] || "",
+      city: p["עיר"] || "",
+      status: p["סטטוס"] || "",
+      role: l["תפקיד / כובע"] || "",
+      portal: l["מורשה צפייה בפורטל"] || "לא"
+    };
+  });
+
+  const contactTasks = tasks.filter(t => t["מזהה איש קשר"] === x.id).map(t => ({
+    ...t,
+    notes: notes.filter(n => n["מזהה משימה"] === t["מזהה משימה"])
+  }));
+
+  return {
+    contact,
+    links: contactLinks,
+    tasks: contactTasks,
+    allProjects: !isArchived && actions.canEdit
+  ? projects.filter(p => String(p["בארכיון"] || "") !== "כן")
+  : [],
+    readOnly: isArchived || actions.readOnly === true || actions.canEdit === false
+  };
+}
+
+/***********************
+ * Build 12 – Modern UI + idle logout install marker
+ * שינויי העיצוב והניתוק האוטומטי נמצאים בצד ה-HTML.
+ ***********************/
+function התקנת_Build12_מודרני_סופי() {
+  try { התקנת_Build11_5_הקשחת_אבטחה_ושיוכים(); } catch (e) { Logger.log(e); }
+  log_("התקנת Build12", "עיצוב מודרני, דף בית בכניסה, ניתוק אוטומטי לאחר שעה");
+  return true;
+}
+
+/** Build 12.1 – Modern UI polish installer (keeps existing data) */
+function התקנת_Build12_1_ליטוש_מודרני() {
+  try {
+    if (typeof התקנת_Build12_מודרני_סופי === 'function') {
+      התקנת_Build12_מודרני_סופי();
+    } else if (typeof התקנת_Build11_5_הקשחת_אבטחה_ושיוכים === 'function') {
+      התקנת_Build11_5_הקשחת_אבטחה_ושיוכים();
+    }
+  } catch (e) {
+    Logger.log(e);
+  }
+  return true;
+}
+
+
+/** Build 12.2 – UI final polish installer (HTML/CSS only; keeps logic and data unchanged) */
+function התקנת_Build12_2_ליטוש_UI_סופי() {
+  try {
+    if (typeof התקנת_Build12_1_ליטוש_מודרני === 'function') {
+      התקנת_Build12_1_ליטוש_מודרני();
+    } else if (typeof התקנת_Build12_מודרני_סופי === 'function') {
+      התקנת_Build12_מודרני_סופי();
+    }
+  } catch (e) {
+    Logger.log(e);
+  }
+  log_("התקנת Build12.2", "ליטוש UI סופי: שם מערכת בכותרת, לוגו מיושר, תפריט וכרטיסים משופרים");
+  return true;
+}
+
+
+/***********************
+ * Build 13 – Performance
+ * האצה בטוחה: Cache פנימי לקריאות גיליונות בתוך אותה הרצת Apps Script,
+ * ונתוני ליבה לרענון נקודתי אחרי שמירה.
+ ***********************/
+function התקנת_Build13_ביצועים() {
+  try { התקנת_Build12_2_ליטוש_UI_סופי(); } catch(e) { Logger.log(e); }
+  log_("התקנת Build13", "שיפור ביצועים: readSheet cache + רענון ליבה");
+  return true;
+}
+
+var __BH_READ_CACHE__ = {};
+function איפוס_מטמון_קריאה_Build13_() {
+  __BH_READ_CACHE__ = {};
+}
+
+/***********************
+ * Build 13.2 – Lazy Load אמיתי + מדידת ביצועים
+ ***********************/
+function התקנת_Build13_2_טעינה_עצלה_וביצועים() {
+  try { התקנת_Build13_ביצועים(); } catch(e) { Logger.log(e); }
+  log_("Build13.2", "טעינה עצלה ומדידת ביצועים הותקנו");
+  return true;
+}
+
+function מדידת_ביצועים_עטיפה_Build13_2_(label, fn) {
+  const start = Date.now();
+  try {
+    const result = fn();
+    Logger.log("PERF " + label + ": " + (Date.now() - start) + "ms");
+    return result;
+  } catch (e) {
+    Logger.log("PERF ERROR " + label + ": " + (Date.now() - start) + "ms | " + e);
+    throw e;
+  }
+}
+
+function קבלת_נתוני_פתיחה_Build13_2(token) {
+  return מדידת_ביצועים_עטיפה_Build13_2_("קבלת_נתוני_פתיחה_Build13_2", function(){
+    איפוס_מטמון_קריאה_Build13_();
+    const user = קבלת_משתמש_מסשן_Build7_(token);
+    if (!user || !user.allowed) {
+      return { auth: { allowed: false, reason: user && user.reason || "אין הרשאה" }, system: מיתוג_מערכת_Build7_() };
+    }
+
+    const projects = readSheet_(SHEETS.PROJECTS);
+    const contacts = readSheet_(SHEETS.CONTACTS);
+    const links = readSheet_(SHEETS.LINKS);
+    const tasks = readSheet_(SHEETS.TASKS);
+
+    let data = {
+      system: מיתוג_מערכת_Build7_(),
+      projects, contacts, links, tasks,
+      notes: [],
+      dashboard: calcDashboard_(projects, contacts, tasks),
+      auth: { allowed: true },
+      currentUser: user,
+      lazy: true
+    };
+    data = סינון_נתונים_לפי_משתמש_Build7_(data, user);
+
+    // החזרת פתיחה קלה: לא מחזירים את כל מאגרי הפרויקטים/אנשי הקשר לטבלאות.
+    // משימות מתוארכות נשארות כדי שלוח הפעילות בדשבורד יעבוד מיד.
+    const datedTasks = (data.tasks || []).filter(t => t["תאריך"]);
+    return {
+      auth: data.auth,
+      system: data.system,
+      currentUser: data.currentUser,
+      canSeeSettings: data.canSeeSettings,
+      canSeeDashboard: data.canSeeDashboard,
+      canCreate: data.canCreate,
+      canEdit: data.canEdit,
+      canDelete: data.canDelete,
+      readOnly: data.readOnly,
+      accessNotice: data.accessNotice || "",
+      dashboard: data.dashboard || {},
+      tasks: datedTasks,
+      projects: [],
+      contacts: [],
+      links: [],
+      realSettings: {},
+      categories: [],
+      fields: [],
+      permissions: {},
+      loadedModules: {dashboard:true}
+    };
+  });
+}
+
+
+
+function קבלת_מודול_Build13_2(token, moduleName) {
+  return מדידת_ביצועים_עטיפה_Build13_2_("קבלת_מודול_Build13_2 " + moduleName, function(){
+    איפוס_מטמון_קריאה_Build13_();
+    const user = קבלת_משתמש_מסשן_Build7_(token);
+    if (!user || !user.allowed) return { auth: { allowed: false, reason: user && user.reason || "אין הרשאה" } };
+
+    const module = String(moduleName || "");
+    let data = {
+      system: מיתוג_מערכת_Build7_(),
+      projects: readSheet_(SHEETS.PROJECTS),
+      contacts: readSheet_(SHEETS.CONTACTS),
+      links: readSheet_(SHEETS.LINKS),
+      tasks: readSheet_(SHEETS.TASKS),
+      notes: [],
+      dashboard: {},
+      auth: { allowed: true },
+      currentUser: user
+    };
+    data = סינון_נתונים_לפי_משתמש_Build7_(data, user);
+
+    const out = {
+      auth: { allowed: true },
+      currentUser: data.currentUser,
+      canSeeSettings: data.canSeeSettings,
+      canSeeDashboard: data.canSeeDashboard,
+      canCreate: data.canCreate,
+      canEdit: data.canEdit,
+      canDelete: data.canDelete,
+      readOnly: data.readOnly,
+      module: module
+    };
+
+    if (module === "projects") {
+      out.projects = data.projects || [];
+      out.categories = קבלת_קטגוריות_לבחירה_Build4_4();
+      out.realSettings = קבלת_הגדרות_לממשק_Build4_3();
+      return out;
+    }
+    if (module === "contacts") {
+      out.contacts = data.contacts || [];
+      out.categories = קבלת_קטגוריות_לבחירה_Build4_4();
+      out.realSettings = קבלת_הגדרות_לממשק_Build4_3();
+      return out;
+    }
+    if (module === "tasks") {
+      out.tasks = data.tasks || [];
+      out.projects = data.projects || [];
+      out.contacts = data.contacts || [];
+      out.links = data.links || [];
+      out.categories = קבלת_קטגוריות_לבחירה_Build4_4();
+      out.realSettings = קבלת_הגדרות_לממשק_Build4_3();
+      return out;
+    }
+    if (module === "settings") {
+      if (!data.canSeeSettings) throw new Error("אין לך הרשאה להגדרות");
+      const full = קבלת_נתונים_Build7(token);
+      full.module = "settings";
+      return full;
+    }
+    return out;
+  });
+}
+
+function קבלת_נתוני_ליבה_Build13(token) {
+  return קבלת_נתונים_Build7(token);
+}
+
+
+function התקנת_Build13_3_ייצוב_אחרי_טעינה_עצלה() {
+  try { התקנת_Build13_2_טעינה_עצלה_וביצועים(); } catch(e) { Logger.log(e); }
+  return true;
+}
+
+/***********************
+ * Final patch – Meeting location + duration
+ * מוסיף מיקום ומשך פגישה למשימות מסוג פגישה, ושולח את המיקום ליומן Google.
+ ***********************/
+function התקנת_Final_מיקום_ומשך_פגישה() {
+  try { התקנת_Build13_3_ייצוב_אחרי_טעינה_עצלה(); } catch(e) { Logger.log(e); }
+  ["שעת סיום", "כניסה ליומן", "הערות למשימה", "עדיפות", "משתתפי יומן", "מזהה אירוע ביומן", "מיקום", "משך פגישה"].forEach(h => הבטח_עמודה_אם_חסרה_(SHEETS.TASKS, h));
+  log_("התקנת Final מיקום ומשך פגישה", "נוספו מיקום ומשך פגישה למשימות");
+  return true;
+}
+
+function חישוב_שעת_סיום_מטקסט_(dateValue, startTime, minutes) {
+  const start = buildDateTime_(dateValue, startTime);
+  const end = new Date(start.getTime() + Number(minutes || 60) * 60 * 1000);
+  return Utilities.formatDate(end, CONFIG.TIMEZONE, "HH:mm");
+}
+
+function buildTaskEndDateTime_(task, start) {
+  if (task["סוג משימה"] === "פגישה") {
+    if (task["שעת סיום"]) {
+      const end = buildDateTime_(task["תאריך"], task["שעת סיום"]);
+      if (end <= start) throw new Error("שעת סיום חייבת להיות אחרי שעת התחלה");
+      return end;
+    }
+    const minutes = Number(task["משך פגישה"] || 60);
+    return new Date(start.getTime() + minutes * 60 * 1000);
+  }
+
+  const minutes = ברירת_מחדל_משך_משימה_(task["סוג משימה"]);
+  return new Date(start.getTime() + minutes * 60 * 1000);
+}
+
+function syncCalendarEvent_(task) {
+  const calendarId = task["מזהה יומן"] || CONFIG.CALENDAR_ID || "primary";
+
+  const cal = CalendarApp.getCalendarById(calendarId);
+  if (!cal) throw new Error("לא נמצא יומן Google");
+
+  const start = buildDateTime_(task["תאריך"], task["שעה"]);
+  const end = buildTaskEndDateTime_(task, start);
+
+  const title = בניית_כותרת_אירוע_יומן_(task);
+
+  if (task["מזהה אירוע ביומן"]) {
+    try {
+      const ev = cal.getEventById(task["מזהה אירוע ביומן"]);
+
+      if (ev) {
+        ev.setTitle(title);
+        ev.setTime(start, end);
+        ev.setDescription("נוצר / עודכן אוטומטית ממערכת CRM");
+        return ev.getId();
+      }
+    } catch (e) {}
+  }
+
+  const ev = cal.createEvent(title, start, end, {
+    description: "נוצר אוטומטית ממערכת CRM"
+  });
+
+  return ev.getId();
+}
+
+/***********************
+ * FINAL PATCH – UI + stable performance + meeting cleanup
+ * Added after FINAL_MEETING_LOCATION_DURATION.
+ ***********************/
+
+function התקנת_Final_UI_ביצועים_ומפגש() {
+  try { התקנת_Final_מיקום_ומשך_פגישה(); } catch(e) { Logger.log(e); }
+  try { התקנת_Build13_3_ייצוב_אחרי_טעינה_עצלה(); } catch(e) { Logger.log(e); }
+  try { הבטח_עמודה_אם_חסרה_(SHEETS.TASKS, "שעת סיום"); } catch(e) { Logger.log(e); }
+  try { הבטח_עמודה_אם_חסרה_(SHEETS.TASKS, "מיקום"); } catch(e) { Logger.log(e); }
+  try { הבטח_עמודה_אם_חסרה_(SHEETS.TASKS, "משך פגישה"); } catch(e) { Logger.log(e); }
+  try { log_("Final UI Performance Meeting", "התקנה הושלמה"); } catch(e) {}
+  return true;
+}
+
+var __BH_SHEET_CACHE__ = {};
+function clearSheetCache_(sheetName) {
+  if (!__BH_SHEET_CACHE__) __BH_SHEET_CACHE__ = {};
+  if (sheetName) delete __BH_SHEET_CACHE__[sheetName];
+  else __BH_SHEET_CACHE__ = {};
+}
+
+function readSheet_(sheetName) {
+  const sh = getSS_().getSheetByName(sheetName);
+  if (!sh) return [];
+
+  const lastRow = sh.getLastRow();
+  const lastCol = sh.getLastColumn();
+
+  if (lastRow < 2 || lastCol < 1) return [];
+
+  const values = sh.getRange(1, 1, lastRow, lastCol).getValues();
+  const headers = values[0].map(h => String(h || "").trim());
+
+  return values.slice(1)
+    .filter(r => r.some(c => c !== "" && c !== null))
+    .map(r => {
+      const obj = {};
+      headers.forEach((h, i) => {
+        if (!h) return;
+        obj[h] = formatValue_(r[i], h);
+      });
+      return obj;
+    });
+}
+
+function formatValue_(v, header) {
+  if (v === null || v === undefined || v === "") return "";
+
+  if (Object.prototype.toString.call(v) === "[object Date]") {
+    if (header === "שעה" || header === "שעת סיום") {
+      return Utilities.formatDate(v, CONFIG.TIMEZONE, "HH:mm");
+    }
+
+    if (header === "תאריך ושעת עדכון" || header === "תאריך יצירה" || header === "עדכון אחרון") {
+      return Utilities.formatDate(v, CONFIG.TIMEZONE, "yyyy-MM-dd HH:mm");
+    }
+
+    return Utilities.formatDate(v, CONFIG.TIMEZONE, "yyyy-MM-dd");
+  }
+
+  return v;
+}
+
+function appendObject_(sheetName, obj) {
+  const sh = getSS_().getSheetByName(sheetName);
+  const headers = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+  sh.appendRow(headers.map(h => obj[h] !== undefined ? obj[h] : ""));
+  clearSheetCache_(sheetName);
+}
+
+function upsert_(sheetName, idHeader, id, obj) {
+  const sh = getSS_().getSheetByName(sheetName);
+  if (!sh) throw new Error("לא נמצא גיליון: " + sheetName);
+
+  const lastCol = sh.getLastColumn();
+  if (lastCol < 1) throw new Error("אין כותרות בגיליון: " + sheetName);
+
+  const headers = sh.getRange(1, 1, 1, lastCol).getValues()[0]
+    .map(h => String(h || "").trim());
+
+  const idCol = headers.indexOf(idHeader);
+  if (idCol === -1) {
+    throw new Error("לא נמצאה עמודת מזהה '" + idHeader + "' בגיליון: " + sheetName);
+  }
+
+  const row = headers.map(h => obj[h] !== undefined ? obj[h] : "");
+  const lastRow = sh.getLastRow();
+
+  if (lastRow >= 2) {
+    const ids = sh.getRange(2, idCol + 1, lastRow - 1, 1).getValues().flat();
+
+    for (let i = 0; i < ids.length; i++) {
+      if (String(ids[i]) === String(id)) {
+        const range = sh.getRange(i + 2, 1, 1, row.length);
+        range.clearDataValidations();
+        range.setValues([row]);
+        clearSheetCache_(sheetName);
+        return;
+      }
+    }
+  }
+
+  const newRow = sh.getLastRow() + 1;
+  const range = sh.getRange(newRow, 1, 1, row.length);
+  range.clearDataValidations();
+  range.setValues([row]);
+  clearSheetCache_(sheetName);
+}
+
+function upsert_ללא_אימות_(sheetName, idHeader, id, obj) {
+  return upsert_(sheetName, idHeader, id, obj);
+}
+
+function deleteById_(sheetName, idHeader, id) {
+  const sh = getSS_().getSheetByName(sheetName);
+  const values = sh.getDataRange().getValues();
+  const headers = values[0];
+  const idCol = headers.indexOf(idHeader);
+
+  for (let i = values.length - 1; i >= 1; i--) {
+    if (values[i][idCol] === id) sh.deleteRow(i + 1);
+  }
+  clearSheetCache_(sheetName);
+}
+
+function deleteWhere_(sheetName, header, value) {
+  const sh = getSS_().getSheetByName(sheetName);
+  const values = sh.getDataRange().getValues();
+  const headers = values[0];
+  const col = headers.indexOf(header);
+
+  for (let i = values.length - 1; i >= 1; i--) {
+    if (values[i][col] === value) sh.deleteRow(i + 1);
+  }
+  clearSheetCache_(sheetName);
+}
+
+function upsertSetting_(row) {
+  const sh = getSS_().getSheetByName(SHEETS.SETTINGS);
+  const values = sh.getDataRange().getValues();
+
+  for (let i = 1; i < values.length; i++) {
+    if (values[i][0] === row["סוג הגדרה"] && values[i][1] === row["ערך"]) {
+      sh.getRange(i + 1, 3).setValue(row["פעיל"]);
+      clearSheetCache_(SHEETS.SETTINGS);
+      return;
+    }
+  }
+  clearSheetCache_(SHEETS.SETTINGS);
+}
+
+
+/***********************
+ * FINAL PATCH – sender name for system emails
+ * קוד כניסה נשלח בשם המערכת כפי שמוגדר במיתוג.
+ ***********************/
+function שם_שולח_מערכת_() {
+  try {
+    const sys = מיתוג_מערכת_Build7_ ? מיתוג_מערכת_Build7_() : {};
+    return sys.name || "מערכת ניהול בית חכם";
+  } catch(e) {
+    return "מערכת ניהול בית חכם";
+  }
+}
+
+function שליחת_קוד_כניסה_Build7(email) {
+  email = נרמול_מייל_Build7_(email);
+  const user = איתור_מורשה_לפי_מייל_Build7_(email);
+  if (!user.allowed) {
+    return { ok: false, message: user.reason, email };
+  }
+
+  const code = יצירת_קוד_6_ספרות_Build7_();
+  const now = new Date();
+  const nowMs = now.getTime();
+  const expiresMs = nowMs + 10 * 60 * 1000;
+  const expires = new Date(expiresMs);
+
+  const oldCodes = readSheet_(BUILD7_LOGIN_CODES_SHEET);
+  oldCodes.forEach(r => {
+    if (נרמול_מייל_Build7_(r["מייל"]) === email && r["פעיל"] === "כן") {
+      r["פעיל"] = "לא";
+      r["נוצל"] = r["נוצל"] || "לא";
+      upsert_(BUILD7_LOGIN_CODES_SHEET, "מזהה קוד", r["מזהה קוד"], r);
+    }
+  });
+
+  appendObject_(BUILD7_LOGIN_CODES_SHEET, {
+    "מזהה קוד": makeId_("קוד"),
+    "מייל": email,
+    "קוד": code,
+    "תפקיד": user.role,
+    "שם": user.name,
+    "תאריך יצירה": now,
+    "תאריך תפוגה": expires,
+    "יצירה Timestamp": nowMs,
+    "תפוגה Timestamp": expiresMs,
+    "פעיל": "כן",
+    "נוצל": "לא"
+  });
+
+  const senderName = שם_שולח_מערכת_();
+  MailApp.sendEmail({
+    to: email,
+    subject: "קוד כניסה למערכת בית חכם",
+    body: "שלום " + (user.name || "") + ",\n\nקוד הכניסה שלך למערכת בית חכם הוא:\n\n" + code + "\n\nהקוד תקף ל-10 דקות. אם ביקשת קוד נוסף, רק הקוד האחרון יהיה תקף.\n\n" + senderName,
+    name: senderName
+  });
+
+  log_("שליחת קוד כניסה", email);
+  return { ok: true, message: "קוד כניסה נשלח למייל", email };
+}
+
+
+/************************************************************
+ * BUILD 14 FINAL – יוצר אירוע + הרשאות צפייה ביומן + שמירה יציבה
+ * הוסף בסוף הקובץ כדי לנצח כפילויות ישנות.
+ ************************************************************/
+
+function BH14_שם_משתמש_(user){
+  return (user && (user.name || user.email)) || "מערכת";
+}
+
+function BH14_מייל_משתמש_(user){
+  return (user && user.email) || "";
+}
+
+function BH14_יוצר_אירוע_למשימה_(task, fallbackUser){
+  const u = fallbackUser || {};
+  return String(
+    (task && (task["יוצר אירוע"] || task["אחראי"])) ||
+    u.name ||
+    u.email ||
+    "מערכת"
+  ).trim();
+}
+
+function BH14_יוצרי_יומן_מותרים_(user, tasks){
+  const role = String(user && user.role || "").trim();
+  const email = נרמול_מייל_Build7_(BH14_מייל_משתמש_(user));
+  const name = BH14_שם_משתמש_(user);
+  const allTasks = tasks || [];
+  const allCreators = [...new Set(allTasks.map(t => BH14_יוצר_אירוע_למשימה_(t, user)).filter(Boolean))];
+
+  if (user && (user.isOwner === true || role === "מנהל ראשי")) {
+    return { mode:"all", creators: allCreators };
+  }
+
+  let me = {};
+  try {
+    const contacts = readSheet_(SHEETS.CONTACTS);
+    me = contacts.find(c => נרמול_מייל_Build7_(c["אימייל"]) === email) || {};
+  } catch(e) { me = {}; }
+
+  const calendarView = String(me["צפיית יומן"] || "רק שלי").trim();
+  const allowedRaw = String(me["יוצרי יומן מורשים"] || "").trim();
+
+  if (calendarView === "הכל") {
+    return { mode:"all", creators: allCreators };
+  }
+
+  if (calendarView === "משתמשים נבחרים") {
+    const allowed = allowedRaw.split(",").map(x => x.trim()).filter(Boolean);
+    return { mode:"selected", creators: [...new Set([name, email, ...allowed])] };
+  }
+
+  return { mode:"mine", creators: [...new Set([name, email])] };
+}
+
+function קבלת_נתונים_Build7(token) {
+  const user = קבלת_משתמש_מסשן_Build7_(token);
+
+  if (!user.allowed) {
+    return {
+      auth: { allowed: false, reason: user.reason || "אין הרשאה" },
+      system: מיתוג_מערכת_Build7_()
+    };
+  }
+
+  const role = String(
+    user.role ||
+    user["הרשאת מערכת"] ||
+    user.permission ||
+    ""
+  ).trim();
+
+  const data = קבלת_נתוני_מערכת_מלאים_Build10_();
+
+  data.system = מיתוג_מערכת_Build7_();
+  data.auth = { allowed: true };
+  data.currentUser = {
+    email: user.email || "",
+    name: user.name || user.email || "",
+    role: role,
+    isOwner: user.isOwner === true,
+    contactId: user.contactId || "",
+    allowed: true
+  };
+
+  data.canSeeSettings =
+    user.isOwner === true ||
+    role === "מנהל ראשי";
+
+  const filtered = סינון_נתונים_לפי_משתמש_Build7_(data, data.currentUser);
+  const enriched = BH14_העשרת_נתוני_יומן_(filtered, data.currentUser);
+
+  enriched.system = data.system;
+  enriched.auth = data.auth;
+  enriched.currentUser = data.currentUser;
+  enriched.canSeeSettings = data.canSeeSettings;
+
+  if (!enriched.dashboard) {
+    enriched.dashboard = calcDashboard_(
+      enriched.projects || [],
+      enriched.contacts || [],
+      enriched.tasks || []
+    );
+  }
+
+  return enriched;
+}
+
+function התקנת_Build14_יוצר_אירוע_ויומן() {
+  ["יוצר אירוע", "יוצר אירוע מייל", "צפיית יומן", "יוצרי יומן מורשים"].forEach(h => {
+    try { הבטח_עמודה_אם_חסרה_(SHEETS.TASKS, h); } catch(e) {}
+  });
+  try { הבטח_עמודה_אם_חסרה_(SHEETS.CONTACTS, "צפיית יומן"); } catch(e) {}
+  try { הבטח_עמודה_אם_חסרה_(SHEETS.CONTACTS, "יוצרי יומן מורשים"); } catch(e) {}
+  try { log_("Build14", "עמודות יוצר אירוע והרשאות יומן הותקנו"); } catch(e) {}
+  return true;
+}
+/***********************
+ * Build 15 – הרשאות צפייה ביומן לפי יוצר / פרויקט / איש קשר
+ ***********************/
+const BH15_CAL_PERMS_SHEET = "הרשאות יומן";
+
+function BH15_הבטחת_גיליון_הרשאות_יומן_(){
+  const ss = SpreadsheetApp.getActive();
+  let sh = ss.getSheetByName(BH15_CAL_PERMS_SHEET);
+  if (!sh) {
+    sh = ss.insertSheet(BH15_CAL_PERMS_SHEET);
+    sh.appendRow(["משתמש", "סוג הרשאה", "ערך", "פעיל"]);
+  }
+  return sh;
+}
+
+
+/* הוסר: מופע ישן של function BH15_הרשאות_יומן_ — נשמרה הגרסה המאוחרת בקובץ */
+function BH15_שם_יוצר_(t){
+  return String(t["יוצר אירוע"] || t["יוצר אירוע מייל"] || "").trim();
+}
+
+function BH15_ערך_שווה_(a,b){
+  return String(a || "").trim().toLowerCase() === String(b || "").trim().toLowerCase();
+}
+
+function BH15_משימה_מותרת_ביומן_(t, user, maps, perms){
+  const role = String(user.role || "");
+  if (user.isOwner === true || role === "מנהל ראשי") return true;
+
+  const userName = String(user.name || "").trim();
+  const userEmail = String(user.email || "").trim();
+
+  const creator = BH15_שם_יוצר_(t);
+
+  // משימות ישנות בלי יוצר — לא מסתירים כדי לא לשבור יומן קיים
+  if (!creator) return true;
+
+  if (BH15_ערך_שווה_(creator, userName) || BH15_ערך_שווה_(creator, userEmail)) return true;
+
+  const projectId = String(t["מזהה פרויקט"] || "").trim();
+  const contactId = String(t["מזהה איש קשר"] || "").trim();
+  const projectName = maps.projects[projectId] || "";
+  const contactName = maps.contacts[contactId] || "";
+
+  return perms.some(p => {
+    const pUser = String(p["משתמש"] || "").trim();
+    const type = String(p["סוג הרשאה"] || "").trim();
+    const val = String(p["ערך"] || "").trim();
+
+    const userMatch =
+      BH15_ערך_שווה_(pUser, userName) ||
+      BH15_ערך_שווה_(pUser, userEmail);
+
+    if (!userMatch) return false;
+
+    if (type === "יוצר") {
+      return BH15_ערך_שווה_(val, creator);
+    }
+
+    if (type === "פרויקט") {
+      return BH15_ערך_שווה_(val, projectId) || BH15_ערך_שווה_(val, projectName);
+    }
+
+    if (type === "איש קשר") {
+      return BH15_ערך_שווה_(val, contactId) || BH15_ערך_שווה_(val, contactName);
+    }
+
+    return false;
+  });
+}
+
+function BH14_העשרת_נתוני_יומן_(data, user){
+  data = data || {};
+  user = user || {};
+
+  const role = String(user.role || "").trim();
+  const isSuperAdmin = user.isOwner === true || role === "מנהל ראשי";
+  const userName = String(user.name || "").trim();
+  const userEmail = String(user.email || "").trim().toLowerCase();
+  const userContactId = String(user.contactId || "").trim();
+
+  const projectsAll = readSheet_(SHEETS.PROJECTS);
+  const linksAll = readSheet_(SHEETS.LINKS);
+
+  const projectsById = {};
+  projectsAll.forEach(p => {
+    projectsById[String(p["מזהה פרויקט"] || "").trim()] = p;
+  });
+
+  const allowedProjectIds = {};
+
+  if(!isSuperAdmin){
+    linksAll.forEach(l => {
+      const contactId = String(l["מזהה איש קשר"] || "").trim();
+      const projectId = String(l["מזהה פרויקט"] || "").trim();
+      const portal = String(l["מורשה צפייה בפורטל"] || "").trim();
+
+      if(!projectId) return;
+
+      if(contactId === userContactId){
+        if(role === "לקוח"){
+          if(portal === "כן") allowedProjectIds[projectId] = true;
+        } else {
+          allowedProjectIds[projectId] = true;
+        }
+      }
+    });
+
+    if(role === "מנהל"){
+      projectsAll.forEach(p => {
+        const projectId = String(p["מזהה פרויקט"] || "").trim();
+        const creator = String(p["יוצר"] || "").trim();
+        const owner = String(p["אחראי"] || "").trim();
+
+        if(projectId && (
+          BH15_ערך_שווה_(creator, userName) ||
+          BH15_ערך_שווה_(creator, userEmail) ||
+          BH15_ערך_שווה_(owner, userName) ||
+          BH15_ערך_שווה_(owner, userEmail)
+        )){
+          allowedProjectIds[projectId] = true;
+        }
+      });
+    }
+  }
+
+  function calendarOwnerForTask_(t){
+    const projectId = String(t["מזהה פרויקט"] || "").trim();
+    const p = projectsById[projectId] || {};
+
+    return String(
+      p["יוצר"] ||
+      p["אחראי"] ||
+      t["יוצר אירוע"] ||
+      t["אחראי"] ||
+      "ללא יוצר"
+    ).trim();
+  }
+
+  function hashColorIndex_(s){
+    s = String(s || "");
+    let n = 0;
+    for(let i = 0; i < s.length; i++){
+      n = (n + s.charCodeAt(i) * (i + 1)) % 8;
+    }
+    return n + 1;
+  }
+
+  const enrichedTasks = (data.tasks || [])
+    .filter(t => String(t["בארכיון"] || "") !== "כן")
+    .filter(t => {
+      const projectId = String(t["מזהה פרויקט"] || "").trim();
+      if(!projectId) return true;
+
+      const p = projectsById[projectId] || {};
+      return String(p["בארכיון"] || "") !== "כן";
+    })
+    .map(t => {
+      const copy = Object.assign({}, t);
+      const owner = calendarOwnerForTask_(copy);
+
+      copy["יוצר אירוע"] = owner;
+      copy["יומן"] = owner;
+      copy["תג יומן"] = owner;
+      copy["calendarKey"] = owner;
+      copy["calendarColorIndex"] = hashColorIndex_(owner);
+
+      return copy;
+    });
+
+  data.tasks = enrichedTasks;
+
+  data.calendarTasks = enrichedTasks.filter(t => {
+    if(isSuperAdmin) return true;
+
+    const projectId = String(t["מזהה פרויקט"] || "").trim();
+    const contactId = String(t["מזהה איש קשר"] || "").trim();
+
+    if(projectId && allowedProjectIds[projectId]) return true;
+    if(!projectId && contactId && contactId === userContactId) return true;
+
+    return false;
+  });
+
+  data.calendarCreatorsAllowed = [...new Set(
+    data.calendarTasks
+      .map(t => String(t["יומן"] || t["יוצר אירוע"] || "").trim())
+      .filter(Boolean)
+  )].sort((a,b)=>a.localeCompare(b, "he"));
+
+  data.calendarCreatorPermission = {
+    mode: isSuperAdmin ? "all" : "allowed",
+    creators: data.calendarCreatorsAllowed
+  };
+
+  return data;
+}
+
+function התקנת_הרשאות_יומן_Build15() {
+  const ss = getSS_();
+  const SHEET_NAME = "הרשאות יומן";
+
+  let sh = ss.getSheetByName(SHEET_NAME);
+  if (!sh) sh = ss.insertSheet(SHEET_NAME);
+
+  const headers = [
+    "מזהה הרשאה",
+    "משתמש",
+    "סוג הרשאה",
+    "ערך",
+    "פעיל",
+    "מעתה ואילך",
+    "תאריך יצירה",
+    "עדכון אחרון"
+  ];
+
+  const existingHeaders = sh.getLastColumn()
+    ? sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0]
+    : [];
+
+  headers.forEach((h) => {
+    if (!existingHeaders.includes(h)) {
+      sh.getRange(1, sh.getLastColumn() + 1).setValue(h);
+    }
+  });
+
+  sh.setFrozenRows(1);
+
+  const finalHeaders = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+
+  const colType = finalHeaders.indexOf("סוג הרשאה") + 1;
+  const colActive = finalHeaders.indexOf("פעיל") + 1;
+  const colFromNow = finalHeaders.indexOf("מעתה ואילך") + 1;
+
+  if (colType > 0) {
+    const rule = SpreadsheetApp.newDataValidation()
+      .requireValueInList(["יוצר", "פרויקט", "איש קשר"], true)
+      .build();
+    sh.getRange(2, colType, Math.max(sh.getMaxRows() - 1, 1), 1).setDataValidation(rule);
+  }
+
+  if (colActive > 0) {
+    const rule = SpreadsheetApp.newDataValidation()
+      .requireValueInList(["כן", "לא"], true)
+      .build();
+    sh.getRange(2, colActive, Math.max(sh.getMaxRows() - 1, 1), 1).setDataValidation(rule);
+  }
+
+  if (colFromNow > 0) {
+    const rule = SpreadsheetApp.newDataValidation()
+      .requireValueInList(["כן", "לא"], true)
+      .build();
+    sh.getRange(2, colFromNow, Math.max(sh.getMaxRows() - 1, 1), 1).setDataValidation(rule);
+  }
+
+  SpreadsheetApp.flush();
+  return "לשונית הרשאות יומן עודכנה בהצלחה";
+}
+/***********************
+ * Build 15.1 – ניהול הרשאות יומן מתוך המערכת
+ ***********************/
+
+function BH15_הרשאות_יומן_כולל_לא_פעילות_(){
+  try {
+    return readSheet_(BH15_CAL_PERMS_SHEET);
+  } catch(e) {
+    return [];
+  }
+}
+
+function BH15_שמירת_הרשאת_יומן_(data) {
+  דרוש_כתיבה_Build11_2_(data && data.authToken);
+
+  if (!data.user) throw new Error("חובה לבחור משתמש");
+  if (!data.type) throw new Error("חובה לבחור סוג הרשאה");
+  if (!data.value) throw new Error("חובה לבחור ערך");
+
+  const id = data.id || makeId_("הרשאת_יומן");
+  const old = data.id
+    ? readSheet_(BH15_CAL_PERMS_SHEET).find(r => r["מזהה הרשאה"] === data.id)
+    : null;
+
+  const row = {
+    "מזהה הרשאה": id,
+    "משתמש": data.user,
+    "סוג הרשאה": data.type,
+    "ערך": data.value,
+    "פעיל": data.active || "כן",
+    "מעתה ואילך": data.fromNow || "לא",
+    "תאריך יצירה": old ? old["תאריך יצירה"] : new Date(),
+    "עדכון אחרון": new Date()
+  };
+
+  upsert_(BH15_CAL_PERMS_SHEET, "מזהה הרשאה", id, row);
+  log_("שמירת הרשאת יומן", data.user + " | " + data.type + " | " + data.value);
+  return id;
+}
+
+function BH15_מחיקת_הרשאת_יומן_(data) {
+  דרוש_כתיבה_Build11_2_(data && data.authToken);
+  if (!data.id) throw new Error("חסר מזהה הרשאה");
+
+  const rows = readSheet_(BH15_CAL_PERMS_SHEET);
+  const row = rows.find(r => r["מזהה הרשאה"] === data.id);
+  if (!row) return true;
+
+  row["פעיל"] = "לא";
+  row["עדכון אחרון"] = new Date();
+
+  upsert_(BH15_CAL_PERMS_SHEET, "מזהה הרשאה", data.id, row);
+  log_("ביטול הרשאת יומן", data.id);
+  return true;
+}
+
+function BH15_נתוני_ניהול_הרשאות_יומן_(token) {
+  const user = קבלת_משתמש_מסשן_Build7_(token);
+  if (!user.allowed) throw new Error("אין הרשאה");
+
+  if (!(user.isOwner === true || user.role === "מנהל ראשי")) {
+    throw new Error("רק מנהל ראשי יכול לנהל הרשאות יומן");
+  }
+
+  const data = קבלת_נתוני_מערכת_מלאים_Build10_();
+
+  return {
+    users: (data.contacts || [])
+      .filter(c => String(c["פעיל במערכת"] || "כן") !== "לא")
+      .map(c => ({
+        name: c["שם מלא"] || c["שם"] || c["אימייל"] || "",
+        email: c["אימייל"] || ""
+      }))
+      .filter(u => u.name || u.email),
+
+    projects: (data.projects || []).map(p => ({
+      id: p["מזהה פרויקט"] || "",
+      name: p["שם פרויקט"] || ""
+    })),
+
+    contacts: (data.contacts || []).map(c => ({
+      id: c["מזהה איש קשר"] || "",
+      name: c["שם מלא"] || c["שם"] || ""
+    })),
+
+    permissions: BH15_הרשאות_יומן_כולל_לא_פעילות_()
+  };
+}
+function BH15_נתוני_ניהול_הרשאות_יומן(token){
+  return BH15_נתוני_ניהול_הרשאות_יומן_(token);
+}
+
+function BH15_שמירת_הרשאת_יומן(data){
+  return BH15_שמירת_הרשאת_יומן_(data);
+}
+
+function BH15_מחיקת_הרשאת_יומן(data){
+  return BH15_מחיקת_הרשאת_יומן_(data);
+}
+function BH16_רשאי_לתת_הרשאה_(נותן, הרשאה) {
+  const role = String(נותן && נותן.role || "").trim();
+  const target = String(הרשאה || "ללא הרשאה").trim();
+
+  if (role === "מנהל ראשי") {
+    return ["מנהל ראשי", "מנהל", "משתמש", "לקוח", "ללא הרשאה"].includes(target);
+  }
+
+  if (role === "מנהל") {
+    return ["משתמש", "לקוח", "ללא הרשאה"].includes(target);
+  }
+
+  if (role === "משתמש") {
+    return ["לקוח", "ללא הרשאה"].includes(target);
+  }
+
+  return false;
+}
+
+function BH16_אכיפת_מתן_הרשאה_(token, הרשאה_מבוקשת) {
+  const user = קבלת_משתמש_מסשן_Build7_(token || "");
+
+  if (!user || !user.allowed) {
+    throw new Error("אין הרשאה או שהחיבור פג. יש להתחבר מחדש.");
+  }
+
+  if (!BH16_רשאי_לתת_הרשאה_(user, הרשאה_מבוקשת)) {
+    throw new Error("אין לך הרשאה לתת דרגת הרשאה זו.");
+  }
+
+  return user;
+}
+function BH18_בדיקת_שדות_חובה_(entity, data) {
+  const rows = readSheet_("הגדרת שדות");
+
+  const required = rows.filter(r =>
+    String(r["ישות"] || "").trim() === entity &&
+    String(r["חובה"] || "").trim() === "כן" &&
+    String(r["פעיל"] || "כן").trim() !== "לא"
+  );
+
+  const maps = {
+    "איש קשר": {
+      "שם מלא": data.name,
+      "טלפון": data.phone,
+      "אימייל": data.email,
+      "כתובת": data.address,
+      "מקור הגעה": data.source,
+      "סוג איש קשר": data.contactType,
+      "סטטוס לקוח": data.status,
+      "תגיות": data.tags,
+      "מנהל": data.manager,
+      "אחראי": data.owner
+    },
+    "פרויקט": {
+      "שם פרויקט": data.name,
+      "עיר": data.city,
+      "תחום": data.type,
+      "סטטוס": data.status,
+      "אחראי": data.owner,
+      "תגיות": data.tags,
+      "תיקיית Drive": data.drive,
+      "יוצר": data.creator
+    },
+    "משימה": {
+      "כותרת": data.title,
+      "סוג משימה": data.taskType,
+      "תאריך": data.date,
+      "שעה": data.time,
+      "שעת סיום": data.endTime || data.end,
+      "סטטוס": data.status,
+      "מזהה פרויקט": data.projectId,
+      "מזהה איש קשר": data.contactId,
+      "אחראי": data.owner,
+      "עדיפות": data.priority,
+      "הערות למשימה": data.taskNotes || data.notes
+    }
+  };
+
+  const map = maps[entity] || {};
+
+  required.forEach(f => {
+    const fieldName = String(f["שם שדה"] || "").trim();
+    const value = map[fieldName];
+
+    if (value === undefined) return;
+
+    if (String(value || "").trim() === "") {
+      throw new Error("חובה למלא את השדה: " + fieldName);
+    }
+  });
+}
+/***********************
+ * FINAL OVERRIDE – הרשאות, חובה, יוצר, פרויקטים, משימות, יומן
+ ***********************/
+
+function BH_FINAL_userName_(user){
+  return (user && (user.name || user.email)) || "";
+}
+
+function BH_FINAL_requiredEntityNames_(entity){
+  entity = String(entity || "").trim();
+  if (entity === "איש קשר" || entity === "אנשי קשר") return ["איש קשר","אנשי קשר"];
+  if (entity === "פרויקט" || entity === "פרויקטים") return ["פרויקט","פרויקטים"];
+  if (entity === "משימה" || entity === "משימות") return ["משימה","משימות"];
+  return [entity];
+}
+
+function BH_FINAL_checkRequiredFields_(entity, data){
+  data = data || {};
+
+  let rows = [];
+
+  try {
+    rows = readSheet_("הגדרות_שדות");
+  } catch(e) {
+    rows = [];
+  }
+
+  // fallback בלבד לגרסה הישנה, רק אם החדשה ריקה לגמרי
+  if (!rows || !rows.length) {
+    try {
+      rows = readSheet_("הגדרת שדות");
+    } catch(e) {
+      rows = [];
+    }
+  }
+
+  const names = BH_FINAL_requiredEntityNames_(entity);
+
+  const required = rows.filter(r =>
+    names.includes(String(r["ישות"] || "").trim()) &&
+    String(r["חובה"] || "").trim() === "כן" &&
+    String(r["פעיל"] || "כן").trim() !== "לא"
+  );
+
+  const maps = {
+    "איש קשר": {
+      "שם מלא": data.name,
+      "שם": data.name,
+      "טלפון": data.phone,
+      "מספר טלפון": data.phone,
+      "סלולרי": data.phone,
+      "נייד": data.phone,
+      "אימייל": data.email,
+      "מייל": data.email,
+      "כתובת": data.address,
+      "מקור הגעה": data.source,
+      "סוג איש קשר": data.contactType,
+      "סטטוס לקוח": data.status,
+      "תגיות": data.tags,
+      "מנהל": data.manager,
+      "אחראי": data.owner
+    },
+    "פרויקט": {
+      "שם פרויקט": data.name,
+      "שם": data.name,
+      "עיר": data.city,
+      "תחום": data.type,
+      "סטטוס": data.status,
+      "אחראי": data.owner,
+      "תגיות": data.tags,
+      "תיקיית Drive": data.drive,
+      "יוצר": data.creator
+    },
+    "משימה": {
+      "כותרת": data.title,
+      "סוג משימה": data.taskType,
+      "תאריך": data.date,
+      "שעה": data.time,
+      "שעת סיום": data.endTime || data.end,
+      "סטטוס": data.status,
+      "מזהה פרויקט": data.projectId,
+      "מזהה איש קשר": data.contactId,
+      "אחראי": data.owner,
+      "עדיפות": data.priority,
+      "הערות למשימה": data.taskNotes || data.notes
+    }
+  };
+
+  const key = names[0];
+  const map = maps[key] || maps[entity] || {};
+
+  required.forEach(f => {
+    const fieldName = String(f["שם שדה"] || "").trim();
+
+    if (!(fieldName in map)) {
+      throw new Error("השדה '" + fieldName + "' מוגדר כחובה בישות " + entity + ", אבל אינו מחובר לטופס השמירה");
+    }
+
+    if (String(map[fieldName] || "").trim() === "") {
+      throw new Error("חובה למלא את השדה: " + fieldName);
+    }
+  });
+}
+
+function שמירת_איש_קשר(data) {
+  const actor = דרוש_כתיבה_Build11_2_(data && data.authToken);
+
+  validateRequired_(data.name, "שם מלא");
+  BH_FINAL_checkRequiredFields_("איש קשר", data);
+
+  הוספת_עמודה_אם_חסרה_(SHEETS.CONTACTS, "הרשאת מערכת");
+  הוספת_עמודה_אם_חסרה_(SHEETS.CONTACTS, "פעיל במערכת");
+  הוספת_עמודה_אם_חסרה_(SHEETS.CONTACTS, "מנהל");
+  הוספת_עמודה_אם_חסרה_(SHEETS.CONTACTS, "אחראי");
+  הוספת_עמודה_אם_חסרה_(SHEETS.CONTACTS, "גוון יוצר");
+  הוספת_עמודה_אם_חסרה_(SHEETS.CONTACTS, "יוצר");
+  ensureColumnTextFormat_(SHEETS.CONTACTS, "טלפון");
+
+  const old = data.id
+    ? readSheet_(SHEETS.CONTACTS).find(c => c["מזהה איש קשר"] === data.id)
+    : null;
+
+  const actorRank = דרגת_הרשאה_Build11_2_(actor.role);
+  const oldRank = old ? דרגת_הרשאה_Build11_2_(old["הרשאת מערכת"] || "ללא הרשאה") : 0;
+
+  if (old && oldRank > actorRank) {
+    throw new Error("אין לך הרשאה לערוך איש קשר בדרגת הרשאה גבוהה משלך");
+  }
+
+  const permissions = ["ללא הרשאה", "מנהל ראשי", "מנהל", "משתמש", "לקוח"];
+  const creatorPermissions = ["מנהל ראשי", "מנהל", "משתמש"];
+  const statuses = ["ליד חדש", "משקיע פוטנציאלי", "לקוח פעיל"];
+
+  let status = data.status || (old ? old["סטטוס לקוח"] : "") || "ליד חדש";
+  let permission =
+    data.systemPermission ||
+    data.permission ||
+    (old ? old["הרשאת מערכת"] : "") ||
+    "ללא הרשאה";
+
+  if (permissions.includes(status)) {
+    permission = status;
+    status = old && statuses.includes(old["סטטוס לקוח"])
+      ? old["סטטוס לקוח"]
+      : "ליד חדש";
+  }
+
+  if (!statuses.includes(status)) status = "ליד חדש";
+  if (!permissions.includes(permission)) permission = "ללא הרשאה";
+
+  if (דרגת_הרשאה_Build11_2_(permission) > actorRank) {
+    throw new Error("אין לך הרשאה להעניק הרשאת מערכת גבוהה משלך");
+  }
+
+  let manager = old ? old["מנהל"] || "" : "";
+  let owner = old ? old["אחראי"] || "" : "";
+
+  if (permission === "משתמש") {
+    manager = data.manager || manager || "";
+    if (!manager) throw new Error("בבחירת הרשאת משתמש חובה לבחור מנהל");
+  } else {
+    manager = data.manager || "";
+  }
+
+  if (permission === "לקוח") {
+    owner = data.owner || owner || "";
+    if (!owner) throw new Error("בבחירת הרשאת לקוח חובה לבחור אחראי");
+  } else {
+    owner = data.owner || "";
+  }
+
+  let creatorColor = "";
+  if (creatorPermissions.includes(permission)) {
+    creatorColor = String(data.creatorColor || data["גוון יוצר"] || (old ? old["גוון יוצר"] : "") || "").trim();
+
+    const colors = BH19_גווני_יוצר_מפה_();
+    if (creatorColor && !colors[creatorColor]) {
+      throw new Error("גוון יוצר לא תקין");
+    }
+
+    if (creatorColor) {
+      const contacts = readSheet_(SHEETS.CONTACTS);
+      const usedByOther = contacts.some(c =>
+        String(c["מזהה איש קשר"] || "") !== String(data.id || "") &&
+        String(c["פעיל במערכת"] || "כן") !== "לא" &&
+        creatorPermissions.includes(String(c["הרשאת מערכת"] || "").trim()) &&
+        String(c["גוון יוצר"] || "").trim() === creatorColor
+      );
+
+      if (usedByOther) {
+        throw new Error("גוון היוצר כבר תפוס על ידי משתמש אחר");
+      }
+    }
+  }
+
+  const id = data.id || makeId_("איש");
+  const currentUser = BH_FINAL_userName_(actor);
+
+  const row = {
+    "מזהה איש קשר": id,
+    "שם מלא": data.name,
+    "טלפון": שמירת_טלפון_כטקסט_(data.phone),
+    "אימייל": data.email || "",
+    "כתובת": data.address || "",
+    "מקור הגעה": data.source || "",
+    "סוג איש קשר": data.contactType || "",
+    "סטטוס לקוח": status,
+    "תגיות": data.tags || "",
+    "מנהל": manager,
+    "אחראי": owner,
+    "הרשאת מערכת": permission,
+    "פעיל במערכת": permission === "ללא הרשאה" ? "לא" : "כן",
+    "גוון יוצר": creatorColor,
+    "יוצר": old && old["יוצר"] ? old["יוצר"] : currentUser,
+    "תאריך יצירה": data.created || (old ? old["תאריך יצירה"] : new Date()),
+    "עדכון אחרון": new Date()
+  };
+
+  upsert_ללא_אימות_(SHEETS.CONTACTS, "מזהה איש קשר", id, row);
+  סנכרון_איש_קשר_למשתמש_Build6_2(row);
+  log_("שמירת איש קשר", row["שם מלא"]);
+
+  return id;
+}
+
+function שמירת_פרויקט(data) {
+  const actor = דרוש_כתיבה_Build11_2_(data && data.authToken);
+  validateRequired_(data.name, "שם פרויקט");
+  BH_FINAL_checkRequiredFields_("פרויקט", data);
+
+  הוספת_עמודה_אם_חסרה_(SHEETS.PROJECTS, "אחראי");
+  הוספת_עמודה_אם_חסרה_(SHEETS.PROJECTS, "יוצר");
+
+  const old = data.id ? readSheet_(SHEETS.PROJECTS).find(p => p["מזהה פרויקט"] === data.id) : null;
+  const currentUser = BH_FINAL_userName_(actor);
+
+  const row = {
+    "מזהה פרויקט": data.id || makeId_("פר"),
+    "שם פרויקט": data.name,
+    "עיר": data.city || "",
+    "תחום": data.type || "",
+    "סטטוס": data.status || "ללא סיווג",
+    "אחראי": data.owner || (old ? old["אחראי"] : "") || currentUser,
+    "יוצר": old && old["יוצר"] ? old["יוצר"] : currentUser,
+    "תגיות": data.tags || "",
+    "תיקיית Drive": data.drive || "",
+    "תאריך יצירה": data.created || (old ? old["תאריך יצירה"] : new Date()),
+    "עדכון אחרון": new Date()
+  };
+
+  upsert_(SHEETS.PROJECTS, "מזהה פרויקט", row["מזהה פרויקט"], row);
+  log_("שמירת פרויקט", row["שם פרויקט"]);
+  return row["מזהה פרויקט"];
+}
+
+function שמירת_משימה(data) {
+  const actor = דרוש_כתיבה_Build11_2_(data && data.authToken);
+
+  validateRequired_(data.title, "כותרת משימה");
+  BH_FINAL_checkRequiredFields_("משימה", data);
+
+  הוספת_עמודה_אם_חסרה_(SHEETS.TASKS, "שעת סיום");
+  הוספת_עמודה_אם_חסרה_(SHEETS.TASKS, "כניסה ליומן");
+  הוספת_עמודה_אם_חסרה_(SHEETS.TASKS, "מזהה אירוע ביומן");
+  הוספת_עמודה_אם_חסרה_(SHEETS.TASKS, "יוצר");
+  הוספת_עמודה_אם_חסרה_(SHEETS.TASKS, "הערות למשימה");
+  הוספת_עמודה_אם_חסרה_(SHEETS.TASKS, "משך פגישה");
+  הוספת_עמודה_אם_חסרה_(SHEETS.TASKS, "מיקום");
+  הוספת_עמודה_אם_חסרה_(SHEETS.TASKS, "משתתפים");
+
+  const id = data.id || makeId_("מש");
+
+  const old = data.id
+    ? readSheet_(SHEETS.TASKS).find(t => t["מזהה משימה"] === data.id)
+    : null;
+
+  let calendarId = old ? old["מזהה אירוע ביומן"] || "" : "";
+
+  const currentUser = BH_FINAL_userName_(actor);
+
+  const taskType = data.taskType || (old ? old["סוג משימה"] : "") || "משימה";
+  const dateValue = data.date || (old ? old["תאריך"] : "") || "";
+  const startTime = data.time || (old ? old["שעה"] : "") || "";
+  const endTime = data.endTime || data.end || (old ? old["שעת סיום"] : "") || "";
+  const calendarFlag = data.addToCalendar || data.calendar || (old ? old["כניסה ליומן"] : "") || "לא";
+
+  if (dateValue && !startTime) {
+    throw new Error("כאשר מזינים תאריך למשימה, חובה להזין גם שעה");
+  }
+
+  if (dateValue && taskType === "פגישה" && !endTime) {
+    throw new Error("בפגישה עם תאריך חובה להזין גם שעת סיום");
+  }
+
+  const row = {
+    "מזהה משימה": id,
+    "כותרת": data.title,
+    "סוג משימה": taskType,
+    "עדיפות": data.priority || (old ? old["עדיפות"] : "") || "רגילה",
+    "תאריך": dateValue,
+    "שעה": startTime,
+    "שעת סיום": endTime,
+    "משך פגישה": data.meetingDuration || (old ? old["משך פגישה"] : "") || "",
+    "מיקום": data.location || (old ? old["מיקום"] : "") || "",
+    "משתתפים": Array.isArray(data.calendarGuests) ? data.calendarGuests.join(", ") : (data.calendarGuests || (old ? old["משתתפים"] : "") || ""),
+    "כניסה ליומן": calendarFlag,
+    "סטטוס": data.status || (old ? old["סטטוס"] : "") || "פתוח",
+    "מזהה פרויקט": data.projectId || (old ? old["מזהה פרויקט"] : "") || "",
+    "מזהה איש קשר": data.contactId || (old ? old["מזהה איש קשר"] : "") || "",
+    "אחראי": data.owner || (old ? old["אחראי"] : "") || "",
+    "הערות למשימה": data.taskNotes || (old ? old["הערות למשימה"] : "") || "",
+    "יוצר": old && old["יוצר"] ? old["יוצר"] : currentUser,
+    "תאריך יצירה": data.created || (old ? old["תאריך יצירה"] : new Date()),
+    "עדכון אחרון": new Date(),
+    "מזהה אירוע ביומן": calendarId || ""
+  };
+
+  if (row["כניסה ליומן"] === "כן" && row["תאריך"] && row["שעה"]) {
+    row["מזהה אירוע ביומן"] = syncCalendarEvent_(row);
+  } else if (calendarId) {
+    מחיקת_אירוע_יומן_אם_קיים_(calendarId);
+    row["מזהה אירוע ביומן"] = "";
+  }
+
+  upsert_ללא_אימות_(SHEETS.TASKS, "מזהה משימה", id, row);
+  log_("שמירת משימה", row["כותרת"]);
+
+  return id;
+}
+
+function BH15_הרשאות_יומן_(){
+  try {
+    return readSheet_("הרשאות יומן")
+      .filter(r => String(r["פעיל"] || "כן") !== "לא");
+  } catch(e) {
+    return [];
+  }
+}
+/***********************
+ * BH19 – גווני יוצר
+ ***********************/
+function BH19_גווני_יוצר_מפה_(){
+  return {
+    "כחול":"#2563eb",
+    "ירוק":"#16a34a",
+    "כתום":"#ea580c",
+    "סגול":"#9333ea",
+    "אדום":"#dc2626",
+    "טורקיז":"#0891b2",
+    "ורוד":"#db2777",
+    "חום":"#92400e",
+    "אפור":"#64748b",
+    "שחור":"#111827",
+    "כחול כהה":"#1e40af",
+    "ירוק כהה":"#166534",
+    "כתום כהה":"#c2410c",
+    "סגול כהה":"#6b21a8",
+    "בורדו":"#9f1239",
+    "תכלת":"#0284c7",
+    "מנטה":"#059669",
+    "זהב":"#a16207",
+    "אינדיגו":"#4338ca",
+    "פחם":"#374151"
+  };
+}
+
+function BH19_התקנת_גווני_יוצר(){
+  הבטח_עמודה_אם_חסרה_(SHEETS.CONTACTS, "גוון יוצר");
+  log_("BH19", "עמודת גוון יוצר הותקנה");
+  return true;
+}
+
+function BH19_קוד_גוון_יוצר_(name){
+  const map = BH19_גווני_יוצר_מפה_();
+  return map[String(name || "").trim()] || "";
+}
+
+/***********************
+ * BH21 – מנוע ארכיון
+ ***********************/
+
+function BH21_דרוש_מנהל_ראשי_(token){
+  const user = משתמש_מפועל_Build11_2_(token);
+  const role = String(user && user.role || "").trim();
+
+  if(!(user && (user.isOwner === true || role === "מנהל ראשי"))){
+    throw new Error("רק מנהל ראשי רשאי לבצע פעולה זו בארכיון");
+  }
+
+  return user;
+}
+
+function BH21_פרטי_סוג_ארכיון_(type){
+  type = String(type || "").trim();
+
+  if(type === "projects"){
+    return {
+      sheet: SHEETS.PROJECTS,
+      idField: "מזהה פרויקט",
+      label: "פרויקט"
+    };
+  }
+
+  if(type === "contacts"){
+    return {
+      sheet: SHEETS.CONTACTS,
+      idField: "מזהה איש קשר",
+      label: "איש קשר"
+    };
+  }
+
+  if(type === "tasks"){
+    return {
+      sheet: SHEETS.TASKS,
+      idField: "מזהה משימה",
+      label: "משימה"
+    };
+  }
+
+  throw new Error("סוג ארכיון לא תקין");
+}
+
+function שחזור_מארכיון(arg){
+  arg = arg || {};
+  const user = BH21_דרוש_מנהל_ראשי_(arg.authToken || arg.token);
+  const meta = BH21_פרטי_סוג_ארכיון_(arg.type);
+  const id = String(arg.id || "").trim();
+
+  if(!id) throw new Error("חסר מזהה לשחזור");
+
+  const row = readSheet_(meta.sheet).find(r => String(r[meta.idField]) === id);
+  if(!row) throw new Error(meta.label + " לא נמצא");
+
+  row["בארכיון"] = "לא";
+  row["תאריך ארכיון"] = "";
+  row["הועבר לארכיון על ידי"] = "";
+  row["עדכון אחרון"] = new Date();
+
+  upsert_ללא_אימות_(meta.sheet, meta.idField, id, row);
+
+  if(arg.type === "projects"){
+    const tasks = readSheet_(SHEETS.TASKS).filter(t =>
+      String(t["מזהה פרויקט"] || "") === id &&
+      String(t["בארכיון"] || "") === "כן"
+    );
+
+    tasks.forEach(t => {
+      const taskId = String(t["מזהה משימה"] || "").trim();
+      if(!taskId) return;
+
+      t["בארכיון"] = "לא";
+      t["תאריך ארכיון"] = "";
+      t["הועבר לארכיון על ידי"] = "";
+      t["עדכון אחרון"] = new Date();
+
+      upsert_ללא_אימות_(SHEETS.TASKS, "מזהה משימה", taskId, t);
+    });
+
+    log_("שחזור מארכיון - פרויקט כולל משימות", id);
+    return true;
+  }
+
+  log_("שחזור מארכיון - " + meta.label, id);
+  return true;
+}
+
+function מחיקה_לצמיתות_מהארכיון(arg){
+  arg = arg || {};
+  BH21_דרוש_מנהל_ראשי_(arg.authToken || arg.token);
+
+  const meta = BH21_פרטי_סוג_ארכיון_(arg.type);
+  const id = String(arg.id || "").trim();
+
+  if(!id) throw new Error("חסר מזהה למחיקה לצמיתות");
+
+  if(arg.type === "projects"){
+    const tasks = readSheet_(SHEETS.TASKS).filter(t =>
+      String(t["מזהה פרויקט"] || "") === id
+    );
+
+    tasks.forEach(t => {
+      const taskId = String(t["מזהה משימה"] || "");
+      if(t["מזהה אירוע ביומן"]){
+        מחיקת_אירוע_יומן_אם_קיים_(t["מזהה אירוע ביומן"]);
+      }
+      deleteWhere_(SHEETS.TASK_NOTES, "מזהה משימה", taskId);
+      deleteById_(SHEETS.TASKS, "מזהה משימה", taskId);
+    });
+
+    deleteWhere_(SHEETS.LINKS, "מזהה פרויקט", id);
+    deleteById_(SHEETS.PROJECTS, "מזהה פרויקט", id);
+
+    log_("מחיקה לצמיתות מהארכיון - פרויקט", id);
+    return true;
+  }
+
+  if(arg.type === "contacts"){
+    deleteWhere_(SHEETS.LINKS, "מזהה איש קשר", id);
+    deleteById_(SHEETS.CONTACTS, "מזהה איש קשר", id);
+
+    log_("מחיקה לצמיתות מהארכיון - איש קשר", id);
+    return true;
+  }
+
+  if(arg.type === "tasks"){
+    const task = readSheet_(SHEETS.TASKS).find(t =>
+      String(t["מזהה משימה"] || "") === id
+    );
+
+    if(task && task["מזהה אירוע ביומן"]){
+      מחיקת_אירוע_יומן_אם_קיים_(task["מזהה אירוע ביומן"]);
+    }
+
+    deleteWhere_(SHEETS.TASK_NOTES, "מזהה משימה", id);
+    deleteById_(SHEETS.TASKS, "מזהה משימה", id);
+
+    log_("מחיקה לצמיתות מהארכיון - משימה", id);
+    return true;
+  }
+
+  throw new Error("סוג ארכיון לא תקין");
+}
+
+function BH_הבטח_גיליון_עם_כותרות_(sheetName, headers){
+  const ss = getSS_();
+  let sh = ss.getSheetByName(sheetName);
+
+  if (!sh) {
+    sh = ss.insertSheet(sheetName);
+  }
+
+  if (sh.getLastRow() === 0) {
+    sh.appendRow(headers);
+  }
+
+  return sh;
+}
+
+function שמירת_הערה_לפרויקט_Build5(data) {
+  data = data || {};
+
+  const user = דרוש_כתיבה_Build11_2_(data.authToken || data.token || "");
+  const projectId = String(data.projectId || "").trim();
+  const note = String(data.note || "").trim();
+
+  if (!projectId) throw new Error("חסר מזהה פרויקט");
+  if (!note) throw new Error("חובה להזין תוכן הערה");
+
+  BH_הבטח_גיליון_עם_כותרות_("הערות פרויקט", [
+    "מזהה הערה",
+    "מזהה פרויקט",
+    "תאריך ושעה",
+    "תוכן",
+    "נוצר ע״י"
+  ]);
+
+  const now = new Date();
+  const userName = user.name || user.email || "מערכת";
+
+  appendObject_("הערות פרויקט", {
+    "מזהה הערה": makeId_("הערה"),
+    "מזהה פרויקט": projectId,
+    "תאריך ושעה": now,
+    "תוכן": note,
+    "נוצר ע״י": userName
+  });
+
+  BH_TL_addEvent_(
+  "פרויקט",
+  projectId,
+  "הערה",
+  "נוספה הערה: " + note,
+  userName
+);
+
+  return true;
+}
+
+function קבלת_הערות_וציר_זמן_לפרויקט_Build5(projectId) {
+  projectId = String(projectId || "").trim();
+
+  BH_הבטח_גיליון_עם_כותרות_("הערות פרויקט", [
+    "מזהה הערה",
+    "מזהה פרויקט",
+    "תאריך ושעה",
+    "סוג הערה",
+    "תוכן",
+    "חשיפה",
+    "נוצר ע״י"
+  ]);
+
+  BH_הבטח_גיליון_עם_כותרות_("ציר זמן", [
+    "מזהה אירוע",
+    "מזהה פרויקט",
+    "תאריך ושעה",
+    "סוג אירוע",
+    "תיאור",
+    "משתמש",
+    "חשיפה"
+  ]);
+
+  const notes = readSheet_("הערות פרויקט")
+    .filter(r => String(r["מזהה פרויקט"] || "") === projectId);
+
+  const timeline = readSheet_("ציר זמן")
+    .filter(r => String(r["מזהה פרויקט"] || "") === projectId);
+
+  return { notes, timeline };
+}
+
+function BH_TL_ensureTimelineSheet_(){
+  BH_הבטח_גיליון_עם_כותרות_("ציר זמן", [
+    "מזהה אירוע",
+    "סוג ישות",
+    "מזהה ישות",
+    "תאריך ושעה",
+    "סוג אירוע",
+    "תיאור",
+    "משתמש"
+  ]);
+}
+
+function BH_TL_addEvent_(entityType, entityId, eventType, description, userName){
+  entityType = String(entityType || "").trim();
+  entityId = String(entityId || "").trim();
+  eventType = String(eventType || "").trim();
+  description = String(description || "").trim();
+
+  if(!entityType || !entityId || !eventType || !description) return;
+
+  BH_TL_ensureTimelineSheet_();
+
+  appendObject_("ציר זמן", {
+    "מזהה אירוע": makeId_("אירוע"),
+    "סוג ישות": entityType,
+    "מזהה ישות": entityId,
+    "תאריך ושעה": new Date(),
+    "סוג אירוע": eventType,
+    "תיאור": description,
+    "משתמש": userName || "מערכת"
+  });
+}
+
+function BH_TL_getTimeline(data){
+  data = data || {};
+
+  const user = משתמש_מפועל_Build11_2_(data.authToken || data.token || "");
+  const entityType = String(data.entityType || "").trim();
+  const entityId = String(data.entityId || "").trim();
+
+  if(!entityType) throw new Error("חסר סוג ישות");
+  if(!entityId) throw new Error("חסר מזהה ישות");
+
+  const role = String(user.role || "").trim();
+  if(!(user.isOwner === true || role === "מנהל ראשי" || role === "מנהל")){
+    throw new Error("אין הרשאה לצפייה בציר הזמן");
+  }
+
+  BH_TL_ensureTimelineSheet_();
+
+  return readSheet_("ציר זמן")
+    .filter(r =>
+      String(r["סוג ישות"] || "") === entityType &&
+      String(r["מזהה ישות"] || "") === entityId
+    )
+    .sort((a,b) =>
+      new Date(b["תאריך ושעה"]).getTime() -
+      new Date(a["תאריך ושעה"]).getTime()
+    );
+}
