@@ -2587,6 +2587,7 @@ const readOnly = isArchived || !canWriteProject;
   <h3 class="sectionTitle">ציר זמן</h3>
   <button class="primary" onclick="openEntityTimeline('פרויקט','${esc(p['מזהה פרויקט'])}','openProjectCard(\\'${esc(p['מזהה פרויקט'])}\\')')">פתח ציר זמן</button>
 ` : ''}
+  `;
   modal.classList.remove('hidden');
   loadProjectNotesAndTimeline(p['מזהה פרויקט']);
 };
