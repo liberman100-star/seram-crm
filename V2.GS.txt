@@ -551,6 +551,11 @@ function מילוי_ברירות_מחדל_הגדרות_אמיתיות_() {
     ["סטטוס משימה", "נדחה"],
     ["סטטוס משימה", "בוטל"],
 
+    ["עדיפות", "נמוכה"],
+    ["עדיפות", "רגילה"],
+    ["עדיפות", "גבוהה"],
+    ["עדיפות", "דחופה"],
+
     ["סוג הערה", "שיחה"],
     ["סוג הערה", "פגישה"],
     ["סוג הערה", "ווטסאפ"],
@@ -1305,6 +1310,10 @@ function שמירת_איש_קשר_Build6_3(data) {
   const permissions = ["ללא הרשאה", "מנהל ראשי", "מנהל", "משתמש", "לקוח"];
   const statuses = ["ליד חדש", "משקיע פוטנציאלי", "לקוח פעיל"];
 
+  BH_SELECTION_VALIDATE_("מקור הגעה", data.source, "מקור הגעה", old ? old["מקור הגעה"] : "");
+  BH_SELECTION_VALIDATE_("סוג איש קשר", data.contactType, "סוג איש קשר", old ? old["סוג איש קשר"] : "");
+  BH_SELECTION_VALIDATE_("סטטוס לקוח", data.status, "סטטוס לקוח", old ? old["סטטוס לקוח"] : "");
+
   let status = data.status || (old ? old["סטטוס לקוח"] : "") || "ליד חדש";
   let permission = data.systemPermission || data.permission || (old ? old["הרשאת מערכת"] : "") || "ללא הרשאה";
 
@@ -1314,7 +1323,7 @@ function שמירת_איש_קשר_Build6_3(data) {
     status = old && statuses.includes(old["סטטוס לקוח"]) ? old["סטטוס לקוח"] : "ליד חדש";
   }
 
-  if (!statuses.includes(status)) status = "ליד חדש";
+  if (!statuses.includes(status) && !(old && status === old["סטטוס לקוח"])) status = "ליד חדש";
   if (!permissions.includes(permission)) permission = "ללא הרשאה";
 
   const row = {
@@ -2416,7 +2425,11 @@ function שמירת_שיוך(data) {
   דרוש_כתיבה_Build11_2_(data && data.authToken);
   validateRequired_(data.projectId, "פרויקט");
   validateRequired_(data.contactId, "איש קשר");
-  const existing = readSheet_(SHEETS.LINKS).find(l => l["מזהה פרויקט"] === data.projectId && l["מזהה איש קשר"] === data.contactId);
+  const existing = readSheet_(SHEETS.LINKS).find(l =>
+    (data.id && l["מזהה שיוך"] === data.id) ||
+    (l["מזהה פרויקט"] === data.projectId && l["מזהה איש קשר"] === data.contactId)
+  );
+  BH_SELECTION_VALIDATE_("תפקיד", data && data.role, "תפקיד בפרויקט", existing ? (existing["תפקיד / כובע"] || existing["תפקיד"] || "") : "");
   if (existing && existing["מזהה שיוך"] !== data.id) throw new Error("איש הקשר כבר משויך לפרויקט הזה");
   const row = {
     "מזהה שיוך": data.id || makeId_("שיך"),
@@ -3965,6 +3978,39 @@ function BH_FINAL_checkRequiredFields_(entity, data){
   });
 }
 
+
+function BH_SELECTION_OPTION_CATEGORY_(category) {
+  const aliases = {
+    "תפקיד": "תפקיד / כובע"
+  };
+  return aliases[category] || category;
+}
+
+function BH_SELECTION_ACTIVE_VALUES_(category) {
+  const normalized = BH_SELECTION_OPTION_CATEGORY_(category);
+  const names = [String(category || "").trim(), normalized].filter(Boolean);
+  return readSheet_(SHEETS.SETTINGS)
+    .filter(r =>
+      names.indexOf(String(r["סוג הגדרה"] || r["סוג ערך"] || "").trim()) !== -1 &&
+      String(r["פעיל"] || "כן").trim() !== "לא"
+    )
+    .map(r => String(r["ערך"] || "").trim())
+    .filter(Boolean);
+}
+
+function BH_SELECTION_VALIDATE_(category, value, label, oldValue) {
+  const submitted = String(value || "").trim();
+  if (!submitted) return;
+
+  const previous = String(oldValue || "").trim();
+  if (previous && submitted === previous) return;
+
+  const values = BH_SELECTION_ACTIVE_VALUES_(category);
+  if (values.indexOf(submitted) === -1) {
+    throw new Error((label || category) + " חייב להיות מתוך אפשרויות הבחירה הפעילות בהגדרות");
+  }
+}
+
 function שמירת_איש_קשר(data) {
   const actor = דרוש_כתיבה_Build11_2_(data && data.authToken);
 
@@ -3994,6 +4040,10 @@ function שמירת_איש_קשר(data) {
   const creatorPermissions = ["מנהל ראשי", "מנהל", "משתמש"];
   const statuses = ["ליד חדש", "משקיע פוטנציאלי", "לקוח פעיל"];
 
+  BH_SELECTION_VALIDATE_("מקור הגעה", data.source, "מקור הגעה", old ? old["מקור הגעה"] : "");
+  BH_SELECTION_VALIDATE_("סוג איש קשר", data.contactType, "סוג איש קשר", old ? old["סוג איש קשר"] : "");
+  BH_SELECTION_VALIDATE_("סטטוס לקוח", data.status, "סטטוס לקוח", old ? old["סטטוס לקוח"] : "");
+
   let status = data.status || (old ? old["סטטוס לקוח"] : "") || "ליד חדש";
   let permission =
     data.systemPermission ||
@@ -4008,7 +4058,7 @@ function שמירת_איש_קשר(data) {
       : "ליד חדש";
   }
 
-  if (!statuses.includes(status)) status = "ליד חדש";
+  if (!statuses.includes(status) && !(old && status === old["סטטוס לקוח"])) status = "ליד חדש";
   if (!permissions.includes(permission)) permission = "ללא הרשאה";
 
   if (דרגת_הרשאה_Build11_2_(permission) > actorRank) {
@@ -4097,6 +4147,10 @@ function שמירת_פרויקט(data) {
   const old = data.id ? readSheet_(SHEETS.PROJECTS).find(p => p["מזהה פרויקט"] === data.id) : null;
   const currentUser = BH_FINAL_userName_(actor);
 
+  BH_SELECTION_VALIDATE_("עיר", data.city, "עיר", old ? old["עיר"] : "");
+  BH_SELECTION_VALIDATE_("תחום", data.type, "תחום", old ? old["תחום"] : "");
+  BH_SELECTION_VALIDATE_("סטטוס פרויקט", data.status, "סטטוס", old ? old["סטטוס"] : "");
+
   const row = {
     "מזהה פרויקט": data.id || makeId_("פר"),
     "שם פרויקט": data.name,
@@ -4140,6 +4194,10 @@ function שמירת_משימה(data) {
   let calendarId = old ? old["מזהה אירוע ביומן"] || "" : "";
 
   const currentUser = BH_FINAL_userName_(actor);
+
+  BH_SELECTION_VALIDATE_("סוג משימה", data.taskType, "סוג משימה", old ? old["סוג משימה"] : "");
+  BH_SELECTION_VALIDATE_("עדיפות", data.priority, "עדיפות", old ? old["עדיפות"] : "");
+  BH_SELECTION_VALIDATE_("סטטוס משימה", data.status, "סטטוס", old ? old["סטטוס"] : "");
 
   const taskType = data.taskType || (old ? old["סוג משימה"] : "") || "משימה";
   const dateValue = data.date || (old ? old["תאריך"] : "") || "";
