@@ -1010,73 +1010,7 @@ function renderContactCard(d){
 }
 
 /* Tasks */
-function tableTasks(){
-  if(window.taskProjectFilter){
-    const current = taskProjectFilter.value || '';
-    const options = ['<option value="">כל הפרויקטים</option>']
-      .concat((DATA.projects || [])
-        .filter(p => String(p['בארכיון'] || '') !== 'כן')
-        .map(p => `<option value="${esc(p['מזהה פרויקט'])}">${esc(p['שם פרויקט'] || '')}</option>`));
 
-    taskProjectFilter.innerHTML = options.join('');
-    taskProjectFilter.value = current;
-  }
-
-  const projectsById = {};
-  (DATA.projects || []).forEach(p=>{
-    projectsById[String(p['מזהה פרויקט'] || '')] = p['שם פרויקט'] || '';
-  });
-
-  let rows = (DATA.tasks || []).filter(r => String(r['בארכיון'] || '') !== 'כן');
-
-  const selectedProject = window.taskProjectFilter ? taskProjectFilter.value : '';
-  if(selectedProject){
-    rows = rows.filter(t => String(t['מזהה פרויקט'] || '') === String(selectedProject));
-  }
-
-  const f=taskFilter?.value||'all';
-  const today=new Date(); today.setHours(0,0,0,0);
-  const week=new Date(today); week.setDate(week.getDate()+7);
-
-  rows=rows.filter(t=>{
-    const d=t['תאריך']?parseDateOnly(t['תאריך']):null;
-    if(f==='open') return t['סטטוס']!=='בוצע'&&t['סטטוס']!=='בוטל';
-    if(f==='done') return t['סטטוס']==='בוצע';
-    if(f==='late') return d&&d<today&&t['סטטוס']!=='בוצע'&&t['סטטוס']!=='בוטל';
-    if(f==='today') return d&&d.getTime()===today.getTime()&&t['סטטוס']!=='בוצע'&&t['סטטוס']!=='בוטל';
-    if(f==='week') return d&&d>today&&d<=week&&t['סטטוס']!=='בוצע'&&t['סטטוס']!=='בוטל';
-    return true;
-  });
-
-  rows = rows.map(t=>{
-    const copy = Object.assign({}, t);
-    copy['משויך לפרויקט'] = projectsById[String(t['מזהה פרויקט'] || '')] || '';
-    copy['כותרת'] = `<span title="${esc(t['הערות למשימה'] || '')}">${esc(t['כותרת'] || '')}</span>`;
-    return copy;
-  });
-
-  tasksTable.innerHTML=tableHtml(rows,[
-    {key:'כותרת',label:'כותרת'},
-    {key:'משויך לפרויקט',label:'משויך לפרויקט'},
-    {key:'סוג משימה',label:'סוג'},
-    {key:'עדיפות',label:'עדיפות'},
-    {key:'תאריך',label:'תאריך'},
-    {key:'שעה',label:'שעה'},
-    {key:'סטטוס',label:'סטטוס'}
-  ], r=>`openTaskCard('${esc(r['מזהה משימה'])}')`, r=>{
-    const id=esc(r['מזהה משימה']);
-    const isDone = r['סטטוס']==='בוצע';
-
-    return `
-      <button onclick="openTaskCard('${id}')">ערוך</button>
-      ${isDone
-        ? `<button onclick="reactivateTask('${id}')">החזר לפעיל</button>`
-        : `<button onclick="doneTask('${id}')">בוצע</button>`
-      }
-      <button class="danger" onclick="delTask('${id}')">העבר לארכיון</button>
-    `;
-  });
-}
 
 function projectOptions(selected=''){
   return `<option value="">ללא פרויקט</option>`+
@@ -2003,11 +1937,7 @@ function renderTaskCard(d){
     <h3 class="sectionTitle">הערות / ציר זמן המשימה</h3>${renderTaskNotes(d.notes||[])}<h3>הוסף הערה</h3><textarea id="taskNoteText" placeholder="הערה למשימה"></textarea><button class="primary" onclick="saveTaskNote('${id}')">שמור הערה</button>`;
   modal.classList.remove('hidden');
 }
-function tableTasks(){
-  let rows=DATA.tasks||[]; const f=taskFilter?.value||'all'; const today=new Date(); today.setHours(0,0,0,0); const week=new Date(today); week.setDate(week.getDate()+7);
-  rows=rows.filter(t=>{ const d=t['תאריך']?parseDateOnly(t['תאריך']):null; if(f==='open') return t['סטטוס']!=='בוצע'&&t['סטטוס']!=='בוטל'; if(f==='done') return t['סטטוס']==='בוצע'; if(f==='late') return d&&d<today&&t['סטטוס']!=='בוצע'&&t['סטטוס']!=='בוטל'; if(f==='today') return d&&d.getTime()===today.getTime()&&t['סטטוס']!=='בוצע'&&t['סטטוס']!=='בוטל'; if(f==='week') return d&&d>today&&d<=week&&t['סטטוס']!=='בוצע'&&t['סטטוס']!=='בוטל'; return true; });
-  tasksTable.innerHTML=tableHtml(rows,[{key:'כותרת',label:'כותרת'},{key:'סוג משימה',label:'סוג'},{key:'עדיפות',label:'עדיפות'},{key:'תאריך',label:'תאריך'},{key:'שעה',label:'שעה'},{key:'סטטוס',label:'סטטוס'}], r=>`openTaskCard('${esc(r['מזהה משימה'])}')`, r=>{ const id=esc(r['מזהה משימה']); const doneBtn=r['סטטוס']==='בוצע'?`<button class="ok" onclick='reactivateTask("${id}")'>החזר לפעיל</button>`:`<button class="ok" onclick='doneTask("${id}")'>בוצע</button>`; return `${doneBtn} <button class="danger" onclick='delTask("${id}")'>העבר לארכיון</button>`; });
-}
+
 
 
 /***********************
