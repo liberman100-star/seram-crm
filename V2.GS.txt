@@ -2278,13 +2278,8 @@ function דרוש_כתיבה_Build11_2_(token) {
 function דרוש_מחיקה_Build11_2_(token) {
   const user = משתמש_מפועל_Build11_2_(token);
 
-  if (!user || !user.role) {
-    throw new Error("אין הרשאה");
-  }
-
-  if (String(user.role).trim() === "לקוח") {
-    throw new Error("אין לך הרשאה למחיקה");
-  }
+  const perms = פעולות_מותרות_Build11_2_(user);
+  if (!perms.canDelete) throw new Error("אין לך הרשאה למחיקה");
 
   return user;
 }
@@ -2339,7 +2334,16 @@ function סינון_נתונים_לפי_משתמש_Build7_(data, user) {
   out.system = data.system || מיתוג_מערכת_Build7_();
   out.currentUser = data.currentUser || user || {};
   out.currentUser.role = role;
-  out.canSeeSettings = isSuperAdmin;
+  const actions = פעולות_מותרות_Build11_2_(user);
+  out.actionPermissions = actions;
+  out.canSeeSettings = actions.canSeeSettings;
+  out.canSeeDashboard = actions.canSeeDashboard;
+  out.canSeeArchive = actions.canSeeArchive;
+  out.canSeeTimeline = actions.canSeeTimeline;
+  out.canCreate = actions.canCreate;
+  out.canEdit = actions.canEdit;
+  out.canDelete = actions.canDelete;
+  out.readOnly = actions.readOnly;
 
   if (isSuperAdmin) {
     out.dashboard = calcDashboard_(out.projects || [], out.contacts || [], out.tasks || []);
@@ -2622,20 +2626,67 @@ function התקנת_Build11_3_אבטחת_הרשאות_וסשן() {
   return true;
 }
 
+function BH22_ערך_הרשאה_תקין_(value) {
+  return ["כן", "לא", "משויך", "שלי", "פנימי", "לקוח בלבד"].indexOf(String(value || "").trim()) !== -1;
+}
+
+function BH22_הרשאה_אפקטיבית_(user, key) {
+  const role = String(user && user.role || "").trim();
+  let value = הרשאה_תפקיד_Build11_2_(role, key);
+
+  try {
+    const contactId = String(user && user.contactId || "").trim();
+    if (contactId) {
+      const row = readSheet_("הרשאות_משתמשים").find(r =>
+        String(r["מזהה משתמש"] || "").trim() === contactId &&
+        String(r["פעיל"] || "כן").trim() !== "לא"
+      );
+
+      if (row && String(row["השתמש בהרשאות תפקיד"] || "כן").trim() === "לא") {
+        const override = String(row[key] || "").trim();
+        if (BH22_ערך_הרשאה_תקין_(override)) value = override;
+      }
+    }
+  } catch(e) {}
+
+  return BH22_ערך_הרשאה_תקין_(value) ? value : הרשאה_תפקיד_Build11_2_(role, key);
+}
+
+function BH22_הרשאת_מודול_פעילה_(user, key) {
+  return BH22_הרשאה_אפקטיבית_(user, key) !== "לא";
+}
+
 function פעולות_מותרות_Build11_2_(user) {
   const role = String(user && user.role || "").trim();
   const isAdmin = user && (user.isOwner === true || role === "מנהל ראשי");
-  const isClient = role === "לקוח";
   const hasRole = !!role;
+  const canProjects = isAdmin || BH22_הרשאת_מודול_פעילה_(user, "פרויקטים");
+  const canContacts = isAdmin || BH22_הרשאת_מודול_פעילה_(user, "אנשי קשר");
+  const canTasks = isAdmin || BH22_הרשאת_מודול_פעילה_(user, "משימות");
+  const canNotes = isAdmin || BH22_הרשאת_מודול_פעילה_(user, "הערות");
+  const canWriteAny = hasRole && (canProjects || canContacts || canTasks || canNotes);
+  const canDelete = hasRole && (isAdmin || BH22_הרשאה_אפקטיבית_(user, "מחיקה") === "כן");
 
   return {
-    canSeeDashboard: isAdmin || הרשאה_תפקיד_Build11_2_(role, "דשבורד") !== "לא",
-    canSeeSettings: isAdmin || הרשאה_תפקיד_Build11_2_(role, "הגדרות") !== "לא",
-    canManagePermissions: isAdmin || הרשאה_תפקיד_Build11_2_(role, "הרשאות") === "כן",
-    canCreate: !isClient && hasRole,
-    canEdit: !isClient && hasRole,
-    canDelete: !isClient && (isAdmin || הרשאה_תפקיד_Build11_2_(role, "מחיקה") === "כן"),
-    readOnly: isClient
+    canSeeDashboard: isAdmin || BH22_הרשאה_אפקטיבית_(user, "דשבורד") !== "לא",
+    canSeeSettings: isAdmin || BH22_הרשאה_אפקטיבית_(user, "הגדרות") !== "לא",
+    canSeeArchive: isAdmin || canDelete,
+    canSeeTimeline: isAdmin || canNotes,
+    canManagePermissions: isAdmin || BH22_הרשאה_אפקטיבית_(user, "הרשאות") === "כן",
+    canCreate: canWriteAny,
+    canEdit: canWriteAny,
+    canDelete: canDelete,
+    readOnly: !canWriteAny,
+    modules: {
+      dashboard: isAdmin || BH22_הרשאה_אפקטיבית_(user, "דשבורד") !== "לא",
+      projects: canProjects,
+      contacts: canContacts,
+      tasks: canTasks,
+      notes: canNotes,
+      settings: isAdmin || BH22_הרשאה_אפקטיבית_(user, "הגדרות") !== "לא",
+      archive: isAdmin || canDelete,
+      timeline: isAdmin || canNotes
+    }
   };
 }
 
@@ -2936,6 +2987,9 @@ function קבלת_נתוני_פתיחה_Build13_2(token) {
       currentUser: data.currentUser,
       canSeeSettings: data.canSeeSettings,
       canSeeDashboard: data.canSeeDashboard,
+      canSeeArchive: data.canSeeArchive,
+      canSeeTimeline: data.canSeeTimeline,
+      actionPermissions: data.actionPermissions,
       canCreate: data.canCreate,
       canEdit: data.canEdit,
       canDelete: data.canDelete,
@@ -2982,6 +3036,9 @@ function קבלת_מודול_Build13_2(token, moduleName) {
       currentUser: data.currentUser,
       canSeeSettings: data.canSeeSettings,
       canSeeDashboard: data.canSeeDashboard,
+      canSeeArchive: data.canSeeArchive,
+      canSeeTimeline: data.canSeeTimeline,
+      actionPermissions: data.actionPermissions,
       canCreate: data.canCreate,
       canEdit: data.canEdit,
       canDelete: data.canDelete,
@@ -4343,7 +4400,7 @@ function BH21_פרטי_סוג_ארכיון_(type){
 
 function שחזור_מארכיון(arg){
   arg = arg || {};
-  const user = BH21_דרוש_מנהל_ראשי_(arg.authToken || arg.token);
+  const user = דרוש_מחיקה_Build11_2_(arg.authToken || arg.token);
   const meta = BH21_פרטי_סוג_ארכיון_(arg.type);
   const id = String(arg.id || "").trim();
 
@@ -4387,7 +4444,7 @@ function שחזור_מארכיון(arg){
 
 function מחיקה_לצמיתות_מהארכיון(arg){
   arg = arg || {};
-  BH21_דרוש_מנהל_ראשי_(arg.authToken || arg.token);
+  דרוש_מחיקה_Build11_2_(arg.authToken || arg.token);
 
   const meta = BH21_פרטי_סוג_ארכיון_(arg.type);
   const id = String(arg.id || "").trim();

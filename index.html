@@ -854,11 +854,7 @@ function saveProject(id){
 function delProject(id){ if(confirm('למחוק פרויקט ואת השיוכים שלו?')) google.script.run.withSuccessHandler(()=>{closeM();refreshCore();}).withFailureHandler(e=>alert(e.message)).מחיקת_פרויקט(id); }
 function openProjectCard(id){ google.script.run.withSuccessHandler(renderProjectCard).withFailureHandler(e=>alert(e.message)).כרטיס_פרויקט(id); }
 
-function canSeeTimelineButton(){
-  const u = DATA.currentUser || {};
-  const role = String(u.role || '').trim();
-  return u.isOwner === true || role === 'מנהל ראשי' || role === 'מנהל';
-}
+function canSeeTimelineButton(){ return typeof canSeeTimeline === 'function' ? canSeeTimeline() : true; }
 
 function loadProjectNotesOnly(projectId){
   google.script.run
@@ -1740,11 +1736,7 @@ function tableContacts(){
 }
 
 function renderArchive(type='projects'){
-  const u = DATA.currentUser || {};
-  const role = String(u.role || '').trim();
-  const isSuperAdmin = u.isOwner === true || role === 'מנהל ראשי';
-
-  if(!isSuperAdmin){
+  if(!canSeeArchive()){
     archiveContent.innerHTML = '<p>אין לך הרשאה לצפות בארכיון.</p>';
     return;
   }
@@ -2219,11 +2211,13 @@ function roleRankUi(role){
 }
 function currentRole(){ return String((DATA.currentUser||{}).role||'').trim(); }
 function actionPerms(){ return DATA.actionPermissions || {}; }
-function canCreate(){ const p=actionPerms(); return p.canCreate !== false && currentRole() !== 'לקוח'; }
-function canEdit(){ const p=actionPerms(); return p.canEdit !== false && currentRole() !== 'לקוח'; }
+function canCreate(){ const p=actionPerms(); return p.canCreate !== false && p.readOnly !== true; }
+function canEdit(){ const p=actionPerms(); return p.canEdit !== false && p.readOnly !== true; }
 function canDelete(){ return actionPerms().canDelete === true; }
-function isReadOnly(){ return actionPerms().readOnly === true || currentRole() === 'לקוח'; }
+function isReadOnly(){ return actionPerms().readOnly === true || canEdit() === false; }
 function canSeeDashboard(){ return DATA.canSeeDashboard !== false; }
+function canSeeArchive(){ return DATA.canSeeArchive === true || (DATA.actionPermissions||{}).canSeeArchive === true; }
+function canSeeTimeline(){ return DATA.canSeeTimeline !== false && ((DATA.actionPermissions||{}).canSeeTimeline !== false); }
 function canSeeSettings(){
   const u = DATA.currentUser || {};
 
@@ -2272,29 +2266,39 @@ function applySecurityUI(){
   const isClient = role === 'לקוח';
   const canWrite = !isClient && !!role;
 
-  DATA.canSeeSettings = isSuperAdmin;
+  DATA.canSeeSettings = DATA.canSeeSettings === true || isSuperAdmin;
 
   const settingsBtn = document.getElementById('btn_settings');
   if(settingsBtn){
-    settingsBtn.style.display = isSuperAdmin ? '' : 'none';
-    settingsBtn.style.visibility = isSuperAdmin ? '' : 'hidden';
-    settingsBtn.style.pointerEvents = isSuperAdmin ? '' : 'none';
+    settingsBtn.style.display = DATA.canSeeSettings ? '' : 'none';
+    settingsBtn.style.visibility = DATA.canSeeSettings ? '' : 'hidden';
+    settingsBtn.style.pointerEvents = DATA.canSeeSettings ? '' : 'none';
   }
 
   const archiveBtn = document.getElementById('btn_archive');
   if(archiveBtn){
-    archiveBtn.style.display = isSuperAdmin ? '' : 'none';
-    archiveBtn.style.visibility = isSuperAdmin ? '' : 'hidden';
-    archiveBtn.style.pointerEvents = isSuperAdmin ? '' : 'none';
+    archiveBtn.style.display = canSeeArchive() ? '' : 'none';
+    archiveBtn.style.visibility = canSeeArchive() ? '' : 'hidden';
+    archiveBtn.style.pointerEvents = canSeeArchive() ? '' : 'none';
   }
 
+  const modules = (DATA.actionPermissions && DATA.actionPermissions.modules) || {};
+  [['btn_dashboard','dashboard'],['btn_projects','projects'],['btn_contacts','contacts'],['btn_tasks','tasks']].forEach(function(pair){
+    const el = document.getElementById(pair[0]);
+    if(!el) return;
+    const allowed = modules[pair[1]] !== false && (pair[1] !== 'dashboard' || canSeeDashboard());
+    el.style.display = allowed ? '' : 'none';
+    el.style.visibility = allowed ? '' : 'hidden';
+    el.style.pointerEvents = allowed ? '' : 'none';
+  });
+
   const settingsSection = document.getElementById('settings');
-  if(settingsSection && !isSuperAdmin){
+  if(settingsSection && !DATA.canSeeSettings){
     settingsSection.classList.add('hidden');
   }
 
   const archiveSection = document.getElementById('archive');
-  if(archiveSection && !isSuperAdmin){
+  if(archiveSection && !canSeeArchive()){
     archiveSection.classList.add('hidden');
   }
 
@@ -2472,15 +2476,7 @@ renderProjectCard = function(d){
   const p = d.project || {};
   const isArchived = String(p['בארכיון'] || '') === 'כן';
   const role = String((DATA.currentUser || {}).role || '').trim();
-const canWriteProject =
-  !isArchived &&
-  (
-    canEdit() ||
-    (DATA.currentUser || {}).isOwner === true ||
-    role === 'מנהל ראשי' ||
-    role === 'מנהל' ||
-    role === 'משתמש'
-  );
+const canWriteProject = !isArchived && canEdit();
 
 const readOnly = isArchived || !canWriteProject;
 
@@ -2785,13 +2781,13 @@ function renderShell_Build13_2(d){
     userArea.classList.remove('hidden');
   }
 
-  DATA.canSeeSettings =
-    DATA.canSeeSettings === true ||
-    u.isOwner === true ||
-    String(u.role || '').trim() === 'מנהל ראשי';
+  DATA.canSeeSettings = DATA.canSeeSettings === true || u.isOwner === true || String(u.role || '').trim() === 'מנהל ראשי';
 
   if(typeof btn_settings !== 'undefined'){
     btn_settings.style.display = DATA.canSeeSettings ? '' : 'none';
+  }
+  if(typeof btn_archive !== 'undefined'){
+    btn_archive.style.display = (typeof canSeeArchive === 'function' && canSeeArchive()) ? '' : 'none';
   }
 
   try{ renderDashboard(); }catch(e){ console.log(e); }
@@ -5362,16 +5358,18 @@ function fixSettingsButtonFinal(){
     nav.appendChild(btn);
   }
 
-  btn.style.display = isSuperAdmin ? '' : 'none';
-  btn.style.visibility = isSuperAdmin ? '' : 'hidden';
-  btn.style.pointerEvents = isSuperAdmin ? '' : 'none';
+  const allowedSettings = DATA.canSeeSettings === true || isSuperAdmin;
+
+  btn.style.display = allowedSettings ? '' : 'none';
+  btn.style.visibility = allowedSettings ? '' : 'hidden';
+  btn.style.pointerEvents = allowedSettings ? '' : 'none';
 
   if(window.DATA){
-    DATA.canSeeSettings = isSuperAdmin;
+    DATA.canSeeSettings = allowedSettings;
   }
 
   const settingsSection = document.getElementById('settings');
-  if(settingsSection && !isSuperAdmin){
+  if(settingsSection && !DATA.canSeeSettings){
     settingsSection.classList.add('hidden');
   }
 }
