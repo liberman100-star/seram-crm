@@ -5769,12 +5769,28 @@ window.calendarTasksForDate = function(d){
   }
 
   window.tableProjects = function(){
-    const rows = filtered(DATA.projects||[], projectSearch?.value, fieldsFor('project','search'));
-    projectsTable.innerHTML = tableHtml(rows, cols('project','list'), r=>`openProjectCard('${esc(r['מזהה פרויקט'])}')`, null);
+    let rows = filtered(
+      (DATA.projects || []).filter(r => String(r['בארכיון'] || '') !== 'כן'),
+      projectSearch?.value,
+      fieldsFor('project','search')
+    );
+    rows = sortRows(rows, projectSort?.value || 'dateDesc', 'שם פרויקט');
+    projectsTable.innerHTML = tableHtml(rows, cols('project','list'), r=>`openProjectCard('${esc(r['מזהה פרויקט'])}')`, r=>{
+      const id = esc(r['מזהה פרויקט']);
+      return `<button onclick="openProjectCard('${id}')">ערוך</button> <button class="danger" onclick="delProject('${id}')">העבר לארכיון</button>`;
+    });
   };
   window.tableContacts = function(){
-    const rows = filtered(DATA.contacts||[], contactSearch?.value, fieldsFor('contact','search'));
-    contactsTable.innerHTML = tableHtml(rows, cols('contact','list'), r=>`openContactCard('${esc(r['מזהה איש קשר'])}')`, null);
+    let rows = filtered(
+      (DATA.contacts || []).filter(r => String(r['בארכיון'] || '') !== 'כן'),
+      contactSearch?.value,
+      fieldsFor('contact','search')
+    );
+    rows = sortRows(rows, contactSort?.value || 'dateDesc', 'שם מלא');
+    contactsTable.innerHTML = tableHtml(rows, cols('contact','list'), r=>`openContactCard('${esc(r['מזהה איש קשר'])}')`, r=>{
+      const id = esc(r['מזהה איש קשר']);
+      return `<button onclick="openContactCard('${id}')">ערוך</button> <button class="danger" onclick="delContact('${id}')">העבר לארכיון</button>`;
+    });
   };
   const baseTableTasks = window.tableTasks;
   window.tableTasks = function(){
@@ -5785,8 +5801,9 @@ window.calendarTasksForDate = function(d){
     const f = window.taskFilter ? taskFilter.value || 'all' : 'all';
     const today = new Date(); today.setHours(0,0,0,0); const week = new Date(today); week.setDate(week.getDate()+7);
     rows = rows.filter(t=>{ const d = t['תאריך'] ? parseDateOnly(t['תאריך']) : null; if(f==='open') return t['סטטוס']!=='בוצע' && t['סטטוס']!=='בוטל'; if(f==='done') return t['סטטוס']==='בוצע'; if(f==='late') return d && d<today && t['סטטוס']!=='בוצע' && t['סטטוס']!=='בוטל'; if(f==='today') return d && d.getTime()===today.getTime() && t['סטטוס']!=='בוצע' && t['סטטוס']!=='בוטל'; if(f==='week') return d && d>today && d<=week && t['סטטוס']!=='בוצע' && t['סטטוס']!=='בוטל'; return true; });
+    rows = rows.map(t=>Object.assign({}, t, {'משויך לפרויקט':projectsById[String(t['מזהה פרויקט']||'')]||'', 'שם איש קשר':contactNameById(t['מזהה איש קשר'])}));
     const q = window.taskSearch ? taskSearch.value || '' : ''; rows = filtered(rows, q, fieldsFor('task','search'));
-    rows = rows.map(t=>Object.assign({}, t, {'כותרת':`<span class="task-title-note" title="${esc(t['הערות למשימה']||'')}">${esc(t['כותרת']||'')}</span>`, 'משויך לפרויקט':projectsById[String(t['מזהה פרויקט']||'')]||'', 'שם איש קשר':contactNameById(t['מזהה איש קשר'])}));
+    rows = rows.map(t=>Object.assign({}, t, {'כותרת':`<span class="task-title-note" title="${esc(t['הערות למשימה']||'')}">${esc(t['כותרת']||'')}</span>`}));
     tasksTable.innerHTML = tableHtml(rows, cols('task','list'), r=>`openTaskCard('${esc(r['מזהה משימה'])}')`, r=>{ const id=esc(r['מזהה משימה']); const isDone=r['סטטוס']==='בוצע'; return `<button onclick="openTaskCard('${id}')">ערוך</button> ${isDone?`<button onclick="reactivateTask('${id}')">החזר לפעיל</button>`:`<button onclick="doneTask('${id}')">בוצע</button>`} <button class="danger" onclick="delTask('${id}')">העבר לארכיון</button>`; });
   };
   const oldProjectCard = window.renderProjectCard, oldContactCard = window.renderContactCard, oldTaskCard = window.renderTaskCard;
