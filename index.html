@@ -713,7 +713,7 @@ function assignmentDomainOptions(selected='ללא'){
 function assignmentDomainsMulti(selected=''){
   const selectedSet = new Set(String(selected||'').split(/[;,|\n]+/).map(x=>x.trim()).filter(Boolean));
   const cat = categories().find(c=>c.name==='תחום שיוך');
-  const arr = cat ? (cat.values||[]).filter(x=>x.active!=='לא') : [{value:'ללא'}];
+  const arr = cat ? (cat.values||[]).filter(x=>x.active!=='לא' && String(x.value||'').trim()!=='ללא') : [];
   return arr.map(x=>`<option value="${esc(x.value)}" ${selectedSet.has(String(x.value))?'selected':''}>${esc(x.value)}</option>`).join('');
 }
 function selectedAssignmentDomains(){

@@ -112,6 +112,7 @@ function שמירת_הערת_משימה(data) {
   const actor = דרוש_כתיבה_Build11_2_(data && data.authToken);
   validateRequired_(data.taskId, "משימה");
   validateRequired_(data.note, "הערה");
+  הבטח_עמודה_אם_חסרה_(SHEETS.TASK_NOTES, "יוצר");
 
   const taskForNote = readSheet_(SHEETS.TASKS).find(t => String(t["מזהה משימה"] || "") === String(data.taskId || ""));
   if (taskForNote && taskForNote["מזהה פרויקט"]) BH_AD_assertProjectVisible_(actor, taskForNote["מזהה פרויקט"]);
@@ -2441,6 +2442,7 @@ function שמירת_שיוך(data) {
   דרוש_כתיבה_Build11_2_(data && data.authToken);
   validateRequired_(data.projectId, "פרויקט");
   validateRequired_(data.contactId, "איש קשר");
+  הבטח_עמודה_אם_חסרה_(SHEETS.LINKS, "יוצר");
   BH_AD_assertProjectVisible_(משתמש_מפועל_Build11_2_(data && data.authToken), data.projectId);
   const existing = readSheet_(SHEETS.LINKS).find(l =>
     (data.id && l["מזהה שיוך"] === data.id) ||
@@ -3965,7 +3967,7 @@ function BH_AD_split_(value){
 
 function BH_AD_join_(values){
   const seen = {};
-  return BH_AD_split_(values).filter(v => { if(seen[v]) return false; seen[v] = true; return true; }).join(", ");
+  return BH_AD_split_(values).filter(v => v !== BH_AD_DEFAULT).filter(v => { if(seen[v]) return false; seen[v] = true; return true; }).join(", ");
 }
 
 function BH_AD_projectDomain_(project){
@@ -3983,12 +3985,13 @@ function BH_AD_managerDomains_(user){
       raw = c ? c["תחומי שיוך"] || "" : "";
     } catch(e) {}
   }
-  return BH_AD_split_(raw);
+  return BH_AD_split_(raw).filter(v => v !== BH_AD_DEFAULT);
 }
 
 function BH_AD_userHasProjectDomain_(user, project){
   if(String(user && user.role || "").trim() !== "מנהל") return false;
   const domain = BH_AD_projectDomain_(project);
+  if(!domain || domain === BH_AD_DEFAULT) return false;
   return BH_AD_managerDomains_(user).indexOf(domain) !== -1;
 }
 
@@ -4010,6 +4013,8 @@ function BH_AD_assertCreatorWrite_(user, row, label){
 function התקנת_תחום_שיוך_BuildAD(){
   הבטח_עמודה_אם_חסרה_(SHEETS.PROJECTS, BH_AD_CATEGORY);
   הבטח_עמודה_אם_חסרה_(SHEETS.CONTACTS, "תחומי שיוך");
+  הבטח_עמודה_אם_חסרה_(SHEETS.LINKS, "יוצר");
+  הבטח_עמודה_אם_חסרה_(SHEETS.TASK_NOTES, "יוצר");
   try { הוספת_אפשרות_בחירה_בטוח_Build11_(BH_AD_CATEGORY, BH_AD_DEFAULT, 1); } catch(e) { Logger.log(e); }
   try {
     const rows = readSheet_("הגדרות_שדות");
