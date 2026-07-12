@@ -685,10 +685,20 @@ function esc(s){return String(s||'').replaceAll('&','&amp;').replaceAll('"','&qu
 function jsonAttr(obj){ return esc(JSON.stringify(obj||{})); }
 function categories(){ return DATA.categories || []; }
 function categoryNames(){ return categories().map(c=>c.name); }
+function optionCategoryName(type){
+  const aliases = {'תפקיד':'תפקיד / כובע','תפקיד / כובע':'תפקיד'};
+  if(categories().some(c=>c.name===type)) return type;
+  return aliases[type] || type;
+}
 function optionsForCategory(type, selected=''){
-  const cat = categories().find(c=>c.name===type);
+  const categoryName = optionCategoryName(type);
+  const cat = categories().find(c=>c.name===categoryName);
   const arr = cat ? (cat.values||[]).filter(x=>x.active!=='לא') : [];
-  return arr.map(x=>`<option value="${esc(x.value)}" ${x.value==selected?'selected':''}>${esc(x.value)}</option>`).join('');
+  let html = arr.map(x=>`<option value="${esc(x.value)}" ${x.value==selected?'selected':''}>${esc(x.value)}</option>`).join('');
+  if(selected && !arr.some(x=>String(x.value)===String(selected))){
+    html = `<option value="${esc(selected)}" selected>${esc(selected)}</option>` + html;
+  }
+  return html;
 }
 function opts(type, selected=''){
   return optionsForCategory(type, selected);
@@ -1829,8 +1839,7 @@ function deleteForeverArchive(type,id){
 }
 
 function priorityOptions(selected='רגילה'){
-  const arr=['נמוכה','רגילה','גבוהה','דחופה'];
-  return arr.map(x=>`<option value="${esc(x)}" ${x==selected?'selected':''}>${esc(x)}</option>`).join('');
+  return opts('עדיפות', selected || 'רגילה');
 }
 function participantCandidatesForTask(r={}){
   const out=[]; const seen={};
