@@ -109,14 +109,18 @@ function doGet() {
 
 /* הוסר: מופע ישן של function מחיקת_משימה — נשמרה הגרסה המאוחרת בקובץ */
 function שמירת_הערת_משימה(data) {
+  const actor = דרוש_כתיבה_Build11_2_(data && data.authToken);
   validateRequired_(data.taskId, "משימה");
   validateRequired_(data.note, "הערה");
 
+  const taskForNote = readSheet_(SHEETS.TASKS).find(t => String(t["מזהה משימה"] || "") === String(data.taskId || ""));
+  if (taskForNote && taskForNote["מזהה פרויקט"]) BH_AD_assertProjectVisible_(actor, taskForNote["מזהה פרויקט"]);
   const row = {
     "מזהה הערה": makeId_("הע"),
     "מזהה משימה": data.taskId,
     "תאריך ושעת עדכון": new Date(),
-    "הערה": data.note
+    "הערה": data.note,
+    "יוצר": BH_FINAL_userName_(actor)
   };
 
   appendObject_(SHEETS.TASK_NOTES, row);
@@ -1487,6 +1491,8 @@ function איתור_מורשה_לפי_מייל_Build7_(email) {
     name: contact["שם מלא"] || email,
     role,
     contactId: contact["מזהה איש קשר"] || "",
+    "תחומי שיוך": contact["תחומי שיוך"] || "",
+    assignmentDomains: contact["תחומי שיוך"] || "",
     isOwner: false
   };
 }
@@ -1577,6 +1583,8 @@ function קבלת_משתמש_מסשן_Build7_(token) {
     name: user.name || email || "",
     role: String(user.role || user["הרשאת מערכת"] || user.permission || "").trim(),
     contactId: user.contactId || "",
+    "תחומי שיוך": user["תחומי שיוך"] || user.assignmentDomains || "",
+    assignmentDomains: user.assignmentDomains || user["תחומי שיוך"] || "",
     isOwner: !!user.isOwner,
     token
   };
@@ -1835,6 +1843,7 @@ function שמירת_טלפון_כטקסט_(phone) {
 }
 
 function קבלת_נתוני_מערכת_מלאים_Build10_() {
+  try { התקנת_תחום_שיוך_BuildAD(); } catch(e) { Logger.log(e); }
   const projects = readSheet_(SHEETS.PROJECTS);
   const contacts = readSheet_(SHEETS.CONTACTS);
   const links = readSheet_(SHEETS.LINKS);
@@ -2309,6 +2318,8 @@ function משתמש_רשאי_לפרויקט_Build11_2_(user, projectId) {
     return true;
   }
 
+  if (BH_AD_userHasProjectDomain_(user, project)) return true;
+
   const allowed = פרויקטים_מותרים_למשתמש_Build6_3(contactId);
   return allowed.includes(projectId);
 }
@@ -2356,7 +2367,8 @@ function סינון_נתונים_לפי_משתמש_Build7_(data, user) {
     out.projects = (data.projects || []).filter(p =>
       linkedProjectIds.includes(p["מזהה פרויקט"]) ||
       String(p["יוצר"] || "").trim() === userName ||
-      String(p["אחראי"] || "").trim() === userName
+      String(p["אחראי"] || "").trim() === userName ||
+      BH_AD_userHasProjectDomain_(user, p)
     );
 
     const allowedProjectIds = out.projects.map(p => p["מזהה פרויקט"]).filter(Boolean);
@@ -2429,6 +2441,7 @@ function שמירת_שיוך(data) {
   דרוש_כתיבה_Build11_2_(data && data.authToken);
   validateRequired_(data.projectId, "פרויקט");
   validateRequired_(data.contactId, "איש קשר");
+  BH_AD_assertProjectVisible_(משתמש_מפועל_Build11_2_(data && data.authToken), data.projectId);
   const existing = readSheet_(SHEETS.LINKS).find(l =>
     (data.id && l["מזהה שיוך"] === data.id) ||
     (l["מזהה פרויקט"] === data.projectId && l["מזהה איש קשר"] === data.contactId)
@@ -2441,6 +2454,7 @@ function שמירת_שיוך(data) {
     "מזהה איש קשר": data.contactId,
     "תפקיד / כובע": data.role || "",
     "מורשה צפייה בפורטל": data.portal || "לא",
+    "יוצר": existing && existing["יוצר"] ? existing["יוצר"] : BH_FINAL_userName_(משתמש_מפועל_Build11_2_(data && data.authToken)),
     "תאריך יצירה": data.created || (existing ? existing["תאריך יצירה"] : new Date()),
     "עדכון אחרון": new Date()
   };
@@ -2546,7 +2560,9 @@ function מחיקת_איש_קשר(arg) {
 
 function מחיקת_שיוך(arg) {
   const x = חילוץ_מזהה_וטוקן_Build11_2_(arg);
-  דרוש_מחיקה_Build11_2_(x.token);
+  const user = דרוש_מחיקה_Build11_2_(x.token);
+  const link = readSheet_(SHEETS.LINKS).find(l => String(l["מזהה שיוך"] || "") === String(x.id || ""));
+  if (link && link["יוצר"]) BH_AD_assertCreatorWrite_(user, link, "שיוך");
 
   deleteById_(SHEETS.LINKS, "מזהה שיוך", x.id);
 
@@ -2575,8 +2591,8 @@ function מחיקת_משימה(arg) {
   return BH20_העברה_לארכיון_(SHEETS.TASKS, "מזהה משימה", x.id, user, "משימה");
 }
 
-function סימון_משימה_בוצעה(arg) { const x = חילוץ_מזהה_וטוקן_Build11_2_(arg); דרוש_כתיבה_Build11_2_(x.token); const task = readSheet_(SHEETS.TASKS).find(t => t["מזהה משימה"] === x.id); if (!task) throw new Error("המשימה לא נמצאה"); task["סטטוס"] = "בוצע"; task["עדכון אחרון"] = new Date(); upsert_(SHEETS.TASKS, "מזהה משימה", x.id, task); log_("סימון משימה בוצעה", x.id); return true; }
-function החזרת_משימה_לפעילה(arg) { const x = חילוץ_מזהה_וטוקן_Build11_2_(arg); דרוש_כתיבה_Build11_2_(x.token); const task = readSheet_(SHEETS.TASKS).find(t => t["מזהה משימה"] === x.id); if (!task) throw new Error("המשימה לא נמצאה"); task["סטטוס"] = "פתוח"; task["עדכון אחרון"] = new Date(); upsert_(SHEETS.TASKS, "מזהה משימה", x.id, task); log_("החזרת משימה לפעילה", x.id); return true; }
+function סימון_משימה_בוצעה(arg) { const x = חילוץ_מזהה_וטוקן_Build11_2_(arg); const user = דרוש_כתיבה_Build11_2_(x.token); const task = readSheet_(SHEETS.TASKS).find(t => t["מזהה משימה"] === x.id); if (!task) throw new Error("המשימה לא נמצאה"); BH_AD_assertCreatorWrite_(user, task, "משימה"); task["סטטוס"] = "בוצע"; task["עדכון אחרון"] = new Date(); upsert_(SHEETS.TASKS, "מזהה משימה", x.id, task); log_("סימון משימה בוצעה", x.id); return true; }
+function החזרת_משימה_לפעילה(arg) { const x = חילוץ_מזהה_וטוקן_Build11_2_(arg); const user = דרוש_כתיבה_Build11_2_(x.token); const task = readSheet_(SHEETS.TASKS).find(t => t["מזהה משימה"] === x.id); if (!task) throw new Error("המשימה לא נמצאה"); BH_AD_assertCreatorWrite_(user, task, "משימה"); task["סטטוס"] = "פתוח"; task["עדכון אחרון"] = new Date(); upsert_(SHEETS.TASKS, "מזהה משימה", x.id, task); log_("החזרת משימה לפעילה", x.id); return true; }
 
 function קבלת_כרטיס_משימה_Build10(arg) {
   const x = חילוץ_מזהה_וטוקן_Build11_2_(arg);
@@ -3447,6 +3463,8 @@ function קבלת_נתונים_Build7(token) {
     role: role,
     isOwner: user.isOwner === true,
     contactId: user.contactId || "",
+    "תחומי שיוך": user["תחומי שיוך"] || user.assignmentDomains || "",
+    assignmentDomains: user.assignmentDomains || user["תחומי שיוך"] || "",
     allowed: true
   };
 
@@ -3600,7 +3618,8 @@ function BH14_העשרת_נתוני_יומן_(data, user){
           BH15_ערך_שווה_(creator, userName) ||
           BH15_ערך_שווה_(creator, userEmail) ||
           BH15_ערך_שווה_(owner, userName) ||
-          BH15_ערך_שווה_(owner, userEmail)
+          BH15_ערך_שווה_(owner, userEmail) ||
+          BH_AD_userHasProjectDomain_(user, p)
         )){
           allowedProjectIds[projectId] = true;
         }
@@ -3901,6 +3920,7 @@ function BH18_בדיקת_שדות_חובה_(entity, data) {
       "אחראי": data.owner,
       "תגיות": data.tags,
       "תיקיית Drive": data.drive,
+      "תחום שיוך": data.assignmentDomain || data[BH_AD_CATEGORY],
       "יוצר": data.creator
     },
     "משימה": {
@@ -3931,6 +3951,76 @@ function BH18_בדיקת_שדות_חובה_(entity, data) {
     }
   });
 }
+
+/***********************
+ * Assignment Domain – תחום שיוך
+ ***********************/
+const BH_AD_CATEGORY = "תחום שיוך";
+const BH_AD_DEFAULT = "ללא";
+
+function BH_AD_split_(value){
+  if (Array.isArray(value)) return value.map(v => String(v || "").trim()).filter(Boolean);
+  return String(value || "").split(/[;,|\n]+/).map(v => String(v || "").trim()).filter(Boolean);
+}
+
+function BH_AD_join_(values){
+  const seen = {};
+  return BH_AD_split_(values).filter(v => { if(seen[v]) return false; seen[v] = true; return true; }).join(", ");
+}
+
+function BH_AD_projectDomain_(project){
+  return String(project && project[BH_AD_CATEGORY] || BH_AD_DEFAULT).trim() || BH_AD_DEFAULT;
+}
+
+function BH_AD_managerDomains_(user){
+  if(!user) return [];
+  const role = String(user.role || "").trim();
+  if(role !== "מנהל") return [];
+  let raw = user["תחומי שיוך"] || user.assignmentDomains || "";
+  if(!raw && user.contactId){
+    try {
+      const c = readSheet_(SHEETS.CONTACTS).find(x => String(x["מזהה איש קשר"] || "") === String(user.contactId || ""));
+      raw = c ? c["תחומי שיוך"] || "" : "";
+    } catch(e) {}
+  }
+  return BH_AD_split_(raw);
+}
+
+function BH_AD_userHasProjectDomain_(user, project){
+  if(String(user && user.role || "").trim() !== "מנהל") return false;
+  const domain = BH_AD_projectDomain_(project);
+  return BH_AD_managerDomains_(user).indexOf(domain) !== -1;
+}
+
+function BH_AD_assertProjectVisible_(user, projectId){
+  if(!משתמש_רשאי_לפרויקט_Build11_2_(user, projectId)){
+    throw new Error("אין הרשאה לפרויקט זה");
+  }
+}
+
+function BH_AD_assertCreatorWrite_(user, row, label){
+  const role = String(user && user.role || "").trim();
+  if(user && (user.isOwner === true || role === "מנהל ראשי")) return;
+  const currentUser = BH_FINAL_userName_(user);
+  if(String(row && row["יוצר"] || "").trim() !== currentUser){
+    throw new Error("ניתן לערוך או למחוק רק " + label + " שיצרת");
+  }
+}
+
+function התקנת_תחום_שיוך_BuildAD(){
+  הבטח_עמודה_אם_חסרה_(SHEETS.PROJECTS, BH_AD_CATEGORY);
+  הבטח_עמודה_אם_חסרה_(SHEETS.CONTACTS, "תחומי שיוך");
+  try { הוספת_אפשרות_בחירה_בטוח_Build11_(BH_AD_CATEGORY, BH_AD_DEFAULT, 1); } catch(e) { Logger.log(e); }
+  try {
+    const rows = readSheet_("הגדרות_שדות");
+    if(!rows.some(r => String(r["ישות"]||"") === "פרויקט" && String(r["שם שדה"]||"") === BH_AD_CATEGORY)){
+      שמירת_שדה_מערכת_Build6_1({entity:"פרויקט", field:BH_AD_CATEGORY, showList:"כן", showCard:"כן", searchable:"כן", required:"לא", active:"כן", order: קבלת_סדר_הבא_לשדה_מערכת_Build6_1("פרויקט")});
+    }
+  } catch(e) { Logger.log(e); }
+  log_("תחום שיוך", "עמודות ואפשרות ברירת מחדל הותקנו");
+  return true;
+}
+
 /***********************
  * FINAL OVERRIDE – הרשאות, חובה, יוצר, פרויקטים, משימות, יומן
  ***********************/
@@ -4002,6 +4092,7 @@ function BH_FINAL_checkRequiredFields_(entity, data){
       "אחראי": data.owner,
       "תגיות": data.tags,
       "תיקיית Drive": data.drive,
+      "תחום שיוך": data.assignmentDomain || data[BH_AD_CATEGORY],
       "יוצר": data.creator
     },
     "משימה": {
@@ -4062,7 +4153,17 @@ function BH_SELECTION_VALIDATE_(category, value, label, oldValue) {
   const previous = String(oldValue || "").trim();
   if (previous && submitted === previous) return;
 
-  const values = BH_SELECTION_ACTIVE_VALUES_(category);
+  let values = BH_SELECTION_ACTIVE_VALUES_(category);
+  if (!values.length) {
+    try {
+      const normalized = BH_SELECTION_OPTION_CATEGORY_(category);
+      const names = [String(category || "").trim(), normalized].filter(Boolean);
+      values = readSheet_("הגדרות_ערכים")
+        .filter(r => names.indexOf(String(r["סוג ערך"] || "").trim()) !== -1 && String(r["פעיל"] || "כן").trim() !== "לא")
+        .map(r => String(r["ערך"] || "").trim())
+        .filter(Boolean);
+    } catch(e) {}
+  }
   if (values.indexOf(submitted) === -1) {
     throw new Error((label || category) + " חייב להיות מתוך אפשרויות הבחירה הפעילות בהגדרות");
   }
@@ -4080,6 +4181,7 @@ function שמירת_איש_קשר(data) {
   הוספת_עמודה_אם_חסרה_(SHEETS.CONTACTS, "אחראי");
   הוספת_עמודה_אם_חסרה_(SHEETS.CONTACTS, "גוון יוצר");
   הוספת_עמודה_אם_חסרה_(SHEETS.CONTACTS, "יוצר");
+  הוספת_עמודה_אם_חסרה_(SHEETS.CONTACTS, "תחומי שיוך");
   ensureColumnTextFormat_(SHEETS.CONTACTS, "טלפון");
 
   const old = data.id
@@ -4163,6 +4265,8 @@ function שמירת_איש_קשר(data) {
     }
   }
 
+  if (old) BH_AD_assertCreatorWrite_(actor, old, "איש קשר");
+
   const id = data.id || makeId_("איש");
   const currentUser = BH_FINAL_userName_(actor);
 
@@ -4181,6 +4285,7 @@ function שמירת_איש_קשר(data) {
     "הרשאת מערכת": permission,
     "פעיל במערכת": permission === "ללא הרשאה" ? "לא" : "כן",
     "גוון יוצר": creatorColor,
+    "תחומי שיוך": permission === "מנהל" ? BH_AD_join_(data.assignmentDomains || data["תחומי שיוך"] || (old ? old["תחומי שיוך"] : "")) : "",
     "יוצר": old && old["יוצר"] ? old["יוצר"] : currentUser,
     "תאריך יצירה": data.created || (old ? old["תאריך יצירה"] : new Date()),
     "עדכון אחרון": new Date()
@@ -4200,6 +4305,7 @@ function שמירת_פרויקט(data) {
 
   הוספת_עמודה_אם_חסרה_(SHEETS.PROJECTS, "אחראי");
   הוספת_עמודה_אם_חסרה_(SHEETS.PROJECTS, "יוצר");
+  הוספת_עמודה_אם_חסרה_(SHEETS.PROJECTS, BH_AD_CATEGORY);
 
   const old = data.id ? readSheet_(SHEETS.PROJECTS).find(p => p["מזהה פרויקט"] === data.id) : null;
   const currentUser = BH_FINAL_userName_(actor);
@@ -4207,6 +4313,9 @@ function שמירת_פרויקט(data) {
   BH_SELECTION_VALIDATE_("עיר", data.city, "עיר", old ? old["עיר"] : "");
   BH_SELECTION_VALIDATE_("תחום", data.type, "תחום", old ? old["תחום"] : "");
   BH_SELECTION_VALIDATE_("סטטוס פרויקט", data.status, "סטטוס", old ? old["סטטוס"] : "");
+  const assignmentDomain = String(data.assignmentDomain || data[BH_AD_CATEGORY] || (old ? old[BH_AD_CATEGORY] : "") || BH_AD_DEFAULT).trim() || BH_AD_DEFAULT;
+  BH_SELECTION_VALIDATE_(BH_AD_CATEGORY, assignmentDomain, BH_AD_CATEGORY, old ? old[BH_AD_CATEGORY] : "");
+  if (old) BH_AD_assertCreatorWrite_(actor, old, "פרויקט");
 
   const row = {
     "מזהה פרויקט": data.id || makeId_("פר"),
@@ -4214,6 +4323,7 @@ function שמירת_פרויקט(data) {
     "עיר": data.city || "",
     "תחום": data.type || "",
     "סטטוס": data.status || "ללא סיווג",
+    "תחום שיוך": assignmentDomain,
     "אחראי": data.owner || (old ? old["אחראי"] : "") || currentUser,
     "יוצר": old && old["יוצר"] ? old["יוצר"] : currentUser,
     "תגיות": data.tags || "",
@@ -4247,6 +4357,10 @@ function שמירת_משימה(data) {
   const old = data.id
     ? readSheet_(SHEETS.TASKS).find(t => t["מזהה משימה"] === data.id)
     : null;
+
+  if (old) BH_AD_assertCreatorWrite_(actor, old, "משימה");
+  const targetProjectId = String(data.projectId || (old ? old["מזהה פרויקט"] : "") || "").trim();
+  if (targetProjectId) BH_AD_assertProjectVisible_(actor, targetProjectId);
 
   let calendarId = old ? old["מזהה אירוע ביומן"] || "" : "";
 
@@ -4523,6 +4637,7 @@ function שמירת_הערה_לפרויקט_Build5(data) {
 
   if (!projectId) throw new Error("חסר מזהה פרויקט");
   if (!note) throw new Error("חובה להזין תוכן הערה");
+  BH_AD_assertProjectVisible_(user, projectId);
 
   BH_הבטח_גיליון_עם_כותרות_("הערות פרויקט", [
     "מזהה הערה",

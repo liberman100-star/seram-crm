@@ -703,6 +703,23 @@ function optionsForCategory(type, selected=''){
 function opts(type, selected=''){
   return optionsForCategory(type, selected);
 }
+function assignmentDomainValue(r={}){ return r['תחום שיוך'] || 'ללא'; }
+function assignmentDomainOptions(selected='ללא'){
+  selected = selected || 'ללא';
+  let html = optionsForCategory('תחום שיוך', selected);
+  if(!html.includes('value="ללא"')) html = `<option value="ללא" ${selected==='ללא'?'selected':''}>ללא</option>` + html;
+  return html;
+}
+function assignmentDomainsMulti(selected=''){
+  const selectedSet = new Set(String(selected||'').split(/[;,|\n]+/).map(x=>x.trim()).filter(Boolean));
+  const cat = categories().find(c=>c.name==='תחום שיוך');
+  const arr = cat ? (cat.values||[]).filter(x=>x.active!=='לא') : [{value:'ללא'}];
+  return arr.map(x=>`<option value="${esc(x.value)}" ${selectedSet.has(String(x.value))?'selected':''}>${esc(x.value)}</option>`).join('');
+}
+function selectedAssignmentDomains(){
+  if(typeof cAssignmentDomains === 'undefined') return '';
+  return Array.from(cAssignmentDomains.selectedOptions).map(o=>o.value).filter(Boolean).join(', ');
+}
 function usersList(){ return ((DATA.realSettings||{}).users || []); }
 function permissionOptions(selected=''){
   const arr=['ללא הרשאה','מנהל ראשי','מנהל','משתמש','לקוח'];
@@ -826,7 +843,7 @@ function dashList(rows,type){
 
 /* Projects */
 function tableProjects(){
-  const rows=filtered(DATA.projects||[], projectSearch?.value, ['שם פרויקט','עיר','תחום','סטטוס','תגיות','אחראי']);
+  const rows=filtered(DATA.projects||[], projectSearch?.value, ['שם פרויקט','עיר','תחום','סטטוס','תחום שיוך','תגיות','אחראי']);
   projectsTable.innerHTML=tableHtml(rows,[
     {key:'שם פרויקט',label:'שם פרויקט'},{key:'עיר',label:'עיר'},{key:'תחום',label:'תחום'},{key:'סטטוס',label:'סטטוס'}
   ], r=>`openProjectCard('${esc(r['מזהה פרויקט'])}')`, null);
@@ -839,6 +856,7 @@ function openProject(r={}){
     <label>עיר${BH_requiredMark('project','עיר')}</label><select id="pCity"><option value="">בחר עיר</option>${opts('עיר',r['עיר'])}</select>
     <label>תחום${BH_requiredMark('project','תחום')}</label><select id="pType"><option value="">בחר תחום</option>${opts('תחום',r['תחום'])}</select>
     <label>סטטוס${BH_requiredMark('project','סטטוס')}</label><select id="pStatus"><option value="">בחר סטטוס</option>${opts('סטטוס פרויקט',r['סטטוס'])}</select>
+    <label>תחום שיוך${BH_requiredMark('project','תחום שיוך')}</label><select id="pAssignmentDomain">${assignmentDomainOptions(assignmentDomainValue(r))}</select>
     <label>אחראי${BH_requiredMark('project','אחראי')}</label><select id="pOwner">${activeUsersOptions(r['אחראי'])}</select>
     <label>תגיות${BH_requiredMark('project','תגיות')}</label><input id="pTags" value="${esc(r['תגיות'])}">
     <label>תיקיית Drive${BH_requiredMark('project','תיקיית Drive')}</label><input id="pDrive" value="${esc(r['תיקיית Drive'])}">
@@ -849,7 +867,7 @@ function openProject(r={}){
 function saveProject(id){
   google.script.run.withSuccessHandler(()=>{closeM();refreshCore();})
     .withFailureHandler(e=>alert(e.message))
-    .שמירת_פרויקט({id,name:pName.value,city:pCity.value,type:pType.value,status:pStatus.value,owner:pOwner.value,tags:pTags.value,drive:pDrive.value});
+    .שמירת_פרויקט({id,name:pName.value,city:pCity.value,type:pType.value,status:pStatus.value,assignmentDomain:pAssignmentDomain.value,owner:pOwner.value,tags:pTags.value,drive:pDrive.value});
 }
 function delProject(id){ if(confirm('למחוק פרויקט ואת השיוכים שלו?')) google.script.run.withSuccessHandler(()=>{closeM();refreshCore();}).withFailureHandler(e=>alert(e.message)).מחיקת_פרויקט(id); }
 function openProjectCard(id){ google.script.run.withSuccessHandler(renderProjectCard).withFailureHandler(e=>alert(e.message)).כרטיס_פרויקט(id); }
@@ -907,7 +925,7 @@ function renderProjectCard(d){
     </div>
     <div class="grid2">
       <div><b>עיר:</b> ${val(p['עיר'])}</div><div><b>תחום:</b> ${val(p['תחום'])}</div>
-      <div><b>סטטוס:</b> ${val(p['סטטוס'])}</div><div><b>אחראי:</b> ${val(p['אחראי'])}</div>
+      <div><b>סטטוס:</b> ${val(p['סטטוס'])}</div><div><b>תחום שיוך:</b> ${val(assignmentDomainValue(p))}</div><div><b>אחראי:</b> ${val(p['אחראי'])}</div>
     </div>
     <h3 class="sectionTitle">אנשי קשר משויכים</h3>
     ${smallTable(
@@ -966,15 +984,17 @@ function openContact(r={}){
     <label>סטטוס לקוח${BH_requiredMark('contact','סטטוס לקוח')}</label><select id="cStatus"><option value="">בחר סטטוס</option>${opts('סטטוס לקוח',r['סטטוס לקוח'])}</select>
     <label>תגיות</label><input id="cTags" value="${esc(r['תגיות'])}">
     <label>אחראי</label><select id="cOwner">${activeUsersOptions(r['אחראי'])}</select>
-    <label>הרשאת מערכת${BH_requiredMark('contact','הרשאת מערכת')}</label><select id="cPermission">${permissionOptions(r['הרשאת מערכת']||'ללא הרשאה')}</select>
+    <label>הרשאת מערכת${BH_requiredMark('contact','הרשאת מערכת')}</label><select id="cPermission" onchange="toggleAssignmentDomainsField()">${permissionOptions(r['הרשאת מערכת']||'ללא הרשאה')}</select>
+    <div id="assignmentDomainsBox" class="${(r['הרשאת מערכת']||'ללא הרשאה')==='מנהל'?'':'hidden'}"><label>תחומי שיוך</label><select id="cAssignmentDomains" multiple size="5">${assignmentDomainsMulti(r['תחומי שיוך'])}</select><p class="muted">רלוונטי למנהל בלבד. ניתן לבחור כמה תחומי שיוך.</p></div>
     <button class="primary" onclick='saveContact("${esc(r['מזהה איש קשר']||'')}")'>שמור</button>
     <button onclick="closeM()">ביטול</button>`;
   modal.classList.remove('hidden');
 }
+function toggleAssignmentDomainsField(){ const box=document.getElementById("assignmentDomainsBox"); if(box) box.classList.toggle("hidden", cPermission.value!=="מנהל"); }
 function saveContact(id){
   google.script.run.withSuccessHandler(()=>{closeM();refreshCore();})
     .withFailureHandler(e=>alert(e.message))
-    .שמירת_איש_קשר({id,name:cName.value,phone:cPhone.value,email:cEmail.value,address:cAddress.value,source:cSource.value,contactType:cType.value,status:cStatus.value,tags:cTags.value,owner:cOwner.value,systemPermission:cPermission.value});
+    .שמירת_איש_קשר({id,name:cName.value,phone:cPhone.value,email:cEmail.value,address:cAddress.value,source:cSource.value,contactType:cType.value,status:cStatus.value,tags:cTags.value,owner:cOwner.value,systemPermission:cPermission.value,assignmentDomains:selectedAssignmentDomains()});
 }
 function delContact(id){ if(confirm('למחוק איש קשר ואת השיוכים שלו?')) google.script.run.withSuccessHandler(()=>{closeM();refreshCore();}).withFailureHandler(e=>alert(e.message)).מחיקת_איש_קשר(id); }
 function openContactCard(id){ google.script.run.withSuccessHandler(renderContactCard).withFailureHandler(e=>alert(e.message)).כרטיס_איש_קשר(id); }
@@ -1405,7 +1425,7 @@ function renderUsersSettings(){
   const rows = contactsWithPermission();
   let html = `<div class="toolbar"><button class="primary" onclick="openPermissionContactPicker()">+ מתן הרשאה לאיש קשר</button></div>`;
   html += `<p class="muted">משתמש מערכת הוא איש קשר שקיבל הרשאת מערכת. ברירת המחדל לכל איש קשר היא "ללא הרשאה".</p>`;
-  html += smallTable(rows,['שם מלא','אימייל','טלפון','הרשאת מערכת','פעיל במערכת'],['שם','מייל','טלפון','הרשאה','פעיל'],r=>`<button onclick='openContact(${JSON.stringify(r)})'>ערוך הרשאה</button>`);
+  html += smallTable(rows,['שם מלא','אימייל','טלפון','הרשאת מערכת','תחומי שיוך','פעיל במערכת'],['שם','מייל','טלפון','הרשאה','תחומי שיוך','פעיל'],r=>`<button onclick='openContact(${JSON.stringify(r)})'>ערוך הרשאה</button>`);
   settingsBox.innerHTML = html;
 }
 function openPermissionContactPicker(){
@@ -1686,7 +1706,7 @@ function tableProjects(){
   let rows = filtered(
     (DATA.projects || []).filter(r => String(r['בארכיון'] || '') !== 'כן'),
     projectSearch?.value,
-    ['שם פרויקט','עיר','תחום','סטטוס','תגיות','אחראי']
+    ['שם פרויקט','עיר','תחום','סטטוס','תחום שיוך','תגיות','אחראי']
   );
 
   rows = sortRows(rows, projectSort?.value || 'dateDesc', 'שם פרויקט');
@@ -1697,6 +1717,7 @@ function tableProjects(){
       {key:'שם פרויקט',label:'שם פרויקט'},
       {key:'עיר',label:'עיר'},
       {key:'תחום',label:'תחום'},
+      {key:'תחום שיוך',label:'תחום שיוך'},
       {key:'סטטוס',label:'סטטוס'}
     ],
     r => `openProjectCard('${esc(r['מזהה פרויקט'])}')`,
@@ -2342,13 +2363,13 @@ saveProject = function(id){
   if(!canEdit() && id) return alert('אין לך הרשאה לעריכה');
   if(!canCreate() && !id) return alert('אין לך הרשאה להוספה');
   google.script.run.withSuccessHandler(()=>{closeM();refreshCore();}).withFailureHandler(e=>alert(e.message))
-    .שמירת_פרויקט({authToken:currentToken(),id,name:pName.value,city:pCity.value,type:pType.value,status:pStatus.value,owner:pOwner.value,tags:pTags.value,drive:pDrive.value});
+    .שמירת_פרויקט({authToken:currentToken(),id,name:pName.value,city:pCity.value,type:pType.value,status:pStatus.value,assignmentDomain:pAssignmentDomain.value,owner:pOwner.value,tags:pTags.value,drive:pDrive.value});
 }
 saveContact = function(id){
   if(!canEdit() && id) return alert('אין לך הרשאה לעריכה');
   if(!canCreate() && !id) return alert('אין לך הרשאה להוספה');
   google.script.run.withSuccessHandler(()=>{closeM();refreshCore();}).withFailureHandler(e=>alert(e.message))
-    .שמירת_איש_קשר({authToken:currentToken(),id,name:cName.value,phone:cPhone.value,email:cEmail.value,address:cAddress.value,source:cSource.value,contactType:cType.value,status:cStatus.value,tags:cTags.value,owner:cOwner.value,systemPermission:cPermission.value});
+    .שמירת_איש_קשר({authToken:currentToken(),id,name:cName.value,phone:cPhone.value,email:cEmail.value,address:cAddress.value,source:cSource.value,contactType:cType.value,status:cStatus.value,tags:cTags.value,owner:cOwner.value,systemPermission:cPermission.value,assignmentDomains:selectedAssignmentDomains()});
 }
 saveTask = function(id){
   if(!canEdit() && id) return alert('אין לך הרשאה לעריכה');
@@ -2497,7 +2518,7 @@ const readOnly = isArchived || !canWriteProject;
     </div>
     <div class="grid2">
       <div><b>עיר:</b> ${val(p['עיר'])}</div><div><b>תחום:</b> ${val(p['תחום'])}</div>
-      <div><b>סטטוס:</b> ${val(p['סטטוס'])}</div><div><b>אחראי:</b> ${val(p['אחראי'])}</div>
+      <div><b>סטטוס:</b> ${val(p['סטטוס'])}</div><div><b>תחום שיוך:</b> ${val(assignmentDomainValue(p))}</div><div><b>אחראי:</b> ${val(p['אחראי'])}</div>
     </div>
     <h3 class="sectionTitle">אנשי קשר משויכים</h3>
     ${smallTable(d.links,['name','phone','type','role','portal'],['שם','טלפון','סוג','תפקיד','הרשאת צפייה'],l=>readOnly ? '' : linkActionsForProject(l,p['מזהה פרויקט']))}
@@ -5715,7 +5736,7 @@ window.calendarTasksForDate = function(d){
       title: 'שם פרויקט',
       list: ['שם פרויקט','עיר','תחום','סטטוס'],
       card: ['עיר','תחום','סטטוס','אחראי'],
-      search: ['שם פרויקט','עיר','תחום','סטטוס','תגיות','אחראי'],
+      search: ['שם פרויקט','עיר','תחום','סטטוס','תחום שיוך','תגיות','אחראי'],
       labels: {'שם פרויקט':'שם פרויקט','עיר':'עיר','תחום':'תחום','סטטוס':'סטטוס','אחראי':'אחראי','תגיות':'תגיות','תיקיית Drive':'תיקיית Drive'}
     },
     contact: {
