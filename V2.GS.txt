@@ -2857,7 +2857,8 @@ function כרטיס_פרויקט(arg) {
   ? contacts.filter(c => String(c["בארכיון"] || "") !== "כן" && !links.some(l => String(l["מזהה פרויקט"] || "") === String(x.id) && String(l["מזהה איש קשר"] || "") === String(c["מזהה איש קשר"] || "")))
   : [],
     allowedContactIds,
-    readOnly: isArchived || actions.readOnly === true || actions.canEdit === false
+    readOnly: isArchived || actions.readOnly === true || actions.canEdit === false,
+    projectBranding: BH_DB_projectBranding_(project)
   };
 }
 
@@ -3112,7 +3113,8 @@ function קבלת_מודול_Build13_2(token, moduleName) {
 }
 
 function קבלת_נתוני_ליבה_Build13(token) {
-  return קבלת_נתונים_Build7(token);
+  const data = קבלת_נתונים_Build7(token);
+  return BH_DB_attachCoreBranding_(data);
 }
 
 
@@ -4839,16 +4841,18 @@ function BH_DB_defaultBranding_(){
 
 function BH_DB_activeDomains_(){
   try {
-    return קבלת_קטגוריות_לבחירה_Build4_4()
-      .filter(r => String(r["סוג ערך"] || r.category || "").trim() === BH_AD_CATEGORY)
-      .map(r => String(r["ערך"] || r.item || "").trim())
+    const cats = קבלת_קטגוריות_לבחירה_Build4_4();
+    const cat = (cats || []).find(c => String(c.name || "").trim() === BH_AD_CATEGORY);
+    return ((cat && cat.values) || [])
+      .filter(v => String(v.active || "כן").trim() === "כן")
+      .map(v => String(v.value || "").trim())
       .filter(v => v && v !== BH_AD_DEFAULT)
       .filter((v,i,a)=>a.indexOf(v)===i);
   } catch(e) {
     try {
-      return readSheet_(SHEETS.SETTINGS)
-        .filter(r => String(r["קטגוריה"] || r["סוג ערך"] || "").trim() === BH_AD_CATEGORY && String(r["פעיל"] || "כן") !== "לא")
-        .map(r => String(r["ערך"] || r["שם"] || "").trim())
+      return readSheet_("הגדרות_ערכים")
+        .filter(r => String(r["סוג ערך"] || "").trim() === BH_AD_CATEGORY && String(r["פעיל"] || "כן").trim() === "כן")
+        .map(r => String(r["ערך"] || "").trim())
         .filter(v => v && v !== BH_AD_DEFAULT)
         .filter((v,i,a)=>a.indexOf(v)===i);
     } catch(err) { return []; }
@@ -4857,12 +4861,14 @@ function BH_DB_activeDomains_(){
 
 function BH_DB_domainMap_(){
   const out = {};
+  const duplicates = {};
   try { התקנת_מיתוג_תחומי_שיוך_BuildADBranding(); } catch(e) {}
   try {
     readSheet_(BH_DB_SHEET).forEach(r => {
       const domain = String(r["תחום שיוך"] || "").trim();
       if(!domain || domain === BH_AD_DEFAULT || String(r["פעיל"] || "כן").trim() === "לא") return;
-      out[domain] = {
+      const branding = {
+        id: r["מזהה מיתוג"] || "",
         name: r["שם מערכת"] || "",
         logo: r["לוגו"] || "",
         primaryColor: r["צבע ראשי"] || "",
@@ -4872,9 +4878,28 @@ function BH_DB_domainMap_(){
         assignmentDomain: domain,
         source: "assignmentDomain"
       };
+      if(out[domain]){
+        if(!duplicates[domain]) duplicates[domain] = [out[domain].id].filter(Boolean);
+        if(branding.id) duplicates[domain].push(branding.id);
+        return;
+      }
+      out[domain] = branding;
     });
   } catch(e) {}
+  out.__duplicates = duplicates;
   return out;
+}
+
+function BH_DB_adminPayload_(){
+  try { התקנת_מיתוג_תחומי_שיוך_BuildADBranding(); } catch(e) {}
+  const map = BH_DB_domainMap_();
+  return {
+    domains: BH_DB_activeDomains_(),
+    rows: readSheet_(BH_DB_SHEET),
+    effectiveByDomain: map,
+    duplicateDomains: map.__duplicates || {},
+    isSuperAdmin: true
+  };
 }
 
 function BH_DB_brandingForDomain_(domain){
@@ -4916,8 +4941,8 @@ function BH_DB_projectBranding_(project){
 }
 
 function קבלת_מיתוג_תחומי_שיוך_לניהול(token){
-  const user = BH_AD_requireSuperAdminToken_(token);
-  return { domains: BH_DB_activeDomains_(), rows: readSheet_(BH_DB_SHEET), isSuperAdmin: true };
+  BH_AD_requireSuperAdminToken_(token);
+  return BH_DB_adminPayload_();
 }
 
 function שמירת_מיתוג_תחום_שיוך(data){
@@ -4926,8 +4951,16 @@ function שמירת_מיתוג_תחום_שיוך(data){
   const domain = String(data.assignmentDomain || "").trim();
   if(!domain || domain === BH_AD_DEFAULT) throw new Error("יש לבחור תחום שיוך פעיל");
   if(BH_DB_activeDomains_().indexOf(domain) < 0) throw new Error("תחום השיוך אינו פעיל");
+
+  try { התקנת_מיתוג_תחומי_שיוך_BuildADBranding(); } catch(e) {}
+  const rows = readSheet_(BH_DB_SHEET);
+  const existingByDomain = rows.find(r => String(r["תחום שיוך"] || "").trim() === domain);
+  const existingById = rows.find(r => String(r["מזהה מיתוג"] || "") === String(data.id || ""));
+  const existing = existingByDomain || existingById || {};
+  const id = existing["מזהה מיתוג"] || makeId_("מיתוג-תחום");
+
   const row = {
-    "מזהה מיתוג": data.id || makeId_("מיתוג-תחום"),
+    "מזהה מיתוג": id,
     "תחום שיוך": domain,
     "שם מערכת": data.systemName || "",
     "לוגו": data.logo || "",
@@ -4938,27 +4971,20 @@ function שמירת_מיתוג_תחום_שיוך(data){
     "עודכן בתאריך": new Date(),
     "עודכן על ידי": user.email || user.name || ""
   };
-  upsert_(BH_DB_SHEET, "מזהה מיתוג", row["מזהה מיתוג"], row);
-  return true;
+  upsert_(BH_DB_SHEET, "מזהה מיתוג", id, row);
+  const duplicates = rows.filter(r => String(r["תחום שיוך"] || "").trim() === domain && String(r["מזהה מיתוג"] || "") !== String(id)).map(r => r["מזהה מיתוג"] || "").filter(Boolean);
+  return { ok: true, id, duplicateIds: duplicates };
 }
 
-const __BH_ORIG_CORE_ADBRANDING__ = קבלת_נתוני_ליבה_Build13;
-function קבלת_נתוני_ליבה_Build13(token){
-  const data = __BH_ORIG_CORE_ADBRANDING__(token);
+function BH_DB_attachCoreBranding_(data){
   if(data && data.auth && data.auth.allowed === true){
     data.defaultBranding = BH_DB_defaultBranding_();
     data.rootBranding = BH_DB_rootBranding_(data.currentUser, data.projects || []);
     data.system = data.rootBranding;
     if(data.currentUser && (data.currentUser.isOwner === true || String(data.currentUser.role||"").trim() === "מנהל ראשי")){
-      data.domainBrandingAdmin = { domains: BH_DB_activeDomains_(), rows: readSheet_(BH_DB_SHEET) };
+      const admin = BH_DB_adminPayload_();
+      data.domainBrandingAdmin = admin;
     }
   }
   return data;
-}
-
-const __BH_ORIG_PROJECT_CARD_ADBRANDING__ = כרטיס_פרויקט;
-function כרטיס_פרויקט(arg){
-  const out = __BH_ORIG_PROJECT_CARD_ADBRANDING__(arg);
-  if(out && out.project) out.projectBranding = BH_DB_projectBranding_(out.project);
-  return out;
 }
