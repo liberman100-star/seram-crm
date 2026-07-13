@@ -4988,3 +4988,167 @@ function BH_DB_attachCoreBranding_(data){
   }
   return data;
 }
+
+/***********************
+ * Customer Assignment Domain Selection
+ ***********************/
+const BH_CAD_SESSION_FIELD = "תחום שיוך פעיל";
+
+function BH_CAD_installSessionColumn_(){
+  try { הוספת_עמודה_אם_חסרה_(BUILD7_SESSIONS_SHEET, BH_CAD_SESSION_FIELD); } catch(e) {}
+}
+
+function BH_CAD_activeDomainSet_(){
+  const set = {};
+  BH_DB_activeDomains_().forEach(d => { set[String(d || "").trim()] = true; });
+  return set;
+}
+
+function BH_CAD_visibleProjectsForCustomer_(data, contactId){
+  const clientLinks = (data.links || []).filter(l =>
+    String(l["מזהה איש קשר"] || "").trim() === String(contactId || "").trim() &&
+    String(l["מורשה צפייה בפורטל"] || "").trim() === "כן"
+  );
+  const allowedProjectIds = clientLinks.map(l => String(l["מזהה פרויקט"] || "").trim()).filter(Boolean);
+  const projects = (data.projects || []).filter(p => allowedProjectIds.indexOf(String(p["מזהה פרויקט"] || "").trim()) !== -1);
+  return { links: clientLinks, projects: projects };
+}
+
+function BH_CAD_availableDomainsForCustomer_(data, contactId){
+  const active = BH_CAD_activeDomainSet_();
+  const visible = BH_CAD_visibleProjectsForCustomer_(data, contactId).projects;
+  const seen = {};
+  return visible.map(BH_AD_projectDomain_)
+    .map(d => String(d || "").trim())
+    .filter(d => d && d !== BH_AD_DEFAULT && active[d])
+    .filter(d => { if(seen[d]) return false; seen[d] = true; return true; });
+}
+
+function BH_CAD_session_(token){
+  token = String(token || "").trim();
+  if(!token) return null;
+  BH_CAD_installSessionColumn_();
+  return readSheet_(BUILD7_SESSIONS_SHEET).find(s => String(s["Token"] || "") === token && String(s["פעיל"] || "").trim() === "כן") || null;
+}
+
+function BH_CAD_setSessionDomain_(token, domain){
+  const session = BH_CAD_session_(token);
+  if(!session) return false;
+  session[BH_CAD_SESSION_FIELD] = String(domain || "").trim();
+  session["עדכון אחרון"] = new Date();
+  upsert_(BUILD7_SESSIONS_SHEET, "Token", token, session);
+  return true;
+}
+
+function BH_CAD_domainRequiredPayload_(user, domains){
+  return {
+    auth: { allowed: true, domainSelectionRequired: true },
+    customerDomainSelection: { required: true, domains: domains || [] },
+    currentUser: user,
+    system: BH_DB_defaultBranding_(),
+    defaultBranding: BH_DB_defaultBranding_()
+  };
+}
+
+function BH_CAD_applySelectedDomainFilter_(data, user, selectedDomain){
+  const visible = BH_CAD_visibleProjectsForCustomer_(data, user.contactId || "");
+  const selectedProjects = visible.projects.filter(p => BH_AD_projectDomain_(p) === selectedDomain);
+  const selectedProjectIds = selectedProjects.map(p => String(p["מזהה פרויקט"] || "").trim()).filter(Boolean);
+  const projectIdSet = {}; selectedProjectIds.forEach(id => projectIdSet[id] = true);
+  const selectedLinks = visible.links.filter(l => projectIdSet[String(l["מזהה פרויקט"] || "").trim()]);
+  const contactIdSet = {}; selectedLinks.forEach(l => { const id = String(l["מזהה איש קשר"] || "").trim(); if(id) contactIdSet[id] = true; });
+  if(user.contactId) contactIdSet[String(user.contactId)] = true;
+
+  data.projects = selectedProjects;
+  data.links = selectedLinks;
+  data.contacts = (data.contacts || []).filter(c => contactIdSet[String(c["מזהה איש קשר"] || "").trim()]);
+  data.tasks = (data.tasks || []).filter(t => projectIdSet[String(t["מזהה פרויקט"] || "").trim()]);
+  const taskProjectById = {}; data.tasks.forEach(t => { taskProjectById[String(t["מזהה משימה"] || "").trim()] = String(t["מזהה פרויקט"] || "").trim(); });
+  data.notes = (data.notes || []).filter(n => {
+    const pid = String(n["מזהה פרויקט"] || "").trim();
+    if(pid) return !!projectIdSet[pid];
+    const tid = String(n["מזהה משימה"] || "").trim();
+    return !!projectIdSet[taskProjectById[tid]];
+  });
+  data.currentUser = data.currentUser || user;
+  data.currentUser[BH_CAD_SESSION_FIELD] = selectedDomain;
+  data.currentUser.activeAssignmentDomain = selectedDomain;
+  data.dashboard = calcDashboard_(data.projects || [], data.contacts || [], data.tasks || []);
+  data.rootBranding = BH_DB_brandingForDomain_(selectedDomain) || BH_DB_defaultBranding_();
+  data.defaultBranding = BH_DB_defaultBranding_();
+  data.system = data.rootBranding;
+  return data;
+}
+
+function בחירת_תחום_שיוך_לקוח_BuildCAD(data){
+  const token = data && (data.authToken || data.token) || "";
+  const requested = String(data && (data.assignmentDomain || data.domain) || "").trim();
+  const user = קבלת_משתמש_מסשן_Build7_(token);
+  if(!user.allowed) throw new Error(user.reason || "אין הרשאה");
+  if(String(user.role || "").trim() !== "לקוח") throw new Error("בחירת תחום שיוך זמינה ללקוחות בלבד");
+  if(!requested || requested === BH_AD_DEFAULT) throw new Error("יש לבחור תחום שיוך פעיל");
+  const dataAll = קבלת_נתוני_מערכת_מלאים_Build10_();
+  const domains = BH_CAD_availableDomainsForCustomer_(dataAll, user.contactId || "");
+  if(domains.indexOf(requested) === -1) throw new Error("אין הרשאה לתחום שיוך זה");
+  BH_CAD_setSessionDomain_(token, requested);
+  return { ok: true, assignmentDomain: requested };
+}
+
+const BH_CAD_originalLogout_ = התנתקות_Build7;
+התנתקות_Build7 = function(token){
+  try { BH_CAD_setSessionDomain_(token, ""); } catch(e) {}
+  return BH_CAD_originalLogout_(token);
+};
+
+const BH_CAD_originalCore_ = קבלת_נתוני_ליבה_Build13;
+קבלת_נתוני_ליבה_Build13 = function(token){
+  const baseUser = קבלת_משתמש_מסשן_Build7_(token);
+  if(!baseUser.allowed || String(baseUser.role || "").trim() !== "לקוח") return BH_CAD_originalCore_(token);
+
+  const full = קבלת_נתוני_מערכת_מלאים_Build10_();
+  const domains = BH_CAD_availableDomainsForCustomer_(full, baseUser.contactId || "");
+  const session = BH_CAD_session_(token);
+  let selected = session ? String(session[BH_CAD_SESSION_FIELD] || "").trim() : "";
+
+  if(domains.length === 1){
+    selected = domains[0];
+    if(session && String(session[BH_CAD_SESSION_FIELD] || "").trim() !== selected) BH_CAD_setSessionDomain_(token, selected);
+  } else if(domains.indexOf(selected) === -1) {
+    if(selected) BH_CAD_setSessionDomain_(token, "");
+    selected = "";
+  }
+
+  if(domains.length > 1 && !selected){
+    return BH_CAD_domainRequiredPayload_(baseUser, domains);
+  }
+
+  if(selected){
+    const role = String(baseUser.role || "").trim();
+    const payload = קבלת_נתוני_מערכת_מלאים_Build10_();
+    payload.auth = { allowed: true };
+    payload.currentUser = {
+      email: baseUser.email || "",
+      name: baseUser.name || baseUser.email || "",
+      role: role,
+      isOwner: baseUser.isOwner === true,
+      contactId: baseUser.contactId || "",
+      allowed: true
+    };
+    const actions = פעולות_מותרות_Build11_2_(payload.currentUser);
+    payload.actionPermissions = actions;
+    payload.canSeeSettings = false;
+    payload.canSeeDashboard = actions.canSeeDashboard;
+    payload.canSeeArchive = actions.canSeeArchive;
+    payload.canSeeTimeline = actions.canSeeTimeline;
+    payload.canCreate = actions.canCreate;
+    payload.canEdit = actions.canEdit;
+    payload.canDelete = actions.canDelete;
+    payload.readOnly = actions.readOnly;
+    payload.realSettings = {};
+    payload.categories = [];
+    payload.fields = [];
+    payload.permissions = {};
+    return BH_CAD_applySelectedDomainFilter_(payload, payload.currentUser, selected);
+  }
+  return BH_CAD_originalCore_(token);
+};
