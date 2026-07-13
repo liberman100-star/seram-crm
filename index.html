@@ -5921,5 +5921,122 @@ window.calendarTasksForDate = function(d){
   };
 })();
 </script>
+<script id="BH_ASSIGNMENT_DOMAIN_BRANDING">
+(function(){
+  function escLocal(v){ return typeof esc === 'function' ? esc(v) : String(v || '').replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+  function activeRootBranding(){ return (window.DATA && (DATA.rootBranding || DATA.system)) || {}; }
+  function defaultBranding(){ return (window.DATA && (DATA.defaultBranding || DATA.system)) || {}; }
+  function applyBranding(b){
+    b = b || defaultBranding();
+    if(typeof window.BH_FORCE_BRANDING === 'function'){
+      const old = window.DATA || {};
+      window.BH_FORCE_BRANDING({ system: b, currentUser: old.currentUser || {}, realSettings: old.realSettings || {} });
+      return;
+    }
+    document.documentElement.style.setProperty('--primary', b.primaryColor || '#1f4e79');
+    document.documentElement.style.setProperty('--secondary', b.secondaryColor || '#e8eef5');
+    if(window.systemNameText) systemNameText.textContent = b.name || 'בית חכם';
+  }
+  window.BH_applyRootBranding = function(){ applyBranding(activeRootBranding()); };
+  window.BH_applyProjectBranding = function(projectBranding){ applyBranding(projectBranding || defaultBranding()); };
+
+  const oldRender = window.render;
+  if(typeof oldRender === 'function'){
+    window.render = function(d){
+      const res = oldRender.apply(this, arguments);
+      try{ window.BH_applyRootBranding(); }catch(e){}
+      return res;
+    };
+  }
+
+  const oldTab = window.tab;
+  if(typeof oldTab === 'function'){
+    window.tab = function(id, b){
+      const res = oldTab.apply(this, arguments);
+      if({dashboard:1,projects:1,contacts:1,tasks:1,archive:1,settings:1}[id]){
+        try{ window.BH_applyRootBranding(); }catch(e){}
+      }
+      return res;
+    };
+  }
+
+  window.openProjectCard = function(id){
+    google.script.run
+      .withSuccessHandler(function(d){
+        try{ window.BH_applyProjectBranding(d && d.projectBranding); }catch(e){}
+        renderProjectCard(d);
+      })
+      .withFailureHandler(e=>alert(e.message))
+      .כרטיס_פרויקט({ id:id, token: currentToken() });
+  };
+
+  const oldRenderProjectCard = window.renderProjectCard;
+  if(typeof oldRenderProjectCard === 'function'){
+    window.renderProjectCard = function(d){
+      try{ window.BH_applyProjectBranding(d && d.projectBranding); }catch(e){}
+      return oldRenderProjectCard.apply(this, arguments);
+    };
+  }
+
+  const oldRenderBrandingSettings = window.renderBrandingSettings;
+  window.BH_loadDomainBrandingForm = function(){
+    const admin = (window.DATA && DATA.domainBrandingAdmin) || {};
+    const rows = admin.rows || [];
+    const domain = window.domainBrandDomain ? domainBrandDomain.value : '';
+    const row = rows.find(r => String(r['תחום שיוך'] || '') === String(domain || '')) || {};
+    if(window.domainBrandId) domainBrandId.value = row['מזהה מיתוג'] || '';
+    if(window.domainBrandName) domainBrandName.value = row['שם מערכת'] || '';
+    if(window.domainBrandPrimary) domainBrandPrimary.value = row['צבע ראשי'] || '#1f4e79';
+    if(window.domainBrandSecondary) domainBrandSecondary.value = row['צבע משני'] || '#e8eef5';
+    if(window.domainBrandLogo) domainBrandLogo.value = row['לוגו'] || '';
+    if(window.domainBrandLogoHeight) domainBrandLogoHeight.value = row['גובה לוגו'] || '40';
+    if(window.domainBrandActive) domainBrandActive.value = row['פעיל'] || 'כן';
+    const dupBox = document.getElementById('domainBrandDuplicates');
+    const duplicateIds = ((admin.duplicateDomains || {})[domain] || []).filter(Boolean);
+    if(dupBox) dupBox.textContent = duplicateIds.length ? ('נמצאו רשומות כפולות היסטוריות לתחום זה: ' + duplicateIds.join(', ')) : '';
+  };
+
+  window.renderBrandingSettings = function(){
+    if(typeof oldRenderBrandingSettings === 'function') oldRenderBrandingSettings();
+    const admin = (window.DATA && DATA.domainBrandingAdmin) || null;
+    if(!admin || !settingsBox) return;
+    const rows = admin.rows || [];
+    const domains = admin.domains || [];
+    const firstDomain = domains[0] || '';
+    const current = rows.find(r => String(r['תחום שיוך'] || '') === String(firstDomain)) || {};
+    const opts = domains.map(d=>`<option value="${escLocal(d)}">${escLocal(d)}</option>`).join('');
+    settingsBox.insertAdjacentHTML('beforeend', `
+      <div class="card"><h3 class="sectionTitle">מיתוג לפי תחום שיוך</h3>
+        <p class="muted">מנהל ראשי יכול לבחור תחום שיוך פעיל ולהגדיר לו מיתוג. האפשרות “ללא” אינה מוצגת.</p>
+        <input type="hidden" id="domainBrandId" value="${escLocal(current['מזהה מיתוג'] || '')}">
+        <label>תחום שיוך</label><select id="domainBrandDomain" onchange="BH_loadDomainBrandingForm()"><option value="">בחר תחום שיוך</option>${opts}</select>
+        <label>שם מערכת</label><input id="domainBrandName" value="${escLocal(current['שם מערכת'] || '')}">
+        <label>צבע ראשי</label><input id="domainBrandPrimary" value="${escLocal(current['צבע ראשי'] || '#1f4e79')}">
+        <label>צבע משני</label><input id="domainBrandSecondary" value="${escLocal(current['צבע משני'] || '#e8eef5')}">
+        <label>קישור לוגו</label><input id="domainBrandLogo" value="${escLocal(current['לוגו'] || '')}">
+        <label>גובה לוגו בפיקסלים</label><input id="domainBrandLogoHeight" type="number" value="${escLocal(current['גובה לוגו'] || '40')}">
+        <label>פעיל</label><select id="domainBrandActive"><option ${current['פעיל']!=='לא'?'selected':''}>כן</option><option ${current['פעיל']==='לא'?'selected':''}>לא</option></select>
+        <p id="domainBrandDuplicates" class="muted"></p>
+        <button class="primary" onclick="saveDomainBranding()">שמור מיתוג תחום שיוך</button>
+      </div>`);
+    if(window.domainBrandDomain){ domainBrandDomain.value = firstDomain; window.BH_loadDomainBrandingForm(); }
+  };
+
+  window.saveDomainBranding = function(){
+    google.script.run.withSuccessHandler((res)=>{
+        load(false);
+        const duplicates = (res && res.duplicateIds && res.duplicateIds.length) ? ('\nנמצאו כפילויות היסטוריות שלא נמחקו: ' + res.duplicateIds.join(', ')) : '';
+        alert('מיתוג תחום השיוך נשמר' + duplicates);
+      })
+      .withFailureHandler(e=>alert(e.message))
+      .שמירת_מיתוג_תחום_שיוך({
+        authToken: currentToken(), id: domainBrandId.value, assignmentDomain: domainBrandDomain.value,
+        systemName: domainBrandName.value, primaryColor: domainBrandPrimary.value, secondaryColor: domainBrandSecondary.value,
+        logo: domainBrandLogo.value, logoHeight: domainBrandLogoHeight.value, active: domainBrandActive.value
+      });
+  };
+})();
+</script>
+
 </body>
 </html>
