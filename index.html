@@ -684,7 +684,8 @@ function val(x){return x===0?0:(x||'')}
 function esc(s){return String(s||'').replaceAll('&','&amp;').replaceAll('"','&quot;').replaceAll("'",'&#39;').replaceAll('<','&lt;').replaceAll('>','&gt;')}
 function jsonAttr(obj){ return esc(JSON.stringify(obj||{})); }
 function categories(){ return DATA.categories || []; }
-function categoryNames(){ return categories().map(c=>c.name); }
+function visibleCategories(){ return canManageAssignmentDomains() ? categories() : categories().filter(c=>c.name!=='תחום שיוך'); }
+function categoryNames(){ return visibleCategories().map(c=>c.name); }
 function optionCategoryName(type){
   const aliases = {'תפקיד':'תפקיד / כובע','תפקיד / כובע':'תפקיד'};
   if(categories().some(c=>c.name===type)) return type;
@@ -849,7 +850,7 @@ function dashList(rows,type){
 
 /* Projects */
 function tableProjects(){
-  const rows=filtered(DATA.projects||[], projectSearch?.value, ['שם פרויקט','עיר','תחום','סטטוס','תחום שיוך','תגיות','אחראי']);
+  const rows=filtered(DATA.projects||[], projectSearch?.value, canManageAssignmentDomains()?['שם פרויקט','עיר','תחום','סטטוס','תחום שיוך','תגיות','אחראי']:['שם פרויקט','עיר','תחום','סטטוס','תגיות','אחראי']);
   projectsTable.innerHTML=tableHtml(rows,[
     {key:'שם פרויקט',label:'שם פרויקט'},{key:'עיר',label:'עיר'},{key:'תחום',label:'תחום'},{key:'סטטוס',label:'סטטוס'}
   ], r=>`openProjectCard('${esc(r['מזהה פרויקט'])}')`, null);
@@ -1319,7 +1320,7 @@ function renderSettings(){
   if(SETTINGS_TAB==='backup') return renderBackupSettings();
 }
 function renderCategoriesSettings(){
-  const cats = categories();
+  const cats = visibleCategories();
   let html = `<div class="toolbar"><button class="primary" onclick="openCategoryOnly()">+ קטגוריה חדשה</button></div>`;
   html += '<p class="muted">כאן מנהלים את שמות הקטגוריות בלבד. את הפריטים שבתוכן מנהלים ב“אפשרויות בחירה”.</p>';
   if(!cats.length){ settingsBox.innerHTML = html + '<p>אין קטגוריות להצגה.</p>'; return; }
@@ -1331,7 +1332,7 @@ function renderCategoriesSettings(){
   settingsBox.innerHTML = html;
 }
 function renderOptionsSettings(){
-  const cats = categories();
+  const cats = visibleCategories();
   let html = `<div class="toolbar"><button class="primary" onclick="openCategoryValue()">+ אפשרות בחירה</button></div>`;
   html += '<p class="muted">כאן מוסיפים פריטים בתוך קטגוריה, למשל: עיר ← ירושלים.</p>';
   if(!cats.length){ settingsBox.innerHTML=html+'<p>אין קטגוריות.</p>'; return; }
@@ -1391,7 +1392,7 @@ function toggleCategoryValue(id){ google.script.run.withSuccessHandler(()=>refre
 function deleteCategoryValue(id){ if(!confirm('למחוק אפשרות בחירה?')) return; google.script.run.withSuccessHandler(()=>refreshCore()).withFailureHandler(e=>alert(e.message)).מחיקת_אפשרות_בחירה_Build6_1({authToken:currentToken(),id}); }
 
 function renderSystemFieldsSettings(){
-  const fields = (DATA.fields || []).slice().sort((a,b)=>String(a['ישות']).localeCompare(String(b['ישות']),'he') || Number(a['סדר תצוגה']||999)-Number(b['סדר תצוגה']||999));
+  const fields = (DATA.fields || []).filter(f=>canManageAssignmentDomains() || !(String(f['ישות']||'').trim()==='פרויקט' && String(f['שם שדה']||'').trim()==='תחום שיוך')).slice().sort((a,b)=>String(a['ישות']).localeCompare(String(b['ישות']),'he') || Number(a['סדר תצוגה']||999)-Number(b['סדר תצוגה']||999));
   let html = `<div class="toolbar"><button class="primary" onclick="openSystemField()">+ שדה מערכת</button></div>`;
   html += '<p class="muted">כאן קובעים אילו שדות יופיעו בפרויקט, באיש קשר ובמשימה.</p>';
   html += smallTable(fields,['ישות','שם שדה','סוג שדה','סוג ערך קשור','חובה','פעיל','סדר תצוגה'],['ישות','שם שדה','סוג','קטגוריה קשורה','חובה','פעיל','סדר'],r=>`<button onclick='openSystemField(${JSON.stringify(r)})'>ערוך</button> <button onclick="toggleSystemField('${r['מזהה שדה']}')">${r['פעיל']==='לא'?'הפעל':'השבת'}</button> <button class="danger" onclick="deleteSystemField('${r['מזהה שדה']}')">העבר לארכיון</button>`);
@@ -1422,16 +1423,18 @@ function openSystemField(r={}){
 }
 function saveSystemField(id=''){
   google.script.run.withSuccessHandler(()=>{closeM();refreshCore();}).withFailureHandler(e=>alert(e.message))
-    .שמירת_שדה_הגדרה_Build4_4({id,entity:sfEntity.value,name:sfName.value,fieldType:sfType.value,settingType:sfSetting.value,required:sfRequired.value,active:sfActive.value,showList:sfList.value,showCard:sfCard.value,searchable:sfSearch.value,filterable:sfFilter.value,order:sfOrder.value});
+    .שמירת_שדה_הגדרה_Build4_4({authToken:currentToken(),id,entity:sfEntity.value,name:sfName.value,fieldType:sfType.value,settingType:sfSetting.value,required:sfRequired.value,active:sfActive.value,showList:sfList.value,showCard:sfCard.value,searchable:sfSearch.value,filterable:sfFilter.value,order:sfOrder.value});
 }
-function toggleSystemField(id){ google.script.run.withSuccessHandler(()=>refreshCore()).withFailureHandler(e=>alert(e.message)).החלפת_מצב_שדה_מערכת_Build6_1(id); }
-function deleteSystemField(id){ if(!confirm('למחוק שדה מערכת?')) return; google.script.run.withSuccessHandler(()=>refreshCore()).withFailureHandler(e=>alert(e.message)).מחיקת_שדה_מערכת_Build6_1(id); }
+function toggleSystemField(id){ google.script.run.withSuccessHandler(()=>refreshCore()).withFailureHandler(e=>alert(e.message)).החלפת_מצב_שדה_מערכת_Build6_1({authToken:currentToken(),id}); }
+function deleteSystemField(id){ if(!confirm('למחוק שדה מערכת?')) return; google.script.run.withSuccessHandler(()=>refreshCore()).withFailureHandler(e=>alert(e.message)).מחיקת_שדה_מערכת_Build6_1({authToken:currentToken(),id}); }
 
 function renderUsersSettings(){
   const rows = contactsWithPermission();
   let html = `<div class="toolbar"><button class="primary" onclick="openPermissionContactPicker()">+ מתן הרשאה לאיש קשר</button></div>`;
   html += `<p class="muted">משתמש מערכת הוא איש קשר שקיבל הרשאת מערכת. ברירת המחדל לכל איש קשר היא "ללא הרשאה".</p>`;
-  html += smallTable(rows,['שם מלא','אימייל','טלפון','הרשאת מערכת','תחום שיוך מרכזי','תחומי שיוך','פעיל במערכת'],['שם','מייל','טלפון','הרשאה','תחום מרכזי','תחומים נוספים','פעיל'],r=>`<button onclick='openContact(${JSON.stringify(r)})'>ערוך הרשאה</button>`);
+  const keys = canManageAssignmentDomains()?['שם מלא','אימייל','טלפון','הרשאת מערכת','תחום שיוך מרכזי','תחומי שיוך','פעיל במערכת']:['שם מלא','אימייל','טלפון','הרשאת מערכת','פעיל במערכת'];
+  const labels = canManageAssignmentDomains()?['שם','מייל','טלפון','הרשאה','תחום מרכזי','תחומים נוספים','פעיל']:['שם','מייל','טלפון','הרשאה','פעיל'];
+  html += smallTable(rows,keys,labels,r=>`<button onclick='openContact(${JSON.stringify(r)})'>ערוך הרשאה</button>`);
   settingsBox.innerHTML = html;
 }
 function openPermissionContactPicker(){
@@ -1712,7 +1715,7 @@ function tableProjects(){
   let rows = filtered(
     (DATA.projects || []).filter(r => String(r['בארכיון'] || '') !== 'כן'),
     projectSearch?.value,
-    ['שם פרויקט','עיר','תחום','סטטוס','תחום שיוך','תגיות','אחראי']
+    canManageAssignmentDomains()?['שם פרויקט','עיר','תחום','סטטוס','תחום שיוך','תגיות','אחראי']:['שם פרויקט','עיר','תחום','סטטוס','תגיות','אחראי']
   );
 
   rows = sortRows(rows, projectSort?.value || 'dateDesc', 'שם פרויקט');
@@ -1723,7 +1726,7 @@ function tableProjects(){
       {key:'שם פרויקט',label:'שם פרויקט'},
       {key:'עיר',label:'עיר'},
       {key:'תחום',label:'תחום'},
-      {key:'תחום שיוך',label:'תחום שיוך'},
+      ...(canManageAssignmentDomains()?[{key:'תחום שיוך',label:'תחום שיוך'}]:[]),
       {key:'סטטוס',label:'סטטוס'}
     ],
     r => `openProjectCard('${esc(r['מזהה פרויקט'])}')`,
@@ -5742,8 +5745,8 @@ window.calendarTasksForDate = function(d){
       title: 'שם פרויקט',
       list: ['שם פרויקט','עיר','תחום','סטטוס'],
       card: ['עיר','תחום','סטטוס','אחראי'],
-      search: ['שם פרויקט','עיר','תחום','סטטוס','תחום שיוך','תגיות','אחראי'],
-      labels: {'שם פרויקט':'שם פרויקט','עיר':'עיר','תחום':'תחום','סטטוס':'סטטוס','אחראי':'אחראי','תגיות':'תגיות','תיקיית Drive':'תיקיית Drive'}
+      search: ['שם פרויקט','עיר','תחום','סטטוס','תגיות','אחראי'],
+      labels: {'שם פרויקט':'שם פרויקט','עיר':'עיר','תחום':'תחום','סטטוס':'סטטוס','אחראי':'אחראי','תגיות':'תגיות','תיקיית Drive':'תיקיית Drive','תחום שיוך':'תחום שיוך'}
     },
     contact: {
       title: 'שם מלא',
@@ -5766,6 +5769,7 @@ window.calendarTasksForDate = function(d){
     const aliases = ENTITY_ALIASES[entity] || [];
     return ((window.DATA && DATA.fields) || [])
       .filter(f => aliases.includes(String(f['ישות']||'').trim()) && yes(f['פעיל'], true) && String(f['שם שדה']||'').trim())
+      .filter(f => canManageAssignmentDomains() || !(entity==='project' && String(f['שם שדה']||'').trim()==='תחום שיוך'))
       .map((f,i)=>({name:String(f['שם שדה']).trim(), order:Number(f['סדר תצוגה'] || f['סדר'] || f['order'] || 9999), i, raw:f}))
       .sort((a,b)=>(isFinite(a.order)?a.order:9999)-(isFinite(b.order)?b.order:9999) || a.i-b.i);
   }
@@ -5782,7 +5786,7 @@ window.calendarTasksForDate = function(d){
   }
   function label(entity, key){ return (DEFAULTS[entity].labels[key] || key); }
   function cols(entity, kind){ return fieldsFor(entity, kind).map(k=>({key: entity==='task' ? (TASK_VALUE_KEYS[k] || k) : k, label: label(entity,k)})); }
-  function requiredMark(entity, key){ return settings(entity).some(f=>f.name===key && yes(f.raw['חובה'], false)) ? ' <span class="danger">*</span>' : ''; }
+  function requiredMark(entity, key){ if(entity==='project' && key==='תחום שיוך' && !canManageAssignmentDomains()) return ''; return settings(entity).some(f=>f.name===key && yes(f.raw['חובה'], false)) ? ' <span class="danger">*</span>' : ''; }
   window.BH_requiredMark = requiredMark;
   function cardGrid(entity, row, extra){
     const html = fieldsFor(entity,'card').filter(k=>k!==DEFAULTS[entity].title).map(k=>{
