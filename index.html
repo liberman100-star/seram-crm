@@ -2835,6 +2835,7 @@ function load(forceDashboard=true){
 
   google.script.run
     .withSuccessHandler(d=>{
+      if(window.BH_isCustomerDomainSelectionRequired && window.BH_isCustomerDomainSelectionRequired(d)){ window.BH_showCustomerDomainDialog(d); return; }
       if(!d || !d.auth || d.auth.allowed !== true){
         clearToken();
         showLogin((d && d.auth && d.auth.reason) ? d.auth.reason : 'אין הרשאה או שהחיבור פג');
@@ -2916,6 +2917,7 @@ function loadModule_Build13_2(module){
     .withSuccessHandler(d=>{
       __BH_LOADING_MODULE__[module] = false;
 
+      if(window.BH_isCustomerDomainSelectionRequired && window.BH_isCustomerDomainSelectionRequired(d)){ window.BH_showCustomerDomainDialog(d); return; }
       if(!d || !d.auth || d.auth.allowed !== true){
         clearToken();
         showLogin((d && d.auth && d.auth.reason) ? d.auth.reason : 'אין הרשאה או שהחיבור פג');
@@ -2964,6 +2966,7 @@ function refreshCore(after){
 
   google.script.run
     .withSuccessHandler(d=>{
+      if(window.BH_isCustomerDomainSelectionRequired && window.BH_isCustomerDomainSelectionRequired(d)){ window.BH_showCustomerDomainDialog(d); return; }
       if(!d || !d.auth || d.auth.allowed !== true){
         clearToken();
         showLogin((d && d.auth && d.auth.reason) ? d.auth.reason : 'אין הרשאה או שהחיבור פג');
@@ -6035,6 +6038,55 @@ window.calendarTasksForDate = function(d){
         logo: domainBrandLogo.value, logoHeight: domainBrandLogoHeight.value, active: domainBrandActive.value
       });
   };
+})();
+</script>
+
+
+
+<script id="BH_CUSTOMER_ASSIGNMENT_DOMAIN_SELECTION">
+(function(){
+  function escCad(v){ return typeof esc === 'function' ? esc(v) : String(v || '').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+  function domainState(d){ return d && d.auth && d.auth.allowed === true && d.auth.domainSelectionRequired === true && d.customerDomainSelection && d.customerDomainSelection.required === true; }
+  window.BH_isCustomerDomainSelectionRequired = domainState;
+  window.BH_showCustomerDomainDialog = function(d){
+    const domains = (d && d.customerDomainSelection && d.customerDomainSelection.domains) || [];
+    const opts = domains.map(x=>`<option value="${escCad(x)}">${escCad(x)}</option>`).join('');
+    hideLogin();
+    DATA = d || {}; window.DATA = DATA;
+    modal.classList.remove('hidden');
+    modalBox.innerHTML = `
+      <h3 class="sectionTitle">בחירת תחום שיוך</h3>
+      <p>הנך משויך לפרויקטים ביותר מתחום שיוך אחד.<br>בבקשה בחר לאיזה תחום שיוך ברצונך להיכנס</p>
+      <label>תחום שיוך</label>
+      <select id="customerAssignmentDomainSelect"><option value="">בחר תחום שיוך</option>${opts}</select>
+      <div class="actions"><button class="primary" onclick="BH_saveCustomerAssignmentDomain()">כניסה</button></div>`;
+  };
+  window.BH_saveCustomerAssignmentDomain = function(){
+    const sel = document.getElementById('customerAssignmentDomainSelect');
+    const domain = sel ? sel.value : '';
+    if(!domain){ alert('יש לבחור תחום שיוך'); return; }
+    google.script.run
+      .withSuccessHandler(function(res){
+        if(!res || !res.ok){ alert((res && res.message) || 'לא ניתן לשמור את תחום השיוך'); return; }
+        closeM();
+        refreshCore(function(){
+          const btn = document.getElementById('btn_dashboard');
+          if(btn) tab('dashboard', btn);
+        });
+      })
+      .withFailureHandler(e=>alert(e.message))
+      .בחירת_תחום_שיוך_לקוח_BuildCAD({authToken: currentToken(), assignmentDomain: domain});
+  };
+  const oldBackdrop = window.modalBackdropClose;
+  window.modalBackdropClose = function(e){
+    if(window.BH_isCustomerDomainSelectionRequired && window.BH_isCustomerDomainSelectionRequired(window.DATA)) return;
+    if(typeof oldBackdrop === 'function') return oldBackdrop.apply(this, arguments);
+  };
+  document.addEventListener('keydown', function(e){
+    if(e.key === 'Escape' && window.BH_isCustomerDomainSelectionRequired && window.BH_isCustomerDomainSelectionRequired(window.DATA)){
+      e.preventDefault(); e.stopPropagation();
+    }
+  }, true);
 })();
 </script>
 

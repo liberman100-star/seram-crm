@@ -4988,3 +4988,251 @@ function BH_DB_attachCoreBranding_(data){
   }
   return data;
 }
+
+/***********************
+ * Customer Assignment Domain Selection
+ ***********************/
+const BH_CAD_SESSION_FIELD = "תחום שיוך פעיל";
+
+function BH_CAD_installSessionColumn_(){
+  try { הוספת_עמודה_אם_חסרה_(BUILD7_SESSIONS_SHEET, BH_CAD_SESSION_FIELD); } catch(e) {}
+}
+
+function BH_CAD_activeDomainSet_(){
+  const set = {};
+  BH_DB_activeDomains_().forEach(d => { set[String(d || "").trim()] = true; });
+  return set;
+}
+
+function BH_CAD_visibleProjectsForCustomer_(data, contactId){
+  const clientLinks = (data.links || []).filter(l =>
+    String(l["מזהה איש קשר"] || "").trim() === String(contactId || "").trim() &&
+    String(l["מורשה צפייה בפורטל"] || "").trim() === "כן"
+  );
+  const allowedProjectIds = clientLinks.map(l => String(l["מזהה פרויקט"] || "").trim()).filter(Boolean);
+  const projects = (data.projects || []).filter(p => allowedProjectIds.indexOf(String(p["מזהה פרויקט"] || "").trim()) !== -1);
+  return { links: clientLinks, projects: projects };
+}
+
+function BH_CAD_availableDomainsForCustomer_(data, contactId){
+  const active = BH_CAD_activeDomainSet_();
+  const visible = BH_CAD_visibleProjectsForCustomer_(data, contactId).projects;
+  const seen = {};
+  return visible.map(BH_AD_projectDomain_)
+    .map(d => String(d || "").trim())
+    .filter(d => d && d !== BH_AD_DEFAULT && active[d])
+    .filter(d => { if(seen[d]) return false; seen[d] = true; return true; });
+}
+
+function BH_CAD_session_(token){
+  token = String(token || "").trim();
+  if(!token) return null;
+  BH_CAD_installSessionColumn_();
+  return readSheet_(BUILD7_SESSIONS_SHEET).find(s => String(s["Token"] || "") === token && String(s["פעיל"] || "").trim() === "כן") || null;
+}
+
+function BH_CAD_setSessionDomain_(token, domain){
+  const session = BH_CAD_session_(token);
+  if(!session) return false;
+  session[BH_CAD_SESSION_FIELD] = String(domain || "").trim();
+  session["עדכון אחרון"] = new Date();
+  upsert_(BUILD7_SESSIONS_SHEET, "Token", token, session);
+  return true;
+}
+
+function BH_CAD_domainRequiredPayload_(user, domains){
+  return {
+    auth: { allowed: true, domainSelectionRequired: true },
+    customerDomainSelection: { required: true, domains: domains || [] },
+    currentUser: user,
+    system: BH_DB_defaultBranding_(),
+    defaultBranding: BH_DB_defaultBranding_()
+  };
+}
+
+function BH_CAD_projectIdFromRow_(row){
+  return String(row && (row["מזהה פרויקט"] || row.projectId || row.projectID || row["Project ID"] || row["project_id"]) || "").trim();
+}
+
+function BH_CAD_taskIdFromRow_(row){
+  return String(row && (row["מזהה משימה"] || row.taskId || row.taskID || row["Task ID"] || row["task_id"]) || "").trim();
+}
+
+function BH_CAD_contactIdFromRow_(row){
+  return String(row && (row["מזהה איש קשר"] || row.contactId || row.contactID || row["Contact ID"] || row["contact_id"]) || "").trim();
+}
+
+function BH_CAD_assertNotBroadened_(before, after, key){
+  const b = Array.isArray(before && before[key]) ? before[key].length : 0;
+  const a = Array.isArray(after && after[key]) ? after[key].length : 0;
+  if(a > b) throw new Error("סינון תחום שיוך הרחיב את הרשאות הלקוח עבור " + key);
+}
+
+function BH_CAD_filterProjectRelatedCollections_(data, projectIdSet, taskIdSet, handledKeys){
+  Object.keys(data || {}).forEach(key => {
+    if(handledKeys[key] || !Array.isArray(data[key])) return;
+    let sawProjectOrTask = false;
+    const filtered = data[key].filter(row => {
+      if(!row || typeof row !== "object") return true;
+      const projectId = BH_CAD_projectIdFromRow_(row);
+      if(projectId){
+        sawProjectOrTask = true;
+        return !!projectIdSet[projectId];
+      }
+      const taskId = BH_CAD_taskIdFromRow_(row);
+      if(taskId){
+        sawProjectOrTask = true;
+        return !!taskIdSet[taskId];
+      }
+      return true;
+    });
+    if(sawProjectOrTask) data[key] = filtered;
+  });
+}
+
+function BH_CAD_applySelectedDomainFilter_(canonicalData, user, selectedDomain){
+  const before = {
+    projects: (canonicalData.projects || []).slice(),
+    tasks: (canonicalData.tasks || []).slice(),
+    contacts: (canonicalData.contacts || []).slice(),
+    links: (canonicalData.links || []).slice()
+  };
+  const data = canonicalData;
+  const selectedProjects = (data.projects || []).filter(p => BH_AD_projectDomain_(p) === selectedDomain);
+  const selectedProjectIds = selectedProjects.map(p => BH_CAD_projectIdFromRow_(p)).filter(Boolean);
+  const projectIdSet = {}; selectedProjectIds.forEach(id => projectIdSet[id] = true);
+
+  const selectedTasks = (data.tasks || []).filter(t => projectIdSet[BH_CAD_projectIdFromRow_(t)]);
+  const taskIdSet = {}; selectedTasks.forEach(t => { const id = BH_CAD_taskIdFromRow_(t); if(id) taskIdSet[id] = true; });
+
+  const selectedLinks = (data.links || []).filter(l => projectIdSet[BH_CAD_projectIdFromRow_(l)]);
+  const relatedContactIdSet = {};
+  selectedLinks.forEach(l => { const id = BH_CAD_contactIdFromRow_(l); if(id) relatedContactIdSet[id] = true; });
+  if(user && user.contactId) relatedContactIdSet[String(user.contactId)] = true;
+
+  data.projects = selectedProjects;
+  data.tasks = selectedTasks;
+  data.links = selectedLinks;
+  data.contacts = (data.contacts || []).filter(c => {
+    const contactId = BH_CAD_contactIdFromRow_(c);
+    return !!relatedContactIdSet[contactId] || (user && String(user.contactId || "") === contactId);
+  });
+
+  const handled = { projects:true, tasks:true, links:true, contacts:true };
+  BH_CAD_filterProjectRelatedCollections_(data, projectIdSet, taskIdSet, handled);
+
+  data.currentUser = data.currentUser || user;
+  data.currentUser[BH_CAD_SESSION_FIELD] = selectedDomain;
+  data.currentUser.activeAssignmentDomain = selectedDomain;
+  data.dashboard = calcDashboard_(data.projects || [], data.contacts || [], data.tasks || []);
+  data.rootBranding = BH_DB_brandingForDomain_(selectedDomain) || BH_DB_defaultBranding_();
+  data.defaultBranding = data.defaultBranding || BH_DB_defaultBranding_();
+  data.system = data.rootBranding;
+
+  BH_CAD_assertNotBroadened_(before, data, "projects");
+  BH_CAD_assertNotBroadened_(before, data, "tasks");
+  BH_CAD_assertNotBroadened_(before, data, "contacts");
+  BH_CAD_assertNotBroadened_(before, data, "links");
+  if(user && user.contactId && before.contacts.some(c => BH_CAD_contactIdFromRow_(c) === String(user.contactId)) && !data.contacts.some(c => BH_CAD_contactIdFromRow_(c) === String(user.contactId))){
+    throw new Error("סינון תחום שיוך הסיר את איש הקשר של הלקוח");
+  }
+  return data;
+}
+
+function בחירת_תחום_שיוך_לקוח_BuildCAD(data){
+  const token = data && (data.authToken || data.token) || "";
+  const requested = String(data && (data.assignmentDomain || data.domain) || "").trim();
+  const user = קבלת_משתמש_מסשן_Build7_(token);
+  if(!user.allowed) throw new Error(user.reason || "אין הרשאה");
+  if(String(user.role || "").trim() !== "לקוח") throw new Error("בחירת תחום שיוך זמינה ללקוחות בלבד");
+  if(!requested || requested === BH_AD_DEFAULT) throw new Error("יש לבחור תחום שיוך פעיל");
+  const dataAll = קבלת_נתוני_מערכת_מלאים_Build10_();
+  const domains = BH_CAD_availableDomainsForCustomer_(dataAll, user.contactId || "");
+  if(domains.indexOf(requested) === -1) throw new Error("אין הרשאה לתחום שיוך זה");
+  BH_CAD_setSessionDomain_(token, requested);
+  return { ok: true, assignmentDomain: requested };
+}
+
+const BH_CAD_originalLogout_ = התנתקות_Build7;
+התנתקות_Build7 = function(token){
+  try { BH_CAD_setSessionDomain_(token, ""); } catch(e) {}
+  return BH_CAD_originalLogout_(token);
+};
+
+const BH_CAD_originalCore_ = קבלת_נתוני_ליבה_Build13;
+קבלת_נתוני_ליבה_Build13 = function(token){
+  const baseUser = קבלת_משתמש_מסשן_Build7_(token);
+  if(!baseUser.allowed || String(baseUser.role || "").trim() !== "לקוח") return BH_CAD_originalCore_(token);
+
+  const full = קבלת_נתוני_מערכת_מלאים_Build10_();
+  const domains = BH_CAD_availableDomainsForCustomer_(full, baseUser.contactId || "");
+  const session = BH_CAD_session_(token);
+  let selected = session ? String(session[BH_CAD_SESSION_FIELD] || "").trim() : "";
+
+  if(domains.length === 1){
+    selected = domains[0];
+    if(session && String(session[BH_CAD_SESSION_FIELD] || "").trim() !== selected) BH_CAD_setSessionDomain_(token, selected);
+  } else if(domains.indexOf(selected) === -1) {
+    if(selected) BH_CAD_setSessionDomain_(token, "");
+    selected = "";
+  }
+
+  if(domains.length > 1 && !selected){
+    return BH_CAD_domainRequiredPayload_(baseUser, domains);
+  }
+
+  const canonicalPayload = BH_CAD_originalCore_(token);
+  if(selected && canonicalPayload && canonicalPayload.auth && canonicalPayload.auth.allowed === true){
+    return BH_CAD_applySelectedDomainFilter_(canonicalPayload, canonicalPayload.currentUser || baseUser, selected);
+  }
+  return canonicalPayload;
+};
+
+function BH_CAD_staticAssertions_(){
+  const canonical = {
+    projects: [
+      {"מזהה פרויקט":"P1", "תחום שיוך":"A"},
+      {"מזהה פרויקט":"P2", "תחום שיוך":"B"}
+    ],
+    tasks: [
+      {"מזהה משימה":"T1", "מזהה פרויקט":"P1"},
+      {"מזהה משימה":"T2", "מזהה פרויקט":"P2"}
+    ],
+    contacts: [
+      {"מזהה איש קשר":"C1"},
+      {"מזהה איש קשר":"C2"},
+      {"מזהה איש קשר":"C3"}
+    ],
+    links: [
+      {"מזהה פרויקט":"P1", "מזהה איש קשר":"C1"},
+      {"מזהה פרויקט":"P2", "מזהה איש קשר":"C2"}
+    ],
+    projectNotes: [
+      {"מזהה פרויקט":"P1", text:"keep"},
+      {"מזהה פרויקט":"P2", text:"drop"}
+    ],
+    taskNotes: [
+      {"מזהה משימה":"T1", text:"keep"},
+      {"מזהה משימה":"T2", text:"drop"}
+    ],
+    timeline: [
+      {projectId:"P1", text:"keep"},
+      {projectId:"P2", text:"drop"}
+    ],
+    calendarItems: [
+      {taskId:"T1", text:"keep"},
+      {taskId:"T2", text:"drop"}
+    ],
+    auth: { allowed:true },
+    currentUser: { role:"לקוח", contactId:"C3" }
+  };
+  const out = BH_CAD_applySelectedDomainFilter_(canonical, canonical.currentUser, "A");
+  if(out.projects.length !== 1 || out.tasks.length !== 1 || out.links.length !== 1) throw new Error("BH_CAD static assertion failed: core collections not narrowed");
+  if(out.contacts.length > 2 || !out.contacts.some(c => BH_CAD_contactIdFromRow_(c) === "C3")) throw new Error("BH_CAD static assertion failed: customer contact not preserved");
+  if(out.projects.some(p => BH_CAD_projectIdFromRow_(p) === "P2")) throw new Error("BH_CAD static assertion failed: unrelated project remains");
+  if(out.projectNotes.some(n => BH_CAD_projectIdFromRow_(n) === "P2")) throw new Error("BH_CAD static assertion failed: project notes not narrowed");
+  if(out.taskNotes.some(n => BH_CAD_taskIdFromRow_(n) === "T2")) throw new Error("BH_CAD static assertion failed: task notes not narrowed");
+  if(out.timeline.some(n => BH_CAD_projectIdFromRow_(n) === "P2")) throw new Error("BH_CAD static assertion failed: timeline not narrowed");
+  if(out.calendarItems.some(n => BH_CAD_taskIdFromRow_(n) === "T2")) throw new Error("BH_CAD static assertion failed: calendar/activity not narrowed");
+  return true;
+}
