@@ -5050,33 +5050,92 @@ function BH_CAD_domainRequiredPayload_(user, domains){
   };
 }
 
-function BH_CAD_applySelectedDomainFilter_(data, user, selectedDomain){
-  const visible = BH_CAD_visibleProjectsForCustomer_(data, user.contactId || "");
-  const selectedProjects = visible.projects.filter(p => BH_AD_projectDomain_(p) === selectedDomain);
-  const selectedProjectIds = selectedProjects.map(p => String(p["מזהה פרויקט"] || "").trim()).filter(Boolean);
+function BH_CAD_projectIdFromRow_(row){
+  return String(row && (row["מזהה פרויקט"] || row.projectId || row.projectID || row["Project ID"] || row["project_id"]) || "").trim();
+}
+
+function BH_CAD_taskIdFromRow_(row){
+  return String(row && (row["מזהה משימה"] || row.taskId || row.taskID || row["Task ID"] || row["task_id"]) || "").trim();
+}
+
+function BH_CAD_contactIdFromRow_(row){
+  return String(row && (row["מזהה איש קשר"] || row.contactId || row.contactID || row["Contact ID"] || row["contact_id"]) || "").trim();
+}
+
+function BH_CAD_assertNotBroadened_(before, after, key){
+  const b = Array.isArray(before && before[key]) ? before[key].length : 0;
+  const a = Array.isArray(after && after[key]) ? after[key].length : 0;
+  if(a > b) throw new Error("סינון תחום שיוך הרחיב את הרשאות הלקוח עבור " + key);
+}
+
+function BH_CAD_filterProjectRelatedCollections_(data, projectIdSet, taskIdSet, handledKeys){
+  Object.keys(data || {}).forEach(key => {
+    if(handledKeys[key] || !Array.isArray(data[key])) return;
+    let sawProjectOrTask = false;
+    const filtered = data[key].filter(row => {
+      if(!row || typeof row !== "object") return true;
+      const projectId = BH_CAD_projectIdFromRow_(row);
+      if(projectId){
+        sawProjectOrTask = true;
+        return !!projectIdSet[projectId];
+      }
+      const taskId = BH_CAD_taskIdFromRow_(row);
+      if(taskId){
+        sawProjectOrTask = true;
+        return !!taskIdSet[taskId];
+      }
+      return true;
+    });
+    if(sawProjectOrTask) data[key] = filtered;
+  });
+}
+
+function BH_CAD_applySelectedDomainFilter_(canonicalData, user, selectedDomain){
+  const before = {
+    projects: (canonicalData.projects || []).slice(),
+    tasks: (canonicalData.tasks || []).slice(),
+    contacts: (canonicalData.contacts || []).slice(),
+    links: (canonicalData.links || []).slice()
+  };
+  const data = canonicalData;
+  const selectedProjects = (data.projects || []).filter(p => BH_AD_projectDomain_(p) === selectedDomain);
+  const selectedProjectIds = selectedProjects.map(p => BH_CAD_projectIdFromRow_(p)).filter(Boolean);
   const projectIdSet = {}; selectedProjectIds.forEach(id => projectIdSet[id] = true);
-  const selectedLinks = visible.links.filter(l => projectIdSet[String(l["מזהה פרויקט"] || "").trim()]);
-  const contactIdSet = {}; selectedLinks.forEach(l => { const id = String(l["מזהה איש קשר"] || "").trim(); if(id) contactIdSet[id] = true; });
-  if(user.contactId) contactIdSet[String(user.contactId)] = true;
+
+  const selectedTasks = (data.tasks || []).filter(t => projectIdSet[BH_CAD_projectIdFromRow_(t)]);
+  const taskIdSet = {}; selectedTasks.forEach(t => { const id = BH_CAD_taskIdFromRow_(t); if(id) taskIdSet[id] = true; });
+
+  const selectedLinks = (data.links || []).filter(l => projectIdSet[BH_CAD_projectIdFromRow_(l)]);
+  const relatedContactIdSet = {};
+  selectedLinks.forEach(l => { const id = BH_CAD_contactIdFromRow_(l); if(id) relatedContactIdSet[id] = true; });
+  if(user && user.contactId) relatedContactIdSet[String(user.contactId)] = true;
 
   data.projects = selectedProjects;
+  data.tasks = selectedTasks;
   data.links = selectedLinks;
-  data.contacts = (data.contacts || []).filter(c => contactIdSet[String(c["מזהה איש קשר"] || "").trim()]);
-  data.tasks = (data.tasks || []).filter(t => projectIdSet[String(t["מזהה פרויקט"] || "").trim()]);
-  const taskProjectById = {}; data.tasks.forEach(t => { taskProjectById[String(t["מזהה משימה"] || "").trim()] = String(t["מזהה פרויקט"] || "").trim(); });
-  data.notes = (data.notes || []).filter(n => {
-    const pid = String(n["מזהה פרויקט"] || "").trim();
-    if(pid) return !!projectIdSet[pid];
-    const tid = String(n["מזהה משימה"] || "").trim();
-    return !!projectIdSet[taskProjectById[tid]];
+  data.contacts = (data.contacts || []).filter(c => {
+    const contactId = BH_CAD_contactIdFromRow_(c);
+    return !!relatedContactIdSet[contactId] || (user && String(user.contactId || "") === contactId);
   });
+
+  const handled = { projects:true, tasks:true, links:true, contacts:true };
+  BH_CAD_filterProjectRelatedCollections_(data, projectIdSet, taskIdSet, handled);
+
   data.currentUser = data.currentUser || user;
   data.currentUser[BH_CAD_SESSION_FIELD] = selectedDomain;
   data.currentUser.activeAssignmentDomain = selectedDomain;
   data.dashboard = calcDashboard_(data.projects || [], data.contacts || [], data.tasks || []);
   data.rootBranding = BH_DB_brandingForDomain_(selectedDomain) || BH_DB_defaultBranding_();
-  data.defaultBranding = BH_DB_defaultBranding_();
+  data.defaultBranding = data.defaultBranding || BH_DB_defaultBranding_();
   data.system = data.rootBranding;
+
+  BH_CAD_assertNotBroadened_(before, data, "projects");
+  BH_CAD_assertNotBroadened_(before, data, "tasks");
+  BH_CAD_assertNotBroadened_(before, data, "contacts");
+  BH_CAD_assertNotBroadened_(before, data, "links");
+  if(user && user.contactId && before.contacts.some(c => BH_CAD_contactIdFromRow_(c) === String(user.contactId)) && !data.contacts.some(c => BH_CAD_contactIdFromRow_(c) === String(user.contactId))){
+    throw new Error("סינון תחום שיוך הסיר את איש הקשר של הלקוח");
+  }
   return data;
 }
 
@@ -5122,33 +5181,58 @@ const BH_CAD_originalCore_ = קבלת_נתוני_ליבה_Build13;
     return BH_CAD_domainRequiredPayload_(baseUser, domains);
   }
 
-  if(selected){
-    const role = String(baseUser.role || "").trim();
-    const payload = קבלת_נתוני_מערכת_מלאים_Build10_();
-    payload.auth = { allowed: true };
-    payload.currentUser = {
-      email: baseUser.email || "",
-      name: baseUser.name || baseUser.email || "",
-      role: role,
-      isOwner: baseUser.isOwner === true,
-      contactId: baseUser.contactId || "",
-      allowed: true
-    };
-    const actions = פעולות_מותרות_Build11_2_(payload.currentUser);
-    payload.actionPermissions = actions;
-    payload.canSeeSettings = false;
-    payload.canSeeDashboard = actions.canSeeDashboard;
-    payload.canSeeArchive = actions.canSeeArchive;
-    payload.canSeeTimeline = actions.canSeeTimeline;
-    payload.canCreate = actions.canCreate;
-    payload.canEdit = actions.canEdit;
-    payload.canDelete = actions.canDelete;
-    payload.readOnly = actions.readOnly;
-    payload.realSettings = {};
-    payload.categories = [];
-    payload.fields = [];
-    payload.permissions = {};
-    return BH_CAD_applySelectedDomainFilter_(payload, payload.currentUser, selected);
+  const canonicalPayload = BH_CAD_originalCore_(token);
+  if(selected && canonicalPayload && canonicalPayload.auth && canonicalPayload.auth.allowed === true){
+    return BH_CAD_applySelectedDomainFilter_(canonicalPayload, canonicalPayload.currentUser || baseUser, selected);
   }
-  return BH_CAD_originalCore_(token);
+  return canonicalPayload;
 };
+
+function BH_CAD_staticAssertions_(){
+  const canonical = {
+    projects: [
+      {"מזהה פרויקט":"P1", "תחום שיוך":"A"},
+      {"מזהה פרויקט":"P2", "תחום שיוך":"B"}
+    ],
+    tasks: [
+      {"מזהה משימה":"T1", "מזהה פרויקט":"P1"},
+      {"מזהה משימה":"T2", "מזהה פרויקט":"P2"}
+    ],
+    contacts: [
+      {"מזהה איש קשר":"C1"},
+      {"מזהה איש קשר":"C2"},
+      {"מזהה איש קשר":"C3"}
+    ],
+    links: [
+      {"מזהה פרויקט":"P1", "מזהה איש קשר":"C1"},
+      {"מזהה פרויקט":"P2", "מזהה איש קשר":"C2"}
+    ],
+    projectNotes: [
+      {"מזהה פרויקט":"P1", text:"keep"},
+      {"מזהה פרויקט":"P2", text:"drop"}
+    ],
+    taskNotes: [
+      {"מזהה משימה":"T1", text:"keep"},
+      {"מזהה משימה":"T2", text:"drop"}
+    ],
+    timeline: [
+      {projectId:"P1", text:"keep"},
+      {projectId:"P2", text:"drop"}
+    ],
+    calendarItems: [
+      {taskId:"T1", text:"keep"},
+      {taskId:"T2", text:"drop"}
+    ],
+    auth: { allowed:true },
+    currentUser: { role:"לקוח", contactId:"C3" }
+  };
+  const out = BH_CAD_applySelectedDomainFilter_(canonical, canonical.currentUser, "A");
+  if(out.projects.length !== 1 || out.tasks.length !== 1 || out.links.length !== 1) throw new Error("BH_CAD static assertion failed: core collections not narrowed");
+  if(out.contacts.length > 2 || !out.contacts.some(c => BH_CAD_contactIdFromRow_(c) === "C3")) throw new Error("BH_CAD static assertion failed: customer contact not preserved");
+  if(out.projects.some(p => BH_CAD_projectIdFromRow_(p) === "P2")) throw new Error("BH_CAD static assertion failed: unrelated project remains");
+  if(out.projectNotes.some(n => BH_CAD_projectIdFromRow_(n) === "P2")) throw new Error("BH_CAD static assertion failed: project notes not narrowed");
+  if(out.taskNotes.some(n => BH_CAD_taskIdFromRow_(n) === "T2")) throw new Error("BH_CAD static assertion failed: task notes not narrowed");
+  if(out.timeline.some(n => BH_CAD_projectIdFromRow_(n) === "P2")) throw new Error("BH_CAD static assertion failed: timeline not narrowed");
+  if(out.calendarItems.some(n => BH_CAD_taskIdFromRow_(n) === "T2")) throw new Error("BH_CAD static assertion failed: calendar/activity not narrowed");
+  return true;
+}
