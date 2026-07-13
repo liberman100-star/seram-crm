@@ -1091,6 +1091,7 @@ function בדיקת_סדר_שדה_מערכת_Build6_1(entity, order, currentId) 
 }
 
 function שמירת_פריט_קטגוריה_Build4_5(data) {
+  if (String(data && data.category || "").trim() === BH_AD_CATEGORY) BH_AD_requireSuperAdminToken_(data && data.authToken);
   validateRequired_(data.category, "קטגוריה");
   validateRequired_(data.item, "פריט");
   const rows = readSheet_("הגדרות_ערכים");
@@ -1113,6 +1114,7 @@ function שמירת_פריט_קטגוריה_Build4_5(data) {
 function שמירת_אפשרות_בחירה_Build4_5(data) { return שמירת_פריט_קטגוריה_Build4_5(data); }
 
 function שמירת_קטגוריה_Build6_1(data) {
+  if (String(data && (data.category || data.oldName) || "").trim() === BH_AD_CATEGORY) BH_AD_requireSuperAdminToken_(data && data.authToken);
   validateRequired_(data.category, "שם קטגוריה");
   const oldName = data.oldName || data.category;
   const newName = data.category;
@@ -1138,17 +1140,19 @@ function שמירת_קטגוריה_Build6_1(data) {
 
 function שמירת_קטגוריה_חדשה_Build4_5(data) { return שמירת_קטגוריה_Build6_1(data); }
 
-function החלפת_מצב_אפשרות_בחירה_Build6_1(id) {
+function החלפת_מצב_אפשרות_בחירה_Build6_1(arg) {
+  const id = arg && typeof arg === "object" ? arg.id : arg;
   const row = readSheet_("הגדרות_ערכים").find(r => r["מזהה ערך"] === id);
   if (!row) throw new Error("האפשרות לא נמצאה");
+  if (String(row["סוג ערך"] || "").trim() === BH_AD_CATEGORY) BH_AD_requireSuperAdminToken_(arg && typeof arg === "object" ? arg.authToken : "");
   row["פעיל"] = row["פעיל"] === "כן" ? "לא" : "כן";
   upsert_("הגדרות_ערכים", "מזהה ערך", id, row);
   return true;
 }
 
 function השבתת_ערך_הגדרה_Build4_3(id) { return החלפת_מצב_אפשרות_בחירה_Build6_1(id); }
-function מחיקת_אפשרות_בחירה_Build6_1(id) { deleteById_("הגדרות_ערכים", "מזהה ערך", id); return true; }
-function מחיקת_קטגוריה_Build6_1(category) { deleteWhere_("הגדרות_ערכים", "סוג ערך", category); return true; }
+function מחיקת_אפשרות_בחירה_Build6_1(arg) { const id = arg && typeof arg === "object" ? arg.id : arg; const row = readSheet_("הגדרות_ערכים").find(r => r["מזהה ערך"] === id); if (row && String(row["סוג ערך"] || "").trim() === BH_AD_CATEGORY) BH_AD_requireSuperAdminToken_(arg && typeof arg === "object" ? arg.authToken : ""); deleteById_("הגדרות_ערכים", "מזהה ערך", id); return true; }
+function מחיקת_קטגוריה_Build6_1(arg) { const category = arg && typeof arg === "object" ? arg.category : arg; if (String(category || "").trim() === BH_AD_CATEGORY) BH_AD_requireSuperAdminToken_(arg && typeof arg === "object" ? arg.authToken : ""); deleteWhere_("הגדרות_ערכים", "סוג ערך", category); return true; }
 
 function שמירת_שדה_הגדרה_Build4_4(data) {
   validateRequired_(data.entity, "ישות");
@@ -1492,6 +1496,8 @@ function איתור_מורשה_לפי_מייל_Build7_(email) {
     name: contact["שם מלא"] || email,
     role,
     contactId: contact["מזהה איש קשר"] || "",
+    "תחום שיוך מרכזי": contact["תחום שיוך מרכזי"] || "",
+    assignmentCentralDomain: contact["תחום שיוך מרכזי"] || "",
     "תחומי שיוך": contact["תחומי שיוך"] || "",
     assignmentDomains: contact["תחומי שיוך"] || "",
     isOwner: false
@@ -1584,6 +1590,8 @@ function קבלת_משתמש_מסשן_Build7_(token) {
     name: user.name || email || "",
     role: String(user.role || user["הרשאת מערכת"] || user.permission || "").trim(),
     contactId: user.contactId || "",
+    "תחום שיוך מרכזי": user["תחום שיוך מרכזי"] || user.assignmentCentralDomain || "",
+    assignmentCentralDomain: user.assignmentCentralDomain || user["תחום שיוך מרכזי"] || "",
     "תחומי שיוך": user["תחומי שיוך"] || user.assignmentDomains || "",
     assignmentDomains: user.assignmentDomains || user["תחומי שיוך"] || "",
     isOwner: !!user.isOwner,
@@ -2838,7 +2846,7 @@ function כרטיס_פרויקט(arg) {
     links: projectLinks,
     tasks: projectTasks,
     allContacts: !isArchived && actions.canEdit
-  ? contacts.filter(c => String(c["בארכיון"] || "") !== "כן")
+  ? contacts.filter(c => String(c["בארכיון"] || "") !== "כן" && !links.some(l => String(l["מזהה פרויקט"] || "") === String(x.id) && String(l["מזהה איש קשר"] || "") === String(c["מזהה איש קשר"] || "")))
   : [],
     allowedContactIds,
     readOnly: isArchived || actions.readOnly === true || actions.canEdit === false
@@ -2888,7 +2896,7 @@ function כרטיס_איש_קשר(arg) {
     links: contactLinks,
     tasks: contactTasks,
     allProjects: !isArchived && actions.canEdit
-  ? projects.filter(p => String(p["בארכיון"] || "") !== "כן")
+  ? projects.filter(p => String(p["בארכיון"] || "") !== "כן" && !links.some(l => String(l["מזהה איש קשר"] || "") === String(x.id) && String(l["מזהה פרויקט"] || "") === String(p["מזהה פרויקט"] || "")))
   : [],
     readOnly: isArchived || actions.readOnly === true || actions.canEdit === false
   };
@@ -3465,6 +3473,8 @@ function קבלת_נתונים_Build7(token) {
     role: role,
     isOwner: user.isOwner === true,
     contactId: user.contactId || "",
+    "תחום שיוך מרכזי": user["תחום שיוך מרכזי"] || user.assignmentCentralDomain || "",
+    assignmentCentralDomain: user.assignmentCentralDomain || user["תחום שיוך מרכזי"] || "",
     "תחומי שיוך": user["תחומי שיוך"] || user.assignmentDomains || "",
     assignmentDomains: user.assignmentDomains || user["תחומי שיוך"] || "",
     allowed: true
@@ -3959,6 +3969,7 @@ function BH18_בדיקת_שדות_חובה_(entity, data) {
  ***********************/
 const BH_AD_CATEGORY = "תחום שיוך";
 const BH_AD_DEFAULT = "ללא";
+const BH_AD_CENTRAL = "תחום שיוך מרכזי";
 
 function BH_AD_split_(value){
   if (Array.isArray(value)) return value.map(v => String(v || "").trim()).filter(Boolean);
@@ -3974,18 +3985,33 @@ function BH_AD_projectDomain_(project){
   return String(project && project[BH_AD_CATEGORY] || BH_AD_DEFAULT).trim() || BH_AD_DEFAULT;
 }
 
+function BH_AD_requireSuperAdminToken_(token){
+  const user = משתמש_מפועל_Build11_2_(token);
+  if(!BH_AD_isSuperAdmin_(user)) throw new Error("רק מנהל ראשי רשאי לנהל תחומי שיוך");
+  return user;
+}
+
+function BH_AD_isSuperAdmin_(user){
+  const role = String(user && user.role || user && user["הרשאת מערכת"] || "").trim();
+  return !!(user && (user.isOwner === true || role === "מנהל ראשי"));
+}
+
 function BH_AD_managerDomains_(user){
   if(!user) return [];
-  const role = String(user.role || "").trim();
+  const role = String(user.role || user["הרשאת מערכת"] || "").trim();
   if(role !== "מנהל") return [];
+  let central = user[BH_AD_CENTRAL] || user.assignmentCentralDomain || "";
   let raw = user["תחומי שיוך"] || user.assignmentDomains || "";
-  if(!raw && user.contactId){
+  if((!central || !raw) && user.contactId){
     try {
       const c = readSheet_(SHEETS.CONTACTS).find(x => String(x["מזהה איש קשר"] || "") === String(user.contactId || ""));
-      raw = c ? c["תחומי שיוך"] || "" : "";
+      if(c){
+        central = central || c[BH_AD_CENTRAL] || "";
+        raw = raw || c["תחומי שיוך"] || "";
+      }
     } catch(e) {}
   }
-  return BH_AD_split_(raw).filter(v => v !== BH_AD_DEFAULT);
+  return BH_AD_split_([central].concat(BH_AD_split_(raw))).filter(v => v !== BH_AD_DEFAULT).filter((v,i,a)=>a.indexOf(v)===i);
 }
 
 function BH_AD_userHasProjectDomain_(user, project){
@@ -4013,6 +4039,7 @@ function BH_AD_assertCreatorWrite_(user, row, label){
 function התקנת_תחום_שיוך_BuildAD(){
   הבטח_עמודה_אם_חסרה_(SHEETS.PROJECTS, BH_AD_CATEGORY);
   הבטח_עמודה_אם_חסרה_(SHEETS.CONTACTS, "תחומי שיוך");
+  הבטח_עמודה_אם_חסרה_(SHEETS.CONTACTS, BH_AD_CENTRAL);
   הבטח_עמודה_אם_חסרה_(SHEETS.LINKS, "יוצר");
   הבטח_עמודה_אם_חסרה_(SHEETS.TASK_NOTES, "יוצר");
   try { הוספת_אפשרות_בחירה_בטוח_Build11_(BH_AD_CATEGORY, BH_AD_DEFAULT, 1); } catch(e) { Logger.log(e); }
@@ -4187,6 +4214,7 @@ function שמירת_איש_קשר(data) {
   הוספת_עמודה_אם_חסרה_(SHEETS.CONTACTS, "גוון יוצר");
   הוספת_עמודה_אם_חסרה_(SHEETS.CONTACTS, "יוצר");
   הוספת_עמודה_אם_חסרה_(SHEETS.CONTACTS, "תחומי שיוך");
+  הוספת_עמודה_אם_חסרה_(SHEETS.CONTACTS, BH_AD_CENTRAL);
   ensureColumnTextFormat_(SHEETS.CONTACTS, "טלפון");
 
   const old = data.id
@@ -4274,6 +4302,12 @@ function שמירת_איש_קשר(data) {
 
   const id = data.id || makeId_("איש");
   const currentUser = BH_FINAL_userName_(actor);
+  const canEditAssignmentDomains = BH_AD_isSuperAdmin_(actor);
+  const submittedCentralDomain = String(data.assignmentCentralDomain || data[BH_AD_CENTRAL] || "").trim();
+  const submittedAdditionalDomains = BH_AD_join_(data.assignmentAdditionalDomains || data.assignmentDomains || data["תחומי שיוך"] || "");
+  if (!canEditAssignmentDomains && (submittedCentralDomain || submittedAdditionalDomains)) throw new Error("רק מנהל ראשי רשאי לערוך תחומי שיוך");
+  const centralDomain = permission === "מנהל" ? (canEditAssignmentDomains ? (submittedCentralDomain === BH_AD_DEFAULT ? "" : submittedCentralDomain) : (old ? old[BH_AD_CENTRAL] || "" : "")) : "";
+  const additionalDomains = permission === "מנהל" ? BH_AD_join_(canEditAssignmentDomains ? submittedAdditionalDomains : (old ? old["תחומי שיוך"] : "")) : "";
 
   const row = {
     "מזהה איש קשר": id,
@@ -4290,7 +4324,8 @@ function שמירת_איש_קשר(data) {
     "הרשאת מערכת": permission,
     "פעיל במערכת": permission === "ללא הרשאה" ? "לא" : "כן",
     "גוון יוצר": creatorColor,
-    "תחומי שיוך": permission === "מנהל" ? BH_AD_join_(data.assignmentDomains || data["תחומי שיוך"] || (old ? old["תחומי שיוך"] : "")) : "",
+    "תחום שיוך מרכזי": centralDomain,
+    "תחומי שיוך": BH_AD_join_(BH_AD_split_(additionalDomains).filter(v => v !== centralDomain)),
     "יוצר": old && old["יוצר"] ? old["יוצר"] : currentUser,
     "תאריך יצירה": data.created || (old ? old["תאריך יצירה"] : new Date()),
     "עדכון אחרון": new Date()
@@ -4318,7 +4353,14 @@ function שמירת_פרויקט(data) {
   BH_SELECTION_VALIDATE_("עיר", data.city, "עיר", old ? old["עיר"] : "");
   BH_SELECTION_VALIDATE_("תחום", data.type, "תחום", old ? old["תחום"] : "");
   BH_SELECTION_VALIDATE_("סטטוס פרויקט", data.status, "סטטוס", old ? old["סטטוס"] : "");
-  const assignmentDomain = String(data.assignmentDomain || data[BH_AD_CATEGORY] || (old ? old[BH_AD_CATEGORY] : "") || BH_AD_DEFAULT).trim() || BH_AD_DEFAULT;
+  const canEditAssignmentDomain = BH_AD_isSuperAdmin_(actor);
+  const submittedAssignmentDomain = String(data.assignmentDomain || data[BH_AD_CATEGORY] || "").trim();
+  if (!canEditAssignmentDomain && submittedAssignmentDomain && (!old || submittedAssignmentDomain !== String(old[BH_AD_CATEGORY] || ""))) {
+    throw new Error("רק מנהל ראשי רשאי לערוך תחום שיוך לפרויקט");
+  }
+  const assignmentDomain = canEditAssignmentDomain
+    ? (submittedAssignmentDomain || (old ? old[BH_AD_CATEGORY] : "") || BH_AD_DEFAULT)
+    : (old ? (old[BH_AD_CATEGORY] || BH_AD_DEFAULT) : BH_AD_DEFAULT);
   BH_SELECTION_VALIDATE_(BH_AD_CATEGORY, assignmentDomain, BH_AD_CATEGORY, old ? old[BH_AD_CATEGORY] : "");
   if (old) BH_AD_assertCreatorWrite_(actor, old, "פרויקט");
 
