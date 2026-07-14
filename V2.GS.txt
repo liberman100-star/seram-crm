@@ -5844,3 +5844,81 @@ function BH_SU_staticAssertions_() {
 
   return true;
 }
+
+/***********************
+ * Load-performance audit and request-scoped core optimization
+ * Keeps permission-sensitive data request-local and preserves the canonical payload unchanged.
+ ***********************/
+var BH_PERF_AUDIT_ENABLED = false;
+var __BH_REQUEST_ROWS__ = null;
+var __BH_REQUEST_PERF__ = null;
+var __BH_original_readSheet_perf__ = readSheet_;
+
+function BH_perfStart_(label){
+  if(!__BH_REQUEST_PERF__) __BH_REQUEST_PERF__ = { started: Date.now(), reads: {}, timings: {}, payloadBytes: 0 };
+  return Date.now();
+}
+function BH_perfEnd_(label, start){
+  if(!__BH_REQUEST_PERF__) return;
+  __BH_REQUEST_PERF__.timings[label] = (__BH_REQUEST_PERF__.timings[label] || 0) + (Date.now() - start);
+}
+function BH_perfLog_(label, payload){
+  if(!BH_PERF_AUDIT_ENABLED || !__BH_REQUEST_PERF__) return;
+  try{
+    __BH_REQUEST_PERF__.payloadBytes = payload ? JSON.stringify(payload).length : 0;
+    Logger.log('PERF_AUDIT ' + label + ' ' + JSON.stringify(__BH_REQUEST_PERF__));
+  }catch(e){}
+}
+function BH_withRequestRows_(label, fn){
+  __BH_REQUEST_ROWS__ = {};
+  __BH_REQUEST_PERF__ = { started: Date.now(), reads: {}, timings: {}, payloadBytes: 0 };
+  const start = Date.now();
+  try{
+    const out = fn();
+    BH_perfEnd_(label, start);
+    BH_perfLog_(label, out);
+    return out;
+  } finally {
+    __BH_REQUEST_ROWS__ = null;
+  }
+}
+
+readSheet_ = function(sheetName){
+  const name = String(sheetName || '');
+  if(__BH_REQUEST_ROWS__ && Object.prototype.hasOwnProperty.call(__BH_REQUEST_ROWS__, name)){
+    return __BH_REQUEST_ROWS__[name];
+  }
+  const start = BH_perfStart_('readSheet_:' + name);
+  const rows = __BH_original_readSheet_perf__(sheetName);
+  if(__BH_REQUEST_ROWS__) __BH_REQUEST_ROWS__[name] = rows;
+  if(__BH_REQUEST_PERF__){
+    __BH_REQUEST_PERF__.reads[name] = (__BH_REQUEST_PERF__.reads[name] || 0) + 1;
+    BH_perfEnd_('readSheet_:' + name, start);
+  }
+  return rows;
+};
+
+function BH_coreAllowedAdmin_(user){
+  const role = String(user && (user.role || user['הרשאת מערכת'] || user.permission) || '').trim();
+  return user && (user.isOwner === true || role === 'מנהל ראשי');
+}
+
+var BH_perf_originalCoreFinal_ = קבלת_נתוני_ליבה_Build13;
+קבלת_נתוני_ליבה_Build13 = function(token){
+  return BH_withRequestRows_('קבלת_נתוני_ליבה_Build13', function(){
+    const authStart = BH_perfStart_('authentication/session validation');
+    const data = BH_perf_originalCoreFinal_(token);
+    BH_perfEnd_('authentication/session validation', authStart);
+    return data;
+  });
+};
+
+var BH_perf_originalModuleFinal_ = (typeof קבלת_מודול_Build13_2 === 'function') ? קבלת_מודול_Build13_2 : null;
+if(BH_perf_originalModuleFinal_){
+  קבלת_מודול_Build13_2 = function(token, moduleName){
+    return BH_withRequestRows_('קבלת_מודול_Build13_2:' + moduleName, function(){
+      const out = BH_perf_originalModuleFinal_(token, moduleName);
+      return out;
+    });
+  };
+}
