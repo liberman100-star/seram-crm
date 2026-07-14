@@ -2345,14 +2345,40 @@ function קבלת_סדר_קטגוריה_קיים_או_חדש_Build11_(category) 
   return rows.reduce((m,r)=>Math.max(m, Number(r["סדר קטגוריה"] || 0)), 0) + 1;
 }
 
+function BH_calendarParticipantTokens_(emails) {
+  if (Array.isArray(emails)) return emails;
+  return String(emails || "").split(/[;,|\n\r]+/);
+}
+
+function BH_isValidEmail_(email) {
+  return /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(String(email || ""));
+}
+
 function נרמול_רשימת_מיילים_Build11_(emails) {
   const seen = {};
-  String(emails || "")
-    .split(/[;,\n]+/)
-    .map(e => String(e || "").trim().toLowerCase())
-    .filter(e => e && e.includes("@"))
-    .forEach(e => seen[e] = true);
-  return Object.keys(seen).join(",");
+  const out = [];
+  BH_calendarParticipantTokens_(emails)
+    .map(e => String(e || "").trim())
+    .filter(Boolean)
+    .forEach(e => {
+      const key = e.toLowerCase();
+      if (seen[key]) return;
+      if (!BH_isValidEmail_(e)) throw new Error("כתובת מייל משתתף יומן אינה תקינה: " + e);
+      seen[key] = true;
+      out.push(key);
+    });
+  return out.join(",");
+}
+
+function BH_hasOwn_(obj, key) {
+  return !!obj && Object.prototype.hasOwnProperty.call(obj, key);
+}
+
+function BH_calendarParticipantsFromData_(data, old) {
+  if (BH_hasOwn_(data, "משתתפי יומן")) return נרמול_רשימת_מיילים_Build11_(data["משתתפי יומן"]);
+  if (BH_hasOwn_(data, "calendarGuests")) return נרמול_רשימת_מיילים_Build11_(data.calendarGuests);
+  if (BH_hasOwn_(data, "participants")) return נרמול_רשימת_מיילים_Build11_(data.participants);
+  return old ? נרמול_רשימת_מיילים_Build11_(old["משתתפי יומן"] || "") : "";
 }
 
 function הוספת_מוזמנים_לאירוע_Build11_(ev, guests) {
@@ -3314,35 +3340,48 @@ function buildTaskEndDateTime_(task, start) {
   return new Date(start.getTime() + minutes * 60 * 1000);
 }
 
+function BH_calendarEventResource_(task, start, end) {
+  const guests = נרמול_רשימת_מיילים_Build11_(task["משתתפי יומן"] || "")
+    .split(",").filter(Boolean).map(email => ({ email }));
+  const description = task["הערות למשימה"] || "נוצר / עודכן אוטומטית ממערכת CRM";
+  const resource = {
+    summary: בניית_כותרת_אירוע_יומן_(task),
+    description,
+    location: task["מיקום"] || task["מיקום פגישה"] || "",
+    start: { dateTime: start.toISOString(), timeZone: CONFIG.TIMEZONE },
+    end: { dateTime: end.toISOString(), timeZone: CONFIG.TIMEZONE },
+    attendees: guests,
+    reminders: { useDefault: false, overrides: [{ method: "email", minutes: 60 }, { method: "popup", minutes: 60 }] }
+  };
+  return resource;
+}
+
+function BH_calendarApiEventId_(eventId) {
+  return String(eventId || "").split("@")[0];
+}
+
 function syncCalendarEvent_(task) {
-  const calendarId = task["מזהה יומן"] || CONFIG.CALENDAR_ID || "primary";
-
-  const cal = CalendarApp.getCalendarById(calendarId);
-  if (!cal) throw new Error("לא נמצא יומן Google");
-
-  const start = buildDateTime_(task["תאריך"], task["שעה"]);
-  const end = buildTaskEndDateTime_(task, start);
-
-  const title = בניית_כותרת_אירוע_יומן_(task);
-
-  if (task["מזהה אירוע ביומן"]) {
-    try {
-      const ev = cal.getEventById(task["מזהה אירוע ביומן"]);
-
-      if (ev) {
-        ev.setTitle(title);
-        ev.setTime(start, end);
-        ev.setDescription("נוצר / עודכן אוטומטית ממערכת CRM");
-        return ev.getId();
-      }
-    } catch (e) {}
+  if (typeof Calendar === "undefined" || !Calendar.Events) {
+    throw new Error("נדרש להפעיל את Advanced Google Calendar service כדי לשלוח הזמנות ועדכוני משתתפים עם sendUpdates=all");
   }
 
-  const ev = cal.createEvent(title, start, end, {
-    description: "נוצר אוטומטית ממערכת CRM"
-  });
+  const calendarId = task["מזהה יומן"] || CONFIG.CALENDAR_ID || "primary";
+  const start = buildDateTime_(task["תאריך"], task["שעה"]);
+  const end = buildTaskEndDateTime_(task, start);
+  const resource = BH_calendarEventResource_(task, start, end);
+  const existingId = BH_calendarApiEventId_(task["מזהה אירוע ביומן"] || "");
 
-  return ev.getId();
+  if (existingId) {
+    try {
+      const updated = Calendar.Events.update(resource, calendarId, existingId, { sendUpdates: "all" });
+      return updated.id || existingId;
+    } catch (e) {
+      throw new Error("עדכון אירוע קיים נכשל: " + (e && e.message ? e.message : e));
+    }
+  }
+
+  const created = Calendar.Events.insert(resource, calendarId, { sendUpdates: "all" });
+  return created.id;
 }
 
 /***********************
@@ -4679,7 +4718,7 @@ function שמירת_משימה(data) {
   הוספת_עמודה_אם_חסרה_(SHEETS.TASKS, "הערות למשימה");
   הוספת_עמודה_אם_חסרה_(SHEETS.TASKS, "משך פגישה");
   הוספת_עמודה_אם_חסרה_(SHEETS.TASKS, "מיקום");
-  הוספת_עמודה_אם_חסרה_(SHEETS.TASKS, "משתתפים");
+  הוספת_עמודה_אם_חסרה_(SHEETS.TASKS, "משתתפי יומן");
 
   const id = data.id || makeId_("מש");
 
@@ -4723,7 +4762,7 @@ function שמירת_משימה(data) {
     "שעת סיום": endTime,
     "משך פגישה": data.meetingDuration || (old ? old["משך פגישה"] : "") || "",
     "מיקום": data.location || (old ? old["מיקום"] : "") || "",
-    "משתתפים": Array.isArray(data.calendarGuests) ? data.calendarGuests.join(", ") : (data.calendarGuests || (old ? old["משתתפים"] : "") || ""),
+    "משתתפי יומן": BH_calendarParticipantsFromData_(data, old),
     "כניסה ליומן": calendarFlag,
     "סטטוס": data.status || (old ? old["סטטוס"] : "") || "פתוח",
     "מזהה פרויקט": data.projectId || (old ? old["מזהה פרויקט"] : "") || "",
@@ -4736,14 +4775,25 @@ function שמירת_משימה(data) {
     "מזהה אירוע ביומן": calendarId || ""
   };
 
-  if (row["כניסה ליומן"] === "כן" && row["תאריך"] && row["שעה"]) {
-    row["מזהה אירוע ביומן"] = syncCalendarEvent_(row);
-  } else if (calendarId) {
-    מחיקת_אירוע_יומן_אם_קיים_(calendarId);
-    row["מזהה אירוע ביומן"] = "";
+  if (old) {
+    Object.keys(old).forEach(k => { if (row[k] === undefined) row[k] = old[k]; });
   }
 
   upsert_ללא_אימות_(SHEETS.TASKS, "מזהה משימה", id, row);
+
+  if (row["כניסה ליומן"] === "כן" && row["תאריך"] && row["שעה"]) {
+    try {
+      row["מזהה אירוע ביומן"] = syncCalendarEvent_(row);
+      upsert_ללא_אימות_(SHEETS.TASKS, "מזהה משימה", id, row);
+    } catch (e) {
+      throw new Error("המשימה נשמרה, אך סנכרון Google Calendar נכשל. ניתן לנסות שוב ללא יצירת אירוע כפול. " + (e && e.message ? e.message : e));
+    }
+  } else if (calendarId) {
+    מחיקת_אירוע_יומן_אם_קיים_(calendarId);
+    row["מזהה אירוע ביומן"] = "";
+    upsert_ללא_אימות_(SHEETS.TASKS, "מזהה משימה", id, row);
+  }
+
   log_("שמירת משימה", row["כותרת"]);
 
   return id;
