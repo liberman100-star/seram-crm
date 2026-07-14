@@ -746,6 +746,18 @@ function projectNameById(id){
 function activeUsersOptions(selected=''){
   return `<option value="">בחר אחראי</option>` + usersList().filter(u=>u['פעיל']!=='לא').map(u=>`<option value="${esc(u['שם'])}" ${u['שם']==selected?'selected':''}>${esc(u['שם'])}</option>`).join('');
 }
+function projectResponsibleOptions(candidates, selected=''){
+  const rows = Array.isArray(candidates) ? candidates : [];
+  return `<option value="">בחר אחראי</option>` + rows.map(u=>`<option value="${esc(u.name)}" ${u.name==selected?'selected':''}>${esc(u.label || (u.name + (u.role ? ' (' + u.role + ')' : '')))}</option>`).join('');
+}
+function loadProjectResponsibleOptions(projectId, selected){
+  if(typeof pOwner === 'undefined') return;
+  pOwner.innerHTML = `<option value="${esc(selected || '')}">${esc(selected ? selected + ' (טוען...)' : 'טוען אחראים...')}</option>`;
+  google.script.run
+    .withSuccessHandler(rows=>{ if(typeof pOwner !== 'undefined') pOwner.innerHTML = projectResponsibleOptions(rows, selected || ''); })
+    .withFailureHandler(e=>{ alert(e.message); if(typeof pOwner !== 'undefined') pOwner.innerHTML = `<option value="${esc(selected || '')}">${esc(selected || 'לא נטען')}</option>`; })
+    .קבלת_מועמדי_אחראי_פרויקט({authToken:currentToken(), projectId:projectId || '', currentOwner:selected || '', assignmentDomain:(typeof pAssignmentDomain !== 'undefined' ? pAssignmentDomain.value : '')});
+}
 function filtered(rows, q, fields){
   q=(q||'').toLowerCase().trim();
   if(!q) return rows;
@@ -864,12 +876,13 @@ function openProject(r={}){
     <label>תחום${BH_requiredMark('project','תחום')}</label><select id="pType"><option value="">בחר תחום</option>${opts('תחום',r['תחום'])}</select>
     <label>סטטוס${BH_requiredMark('project','סטטוס')}</label><select id="pStatus"><option value="">בחר סטטוס</option>${opts('סטטוס פרויקט',r['סטטוס'])}</select>
     ${canManageAssignmentDomains()?`<label>תחום שיוך${BH_requiredMark('project','תחום שיוך')}</label><select id="pAssignmentDomain">${assignmentDomainOptions(assignmentDomainValue(r))}</select>`:''}
-    <label>אחראי${BH_requiredMark('project','אחראי')}</label><select id="pOwner">${activeUsersOptions(r['אחראי'])}</select>
+    <label>אחראי${BH_requiredMark('project','אחראי')}</label><select id="pOwner"><option value="${esc(r['אחראי']||'')}">${esc(r['אחראי'] ? r['אחראי'] + ' (טוען...)' : 'טוען אחראים...')}</option></select>
     <label>תגיות${BH_requiredMark('project','תגיות')}</label><input id="pTags" value="${esc(r['תגיות'])}">
     <label>תיקיית Drive${BH_requiredMark('project','תיקיית Drive')}</label><input id="pDrive" value="${esc(r['תיקיית Drive'])}">
     <button class="primary" onclick='saveProject("${esc(r['מזהה פרויקט']||'')}")'>שמור</button>
     <button onclick="closeM()">ביטול</button>`;
   modal.classList.remove('hidden');
+  loadProjectResponsibleOptions(r['מזהה פרויקט'] || '', r['אחראי'] || '');
 }
 function saveProject(id){
   google.script.run.withSuccessHandler(()=>{closeM();refreshCore();})
@@ -5659,6 +5672,7 @@ window.saveProject = function(id){
       city:pCity.value,
       type:pType.value,
       status:pStatus.value,
+      assignmentDomain:(typeof pAssignmentDomain !== 'undefined' ? pAssignmentDomain.value : ''),
       owner:pOwner.value,
       tags:pTags.value,
       drive:pDrive.value
