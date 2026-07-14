@@ -4250,13 +4250,19 @@ function התקנת_תחום_שיוך_BuildAD(){
   הבטח_עמודה_אם_חסרה_(SHEETS.CONTACTS, BH_AD_CENTRAL);
   הבטח_עמודה_אם_חסרה_(SHEETS.LINKS, "יוצר");
   הבטח_עמודה_אם_חסרה_(SHEETS.TASK_NOTES, "יוצר");
-  try { הוספת_אפשרות_בחירה_בטוח_Build11_(BH_AD_CATEGORY, BH_AD_DEFAULT, 1); } catch(e) { Logger.log(e); }
-  try {
-    const rows = readSheet_("הגדרות_שדות");
-    if(!rows.some(r => String(r["ישות"]||"") === "פרויקט" && String(r["שם שדה"]||"") === BH_AD_CATEGORY)){
-      שמירת_שדה_מערכת_Build6_1({entity:"פרויקט", field:BH_AD_CATEGORY, showList:"כן", showCard:"כן", searchable:"כן", required:"לא", active:"כן", order: קבלת_סדר_הבא_לשדה_מערכת_Build6_1("פרויקט")});
-    }
-  } catch(e) { Logger.log(e); }
+  הוספת_אפשרות_בחירה_בטוח_Build11_(BH_AD_CATEGORY, BH_AD_DEFAULT, 1);
+  BH_SAFE_הבטחת_הגדרת_שדה_מערכת_אם_חסרה_({
+    entity:"פרויקט",
+    field:BH_AD_CATEGORY,
+    fieldType:"רשימת בחירה",
+    settingType:BH_AD_CATEGORY,
+    showList:"כן",
+    showCard:"כן",
+    searchable:"כן",
+    filterable:"כן",
+    required:"לא",
+    active:"כן"
+  });
   log_("תחום שיוך", "עמודות ואפשרות ברירת מחדל הותקנו");
   return true;
 }
@@ -4847,39 +4853,103 @@ function BH19_קוד_גוון_יוצר_(name){
 }
 
 
+function BH_SAFE_תלויות_מתקין_בטוח_(){
+  return [
+    "getSS_", "יצירת_גיליון_אם_חסר_", "הבטח_עמודה_אם_חסרה_", "הוספת_אפשרות_בחירה_בטוח_Build11_",
+    "התקנת_תחום_שיוך_BuildAD", "התקנת_Build14_יוצר_אירוע_ויומן", "התקנת_הרשאות_יומן_Build15",
+    "התקנת_מיתוג_תחומי_שיוך_BuildADBranding", "BH_CAD_installSessionColumn_", "BH19_התקנת_גווני_יוצר",
+    "BH_SAFE_הבטחת_הגדרת_שדה_מערכת_אם_חסרה_", "BH_SAFE_הרצת_שלב_מתקין_", "BH_SAFE_וידוא_תלויות_מתקין_בטוח_",
+    "readSheet_", "makeId_", "קבלת_סדר_הבא_לשדה_מערכת_Build6_1", "קבלת_סדר_קטגוריה_קיים_או_חדש_Build11_",
+    "הוספת_עמודה_אם_חסרה_", "styleHeader_", "log_"
+  ];
+}
+
+function BH_SAFE_וידוא_תלויות_מתקין_בטוח_(){
+  const missing = BH_SAFE_תלויות_מתקין_בטוח_().filter(name => typeof globalThis[name] !== "function");
+  if (missing.length) throw new Error("תלויות חסרות במתקין הבטוח: " + missing.join(", "));
+  return true;
+}
+
+function BH_SAFE_הרצת_שלב_מתקין_(results, name, fn){
+  try {
+    const value = fn();
+    results.push({ step:name, ok:true, result:value });
+    return value;
+  } catch(e) {
+    const message = e && e.message ? e.message : String(e);
+    results.push({ step:name, ok:false, error:message });
+    throw new Error("המתקין הבטוח נכשל בשלב '" + name + "': " + message);
+  }
+}
+
+function BH_SAFE_הבטחת_הגדרת_שדה_מערכת_אם_חסרה_(data){
+  const entity = String(data && data.entity || "").trim();
+  const field = String(data && (data.field || data.name) || "").trim();
+  if (!entity || !field) throw new Error("חסרים ישות או שם שדה להגדרת שדה מערכת");
+
+  const rows = readSheet_("הגדרות_שדות");
+  const exists = rows.some(r => String(r["ישות"] || "").trim() === entity && String(r["שם שדה"] || "").trim() === field);
+  if (exists) return { appended:false, entity:entity, field:field };
+
+  const row = [
+    data.id || makeId_("שדה"),
+    entity,
+    field,
+    data.fieldType || "טקסט",
+    data.settingType || "",
+    data.required || "לא",
+    data.active || "כן",
+    data.showList || "כן",
+    data.showCard || "כן",
+    data.searchable || "כן",
+    data.filterable || "לא",
+    data.order || קבלת_סדר_הבא_לשדה_מערכת_Build6_1(entity)
+  ];
+  getSS_().getSheetByName("הגדרות_שדות").appendRow(row);
+  return { appended:true, entity:entity, field:field, id:row[0] };
+}
+
 function התקנת_עדכוני_מערכת_בטוחה() {
+  const results = [];
+  BH_SAFE_וידוא_תלויות_מתקין_בטוח_();
   const ss = getSS_();
 
-  יצירת_גיליון_אם_חסר_(ss, SHEETS.PROJECTS, ["מזהה פרויקט", "שם פרויקט", "עיר", "תחום", "סטטוס", "אחראי", "תגיות", "תיקיית Drive", "תאריך יצירה", "עדכון אחרון"]);
-  יצירת_גיליון_אם_חסר_(ss, SHEETS.CONTACTS, ["מזהה איש קשר", "שם מלא", "טלפון", "אימייל", "כתובת", "מקור הגעה", "סוג איש קשר", "סטטוס לקוח", "תגיות", "אחראי", "תאריך יצירה", "עדכון אחרון"]);
-  יצירת_גיליון_אם_חסר_(ss, SHEETS.LINKS, ["מזהה שיוך", "מזהה פרויקט", "מזהה איש קשר", "תפקיד / כובע", "מורשה צפייה בפורטל", "פעיל", "תאריך יצירה"]);
-  יצירת_גיליון_אם_חסר_(ss, SHEETS.TASKS, ["מזהה משימה", "כותרת", "סוג משימה", "מזהה פרויקט", "מזהה איש קשר", "תאריך", "שעה", "סטטוס", "אחראי", "עדכון אחרון"]);
-  יצירת_גיליון_אם_חסר_(ss, SHEETS.TASK_NOTES, ["מזהה הערה", "מזהה משימה", "תאריך ושעת עדכון", "הערה"]);
-  יצירת_גיליון_אם_חסר_(ss, SETTINGS_SHEETS.VALUES, ["מזהה ערך", "סוג ערך", "סדר קטגוריה", "ערך", "פעיל", "סדר ערך", "סדר"]);
-  יצירת_גיליון_אם_חסר_(ss, SETTINGS_SHEETS.FIELDS, ["מזהה שדה", "ישות", "שם שדה", "סוג שדה", "סוג ערך קשור", "חובה", "פעיל", "מוצג ברשימה", "מוצג בכרטיס", "ניתן לחיפוש", "ניתן לסינון", "סדר תצוגה"]);
-  יצירת_גיליון_אם_חסר_(ss, BUILD7_SESSIONS_SHEET, ["Token", "מייל", "שם", "תפקיד", "מזהה איש קשר", "תאריך יצירה", "יצירה Timestamp", "פעיל", "עדכון אחרון", BH_CAD_SESSION_FIELD]);
-  יצירת_גיליון_אם_חסר_(ss, BH_DB_SHEET, BH_DB_HEADERS);
-  יצירת_גיליון_אם_חסר_(ss, BH15_CAL_PERMS_SHEET, ["מזהה הרשאה", "משתמש", "סוג הרשאה", "ערך", "פעיל", "מעתה ואילך", "תאריך יצירה", "עדכון אחרון"]);
+  BH_SAFE_הרצת_שלב_מתקין_(results, "יצירת גליונות חסרים", function(){
+    יצירת_גיליון_אם_חסר_(ss, SHEETS.PROJECTS, ["מזהה פרויקט", "שם פרויקט", "עיר", "תחום", "סטטוס", "אחראי", "תגיות", "תיקיית Drive", "תאריך יצירה", "עדכון אחרון"]);
+    יצירת_גיליון_אם_חסר_(ss, SHEETS.CONTACTS, ["מזהה איש קשר", "שם מלא", "טלפון", "אימייל", "כתובת", "מקור הגעה", "סוג איש קשר", "סטטוס לקוח", "תגיות", "אחראי", "תאריך יצירה", "עדכון אחרון"]);
+    יצירת_גיליון_אם_חסר_(ss, SHEETS.LINKS, ["מזהה שיוך", "מזהה פרויקט", "מזהה איש קשר", "תפקיד / כובע", "מורשה צפייה בפורטל", "פעיל", "תאריך יצירה"]);
+    יצירת_גיליון_אם_חסר_(ss, SHEETS.TASKS, ["מזהה משימה", "כותרת", "סוג משימה", "מזהה פרויקט", "מזהה איש קשר", "תאריך", "שעה", "סטטוס", "אחראי", "עדכון אחרון"]);
+    יצירת_גיליון_אם_חסר_(ss, SHEETS.TASK_NOTES, ["מזהה הערה", "מזהה משימה", "תאריך ושעת עדכון", "הערה"]);
+    יצירת_גיליון_אם_חסר_(ss, SETTINGS_SHEETS.VALUES, ["מזהה ערך", "סוג ערך", "סדר קטגוריה", "ערך", "פעיל", "סדר ערך", "סדר"]);
+    יצירת_גיליון_אם_חסר_(ss, SETTINGS_SHEETS.FIELDS, ["מזהה שדה", "ישות", "שם שדה", "סוג שדה", "סוג ערך קשור", "חובה", "פעיל", "מוצג ברשימה", "מוצג בכרטיס", "ניתן לחיפוש", "ניתן לסינון", "סדר תצוגה"]);
+    יצירת_גיליון_אם_חסר_(ss, BUILD7_SESSIONS_SHEET, ["Token", "מייל", "שם", "תפקיד", "מזהה איש קשר", "תאריך יצירה", "יצירה Timestamp", "פעיל", "עדכון אחרון", BH_CAD_SESSION_FIELD]);
+    יצירת_גיליון_אם_חסר_(ss, BH_DB_SHEET, BH_DB_HEADERS);
+    יצירת_גיליון_אם_חסר_(ss, BH15_CAL_PERMS_SHEET, ["מזהה הרשאה", "משתמש", "סוג הרשאה", "ערך", "פעיל", "מעתה ואילך", "תאריך יצירה", "עדכון אחרון"]);
+    return true;
+  });
 
-  [BH_AD_CATEGORY, "יוצר"].forEach(h => הבטח_עמודה_אם_חסרה_(SHEETS.PROJECTS, h));
-  ["תחומי שיוך", BH_AD_CENTRAL, "הרשאת מערכת", "פעיל במערכת", "צפיית יומן", "יוצרי יומן מורשים", "יוצר", "גוון יוצר"].forEach(h => הבטח_עמודה_אם_חסרה_(SHEETS.CONTACTS, h));
-  ["יוצר", "מורשה צפייה בפורטל", "תפקיד / כובע"].forEach(h => הבטח_עמודה_אם_חסרה_(SHEETS.LINKS, h));
-  ["שעת סיום", "כניסה ליומן", "הערות למשימה", "עדיפות", "משתתפי יומן", "מזהה אירוע ביומן", "יוצר", "יוצר אירוע", "יוצר אירוע מייל", "צפיית יומן", "יוצרי יומן מורשים", "משך פגישה", "מיקום פגישה"].forEach(h => הבטח_עמודה_אם_חסרה_(SHEETS.TASKS, h));
-  ["יוצר"].forEach(h => הבטח_עמודה_אם_חסרה_(SHEETS.TASK_NOTES, h));
-  ["יצירה Timestamp", "תפוגה Timestamp"].forEach(h => הבטח_עמודה_אם_חסרה_(BUILD7_LOGIN_CODES_SHEET, h));
-  [BH_CAD_SESSION_FIELD].forEach(h => הבטח_עמודה_אם_חסרה_(BUILD7_SESSIONS_SHEET, h));
-  BH_DB_HEADERS.forEach(h => הבטח_עמודה_אם_חסרה_(BH_DB_SHEET, h));
+  BH_SAFE_הרצת_שלב_מתקין_(results, "הוספת עמודות חסרות", function(){
+    [BH_AD_CATEGORY, "יוצר"].forEach(h => הבטח_עמודה_אם_חסרה_(SHEETS.PROJECTS, h));
+    ["תחומי שיוך", BH_AD_CENTRAL, "הרשאת מערכת", "פעיל במערכת", "צפיית יומן", "יוצרי יומן מורשים", "יוצר", "גוון יוצר"].forEach(h => הבטח_עמודה_אם_חסרה_(SHEETS.CONTACTS, h));
+    ["יוצר", "מורשה צפייה בפורטל", "תפקיד / כובע"].forEach(h => הבטח_עמודה_אם_חסרה_(SHEETS.LINKS, h));
+    ["שעת סיום", "כניסה ליומן", "הערות למשימה", "עדיפות", "משתתפי יומן", "מזהה אירוע ביומן", "יוצר", "יוצר אירוע", "יוצר אירוע מייל", "צפיית יומן", "יוצרי יומן מורשים", "משך פגישה", "מיקום פגישה"].forEach(h => הבטח_עמודה_אם_חסרה_(SHEETS.TASKS, h));
+    ["יוצר"].forEach(h => הבטח_עמודה_אם_חסרה_(SHEETS.TASK_NOTES, h));
+    ["יצירה Timestamp", "תפוגה Timestamp"].forEach(h => הבטח_עמודה_אם_חסרה_(BUILD7_LOGIN_CODES_SHEET, h));
+    [BH_CAD_SESSION_FIELD].forEach(h => הבטח_עמודה_אם_חסרה_(BUILD7_SESSIONS_SHEET, h));
+    BH_DB_HEADERS.forEach(h => הבטח_עמודה_אם_חסרה_(BH_DB_SHEET, h));
+    return true;
+  });
 
-  try { הוספת_אפשרות_בחירה_בטוח_Build11_(BH_AD_CATEGORY, BH_AD_DEFAULT, 1); } catch(e) { Logger.log(e); }
-  try { התקנת_תחום_שיוך_BuildAD(); } catch(e) { Logger.log(e); }
-  try { התקנת_Build14_יוצר_אירוע_ויומן(); } catch(e) { Logger.log(e); }
-  try { התקנת_הרשאות_יומן_Build15(); } catch(e) { Logger.log(e); }
-  try { התקנת_מיתוג_תחומי_שיוך_BuildADBranding(); } catch(e) { Logger.log(e); }
-  try { BH_CAD_installSessionColumn_(); } catch(e) { Logger.log(e); }
-  try { BH19_התקנת_גווני_יוצר(); } catch(e) { Logger.log(e); }
+  BH_SAFE_הרצת_שלב_מתקין_(results, "אפשרות ברירת מחדל תחום שיוך", () => הוספת_אפשרות_בחירה_בטוח_Build11_(BH_AD_CATEGORY, BH_AD_DEFAULT, 1));
+  BH_SAFE_הרצת_שלב_מתקין_(results, "התקנת תחום שיוך", () => התקנת_תחום_שיוך_BuildAD());
+  BH_SAFE_הרצת_שלב_מתקין_(results, "התקנת יוצר אירוע ויומן", () => התקנת_Build14_יוצר_אירוע_ויומן());
+  BH_SAFE_הרצת_שלב_מתקין_(results, "התקנת הרשאות יומן", () => התקנת_הרשאות_יומן_Build15());
+  BH_SAFE_הרצת_שלב_מתקין_(results, "התקנת מיתוג תחומי שיוך", () => התקנת_מיתוג_תחומי_שיוך_BuildADBranding());
+  BH_SAFE_הרצת_שלב_מתקין_(results, "התקנת עמודת סשן", () => BH_CAD_installSessionColumn_());
+  BH_SAFE_הרצת_שלב_מתקין_(results, "התקנת גווני יוצר", () => BH19_התקנת_גווני_יוצר());
 
   log_("התקנת עדכוני מערכת בטוחה", "נוספו רק גליונות/עמודות/ברירות מחדל חסרים; נתונים קיימים נשמרו");
-  return true;
+  return { ok:true, steps:results };
 }
 
 /***********************
