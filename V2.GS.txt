@@ -10,8 +10,7 @@ const CONFIG = {
   CALENDAR_ID: "primary",
   TIMEZONE: "Asia/Jerusalem",
   SYSTEM_NAME: "CRM סרם נדל״ן",
-  // TODO לפני פריסה: להחליף לכתובת Web App /exec האמיתית של Apps Script.
-  WEB_APP_URL: "PASTE_DEPLOYED_WEB_APP_EXEC_URL_HERE"
+  WEB_APP_URL: "https://script.google.com/macros/s/AKfycbyfXuvUth9j7L5-rp0TKEc3CC2gffmgo44y_VDZHwMFObT4pxuNkNrL7Jf0HX5CSQQaCQ/exec"
 };
 
 const SHEETS = {
