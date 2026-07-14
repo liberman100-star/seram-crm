@@ -43,3 +43,7 @@ No new initial-core datasets were moved to lazy loading in this corrected change
 - Apps Script still reads the base Sheets required to build the canonical authorized core payload and preserve Assignment Domain/customer-domain filtering.
 - Payload size is unchanged by design because backward compatibility of `קבלת_נתוני_ליבה_Build13` is required.
 - Google Sheets API latency remains an external bottleneck; the request-scoped cache reduces duplicate reads but cannot eliminate the first read of a large sheet.
+
+## PR #21 finalization on current main
+
+The PR #21 performance patch is intentionally limited to the request-scoped `readSheet_` cache, disabled-by-default aggregate perf hooks, unchanged canonical core payload, existing module endpoint loading, duplicate initial-load guard, and queued `refreshCore` callbacks. No current-main functional fixes from PR #20 are replaced or reverted by this performance layer.
