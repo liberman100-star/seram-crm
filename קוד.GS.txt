@@ -4,7 +4,7 @@
  * בוצע ניקוי כפילויות בלבד: כאשר פונקציה הופיעה כמה פעמים, נשמרה הגרסה האחרונה.
  */
 
-const מזהה_הגיליון = "1ovsZH2dt-DMqVrRcamcxns2p8pTaeKPtu9bfEn-yKzU";
+const מזהה_הגיליון = "1acCZD34luRR6quM--jrpMlwcSygsrYpGrFkDjcsveMw";
 
 
 /***** 01 הגדרה והקמה בסיסית *****/
