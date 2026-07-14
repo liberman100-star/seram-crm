@@ -3020,21 +3020,35 @@ function renderModule_Build13_2(module){
 }
 
 function refreshCore(after){
-  if(window.__BH_CORE_REFRESHING__) return;
+  window.__BH_CORE_REFRESH_WAITERS__ = window.__BH_CORE_REFRESH_WAITERS__ || [];
+
+  if(window.__BH_CORE_REFRESHING__){
+    if(typeof after === 'function') window.__BH_CORE_REFRESH_WAITERS__.push(after);
+    return;
+  }
+
   window.__BH_CORE_REFRESHING__ = true;
+  const primaryAfter = (typeof after === 'function') ? after : null;
   const token = currentToken();
 
   if(!token){
     window.__BH_CORE_REFRESHING__ = false;
+    window.__BH_CORE_REFRESH_WAITERS__ = [];
     showLogin();
     return;
   }
 
   google.script.run
     .withSuccessHandler(d=>{
-      window.__BH_CORE_REFRESHING__ = false;
-      if(window.BH_isCustomerDomainSelectionRequired && window.BH_isCustomerDomainSelectionRequired(d)){ window.BH_showCustomerDomainDialog(d); return; }
+      if(window.BH_isCustomerDomainSelectionRequired && window.BH_isCustomerDomainSelectionRequired(d)){
+        window.__BH_CORE_REFRESHING__ = false;
+        window.__BH_CORE_REFRESH_WAITERS__ = [];
+        window.BH_showCustomerDomainDialog(d);
+        return;
+      }
       if(!d || !d.auth || d.auth.allowed !== true){
+        window.__BH_CORE_REFRESHING__ = false;
+        window.__BH_CORE_REFRESH_WAITERS__ = [];
         clearToken();
         showLogin((d && d.auth && d.auth.reason) ? d.auth.reason : 'אין הרשאה או שהחיבור פג');
         return;
@@ -3063,11 +3077,18 @@ function refreshCore(after){
         updateCalendarViewButtons();
       }
 
-      if(typeof after === 'function'){
-        after();
-      }
+      const waiters = (primaryAfter ? [primaryAfter] : []).concat(window.__BH_CORE_REFRESH_WAITERS__ || []);
+      window.__BH_CORE_REFRESH_WAITERS__ = [];
+      window.__BH_CORE_REFRESHING__ = false;
+      waiters.forEach(cb=>{
+        try{ cb(); }catch(err){ console.log(err); }
+      });
     })
-    .withFailureHandler(e=>{ window.__BH_CORE_REFRESHING__ = false; alert(e.message); })
+    .withFailureHandler(e=>{
+      window.__BH_CORE_REFRESHING__ = false;
+      window.__BH_CORE_REFRESH_WAITERS__ = [];
+      alert(e.message);
+    })
     .קבלת_נתוני_ליבה_Build13(token);
 }
 </script>

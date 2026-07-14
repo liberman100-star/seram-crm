@@ -5847,7 +5847,7 @@ function BH_SU_staticAssertions_() {
 
 /***********************
  * Load-performance audit and request-scoped core optimization
- * Keeps permission-sensitive data request-local and trims initial payload.
+ * Keeps permission-sensitive data request-local and preserves the canonical payload unchanged.
  ***********************/
 var BH_PERF_AUDIT_ENABLED = false;
 var __BH_REQUEST_ROWS__ = null;
