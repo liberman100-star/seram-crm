@@ -1487,7 +1487,7 @@ function קבלת_משתמש_נוכחי_Build6_1() {
 
 /***** Build 7.0 – כניסה פנימית עם קוד למייל + Session עד התנתקות *****/
 
-const BUILD7_OWNER_EMAIL = "liberman600@gmail.com";
+const BUILD7_OWNER_EMAIL = "smrtcrm4u@gmail.com";
 const BUILD7_LOGIN_CODES_SHEET = "קודי כניסה";
 const BUILD7_SESSIONS_SHEET = "סשנים";
 

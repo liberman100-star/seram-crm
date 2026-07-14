@@ -5583,6 +5583,20 @@ function openContactCardById(contactId){
   return true;
 }
 
+function openContactEditorById(contactId){
+  const contact = findStoredContactById(contactId);
+  if(!contact){
+    alert('איש הקשר לא נמצא לאחר הרענון');
+    return false;
+  }
+  if(!canEdit()) {
+    openContactCardById(contactId);
+    return false;
+  }
+  openContact(contact);
+  return true;
+}
+
 function canInviteContact(c){
   if(!c || !c['מזהה איש קשר']) return false;
   if(!canCreateContactsEffective()) return false;
@@ -5944,9 +5958,9 @@ window.calendarTasksForDate = function(d){
       fieldsFor('contact','search')
     );
     rows = sortRows(rows, contactSort?.value || 'dateDesc', 'שם מלא');
-    contactsTable.innerHTML = tableHtml(rows, cols('contact','list'), r=>`openContactCard('${esc(r['מזהה איש קשר'])}')`, r=>{
+    contactsTable.innerHTML = tableHtml(rows, cols('contact','list'), r=>`openContactCardById('${esc(r['מזהה איש קשר'])}')`, r=>{
       const id = esc(r['מזהה איש קשר']);
-      return `<button onclick="openContactCard('${id}')">ערוך</button> <button class="danger" onclick="delContact('${id}')">העבר לארכיון</button>`;
+      return `<button onclick="openContactEditorById('${id}')">ערוך</button> <button class="danger" onclick="delContact('${id}')">העבר לארכיון</button>`;
     });
   };
   const baseTableTasks = window.tableTasks;
@@ -5960,8 +5974,8 @@ window.calendarTasksForDate = function(d){
     rows = rows.filter(t=>{ const d = t['תאריך'] ? parseDateOnly(t['תאריך']) : null; if(f==='open') return t['סטטוס']!=='בוצע' && t['סטטוס']!=='בוטל'; if(f==='done') return t['סטטוס']==='בוצע'; if(f==='late') return d && d<today && t['סטטוס']!=='בוצע' && t['סטטוס']!=='בוטל'; if(f==='today') return d && d.getTime()===today.getTime() && t['סטטוס']!=='בוצע' && t['סטטוס']!=='בוטל'; if(f==='week') return d && d>today && d<=week && t['סטטוס']!=='בוצע' && t['סטטוס']!=='בוטל'; return true; });
     rows = rows.map(t=>Object.assign({}, t, {'משויך לפרויקט':projectsById[String(t['מזהה פרויקט']||'')]||'', 'שם איש קשר':contactNameById(t['מזהה איש קשר'])}));
     const q = window.taskSearch ? taskSearch.value || '' : ''; rows = filtered(rows, q, fieldsFor('task','search'));
-    rows = rows.map(t=>Object.assign({}, t, {'כותרת':`<span class="task-title-note" title="${esc(t['הערות למשימה']||'')}">${esc(t['כותרת']||'')}</span>`}));
-    tasksTable.innerHTML = tableHtml(rows, cols('task','list'), r=>`openTaskCard('${esc(r['מזהה משימה'])}')`, r=>{ const id=esc(r['מזהה משימה']); const isDone=r['סטטוס']==='בוצע'; return `<button onclick="openTaskCard('${id}')">ערוך</button> ${isDone?`<button onclick="reactivateTask('${id}')">החזר לפעיל</button>`:`<button onclick="doneTask('${id}')">בוצע</button>`} <button class="danger" onclick="delTask('${id}')">העבר לארכיון</button>`; });
+    rows = rows.map(t=>{ const statusValue = t['סטטוס'] || 'פתוח'; return Object.assign({}, t, {'כותרת':`<span class="task-title-note" title="${esc(t['הערות למשימה']||'')}">${esc(t['כותרת']||'')}</span>`, '_canonicalStatus':statusValue, 'סטטוס':`<span class="task-status task-status-${esc(statusValue)}">${esc(statusValue)}</span>`}); });
+    tasksTable.innerHTML = tableHtml(rows, cols('task','list'), r=>`openTaskCard('${esc(r['מזהה משימה'])}')`, r=>{ const id=esc(r['מזהה משימה']); const isDone=(r['_canonicalStatus']||r['סטטוס'])==='בוצע'; return `<button onclick="openTaskCard('${id}')">ערוך</button> ${isDone?`<button onclick="reactivateTask('${id}')">החזר לפעיל</button>`:`<button onclick="doneTask('${id}')">בוצע</button>`} <button class="danger" onclick="delTask('${id}')">העבר לארכיון</button>`; });
   };
   const oldProjectCard = window.renderProjectCard, oldContactCard = window.renderContactCard, oldTaskCard = window.renderTaskCard;
   window.renderProjectCard = function(d){ oldProjectCard(d); const p=d.project||{}; const grid=modalBox.querySelector('.grid2'); if(grid) grid.innerHTML=cardGrid('project', p); };
@@ -6462,6 +6476,39 @@ window.calendarTasksForDate = function(d){
   };
 })();
 </script>
+
+
+<script>
+(function(){
+  function crmEsc(s){ return (typeof esc==='function') ? esc(String(s||'')) : String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+  function storedParticipants(task){ return (typeof parseCalendarParticipants==='function' ? parseCalendarParticipants(task['משתתפי יומן'] || '') : String(task['משתתפי יומן']||'').split(/[;,|\n\r]+/).map(x=>x.trim()).filter(Boolean)); }
+  window.renderPersistedCalendarParticipants = function(task){
+    const participants = storedParticipants(task || {});
+    if(!participants.length) return '<p class="muted">אין משתתפים ביומן</p>';
+    const visibleContacts = (DATA.contacts || []).filter(c=>!(typeof isArchived==='function' && isArchived(c)));
+    return '<ul class="calendar-participants-list">' + participants.map(email=>{
+      const lower = String(email||'').toLowerCase();
+      const c = visibleContacts.find(x=>String(x['אימייל']||'').trim().toLowerCase()===lower);
+      return c ? `<li>${crmEsc(c['שם מלא']||'')} — ${crmEsc(email)}</li>` : `<li>${crmEsc(email)} <span class="muted">(משתתף חיצוני)</span></li>`;
+    }).join('') + '</ul>';
+  };
+  const baseRenderTaskCardParticipants = window.renderTaskCard;
+  window.renderTaskCard = function(d){
+    baseRenderTaskCardParticipants(d);
+    const notesTitle = Array.from(modalBox.querySelectorAll('h3')).find(h=>String(h.textContent||'').includes('הערות למשימה'));
+    if(notesTitle && !modalBox.querySelector('[data-calendar-participants-section]')){
+      const section = document.createElement('div');
+      section.setAttribute('data-calendar-participants-section','true');
+      section.innerHTML = `<h3 class="sectionTitle">משתתפים ביומן</h3><div class="card">${window.renderPersistedCalendarParticipants((d&&d.task)||{})}</div>`;
+      notesTitle.parentNode.insertBefore(section, notesTitle);
+    }
+  };
+})();
+</script>
+<style>
+.calendar-participants-list{margin:0;padding-right:20px;line-height:1.8}
+.task-status{font-weight:800;border-radius:999px;padding:2px 8px;display:inline-block;background:#f1f5f9;color:#334155}.task-status-בוצע{color:#047857;background:#ecfdf5}.task-status-בוטל,.task-status-בארכיון{color:#991b1b;background:#fef2f2}
+</style>
 
 </body>
 </html>
