@@ -5061,6 +5061,28 @@ function קבלת_מיתוג_תחומי_שיוך_לניהול(token){
   return BH_DB_adminPayload_();
 }
 
+function BH_DB_duplicateIdsForDomain_(rows, domain, keepId, activeOnly){
+  return (rows || [])
+    .filter(r => String(r["תחום שיוך"] || "").trim() === String(domain || "").trim())
+    .filter(r => !keepId || String(r["מזהה מיתוג"] || "") !== String(keepId || ""))
+    .filter(r => !activeOnly || String(r["פעיל"] || "כן").trim() !== "לא")
+    .map(r => r["מזהה מיתוג"] || "")
+    .filter(Boolean);
+}
+
+function BH_DB_findBrandingTarget_(rows, data, domain){
+  const requestedId = String(data && data.id || "").trim();
+  const byId = requestedId ? (rows || []).find(r => String(r["מזהה מיתוג"] || "") === requestedId) : null;
+  if(byId && String(byId["תחום שיוך"] || "").trim() !== String(domain || "").trim()){
+    throw new Error("לא ניתן לשנות תחום שיוך של רשומת מיתוג קיימת");
+  }
+  if(byId) return byId;
+
+  const sameDomain = (rows || []).filter(r => String(r["תחום שיוך"] || "").trim() === String(domain || "").trim());
+  const active = sameDomain.find(r => String(r["פעיל"] || "כן").trim() !== "לא");
+  return active || sameDomain[0] || {};
+}
+
 function שמירת_מיתוג_תחום_שיוך(data){
   data = data || {};
   const user = BH_AD_requireSuperAdminToken_(data.authToken);
@@ -5070,10 +5092,13 @@ function שמירת_מיתוג_תחום_שיוך(data){
 
   try { התקנת_מיתוג_תחומי_שיוך_BuildADBranding(); } catch(e) {}
   const rows = readSheet_(BH_DB_SHEET);
-  const existingByDomain = rows.find(r => String(r["תחום שיוך"] || "").trim() === domain);
-  const existingById = rows.find(r => String(r["מזהה מיתוג"] || "") === String(data.id || ""));
-  const existing = existingByDomain || existingById || {};
+  const existing = BH_DB_findBrandingTarget_(rows, data, domain);
   const id = existing["מזהה מיתוג"] || makeId_("מיתוג-תחום");
+  const activeValue = String(data.active || "כן").trim() === "לא" ? "לא" : "כן";
+  const duplicateActiveIds = BH_DB_duplicateIdsForDomain_(rows, domain, id, true);
+  if(activeValue !== "לא" && duplicateActiveIds.length){
+    throw new Error("כבר קיים מיתוג פעיל לתחום שיוך זה: " + duplicateActiveIds.join(", "));
+  }
 
   const row = {
     "מזהה מיתוג": id,
@@ -5083,13 +5108,45 @@ function שמירת_מיתוג_תחום_שיוך(data){
     "צבע ראשי": data.primaryColor || "",
     "צבע משני": data.secondaryColor || "",
     "גובה לוגו": data.logoHeight || "40",
-    "פעיל": data.active || "כן",
+    "פעיל": activeValue,
     "עודכן בתאריך": new Date(),
     "עודכן על ידי": user.email || user.name || ""
   };
   upsert_(BH_DB_SHEET, "מזהה מיתוג", id, row);
-  const duplicates = rows.filter(r => String(r["תחום שיוך"] || "").trim() === domain && String(r["מזהה מיתוג"] || "") !== String(id)).map(r => r["מזהה מיתוג"] || "").filter(Boolean);
-  return { ok: true, id, duplicateIds: duplicates };
+  return { ok: true, id, duplicateIds: BH_DB_duplicateIdsForDomain_(rows, domain, id, false) };
+}
+
+function העברת_מיתוג_תחום_שיוך_לארכיון(data){
+  data = data || {};
+  const user = BH_AD_requireSuperAdminToken_(data.authToken);
+  try { התקנת_מיתוג_תחומי_שיוך_BuildADBranding(); } catch(e) {}
+  const rows = readSheet_(BH_DB_SHEET);
+  const id = String(data.id || "").trim();
+  const row = rows.find(r => String(r["מזהה מיתוג"] || "") === id);
+  if(!row) throw new Error("רשומת המיתוג לא נמצאה");
+  row["פעיל"] = "לא";
+  row["עודכן בתאריך"] = new Date();
+  row["עודכן על ידי"] = user.email || user.name || "";
+  upsert_(BH_DB_SHEET, "מזהה מיתוג", id, row);
+  return { ok: true, id, duplicateIds: BH_DB_duplicateIdsForDomain_(rows, row["תחום שיוך"], id, false) };
+}
+
+function שחזור_מיתוג_תחום_שיוך(data){
+  data = data || {};
+  const user = BH_AD_requireSuperAdminToken_(data.authToken);
+  try { התקנת_מיתוג_תחומי_שיוך_BuildADBranding(); } catch(e) {}
+  const rows = readSheet_(BH_DB_SHEET);
+  const id = String(data.id || "").trim();
+  const row = rows.find(r => String(r["מזהה מיתוג"] || "") === id);
+  if(!row) throw new Error("רשומת המיתוג לא נמצאה");
+  const domain = String(row["תחום שיוך"] || "").trim();
+  const activeDuplicates = BH_DB_duplicateIdsForDomain_(rows, domain, id, true);
+  if(activeDuplicates.length) throw new Error("לא ניתן לשחזר: כבר קיים מיתוג פעיל לתחום זה: " + activeDuplicates.join(", "));
+  row["פעיל"] = "כן";
+  row["עודכן בתאריך"] = new Date();
+  row["עודכן על ידי"] = user.email || user.name || "";
+  upsert_(BH_DB_SHEET, "מזהה מיתוג", id, row);
+  return { ok: true, id, duplicateIds: BH_DB_duplicateIdsForDomain_(rows, domain, id, false) };
 }
 
 function BH_DB_attachCoreBranding_(data){
