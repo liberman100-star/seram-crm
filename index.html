@@ -6205,16 +6205,17 @@ window.calendarTasksForDate = function(d){
   };
 
   window.saveSystemUser = function(id){
+    const payload = {
+      authToken: currentToken(), id,
+      systemPermission: suPermission.value,
+      systemActive: suActive.value,
+      manager: window.suManager ? suManager.value : '',
+      owner: window.suOwner ? suOwner.value : ''
+    };
+    if(window.suCentralAssignmentDomain) payload.assignmentCentralDomain = suCentralAssignmentDomain.value;
+    if(window.suAdditionalAssignmentDomains) payload.assignmentAdditionalDomains = selectedSystemUserAdditionalDomains();
     google.script.run.withSuccessHandler(()=>{closeM();refreshCore();}).withFailureHandler(e=>alert(e.message))
-      .שמירת_משתמש_מערכת({
-        authToken: currentToken(), id,
-        systemPermission: suPermission.value,
-        systemActive: suActive.value,
-        manager: window.suManager ? suManager.value : '',
-        owner: window.suOwner ? suOwner.value : '',
-        assignmentCentralDomain: window.suCentralAssignmentDomain ? suCentralAssignmentDomain.value : '',
-        assignmentAdditionalDomains: selectedSystemUserAdditionalDomains()
-      });
+      .שמירת_משתמש_מערכת(payload);
   };
 
   window.toggleSystemUserAccess = function(id, nextActive){

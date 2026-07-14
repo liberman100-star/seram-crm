@@ -5357,6 +5357,42 @@ function BH_CAD_staticAssertions_(){
 /***********************
  * System Users Administration – dedicated save wrapper
  ***********************/
+function BH_SU_hasOwn_(obj, key) {
+  return Object.prototype.hasOwnProperty.call(obj || {}, key);
+}
+
+function BH_SU_assignmentDomainSaveFields_(data, old, actor, nextPermission) {
+  const canEditAssignmentDomains = BH_AD_isSuperAdmin_(actor);
+  const centralSubmitted = BH_SU_hasOwn_(data, "assignmentCentralDomain") || BH_SU_hasOwn_(data, BH_AD_CENTRAL);
+  const additionalSubmitted = BH_SU_hasOwn_(data, "assignmentAdditionalDomains") || BH_SU_hasOwn_(data, "assignmentDomains") || BH_SU_hasOwn_(data, "תחומי שיוך");
+
+  if (!canEditAssignmentDomains && (centralSubmitted || additionalSubmitted)) {
+    throw new Error("רק מנהל ראשי רשאי לערוך תחומי שיוך");
+  }
+
+  if (nextPermission !== "מנהל") {
+    return {
+      include: true,
+      assignmentCentralDomain: "",
+      assignmentAdditionalDomains: ""
+    };
+  }
+
+  if (!canEditAssignmentDomains) {
+    return { include: false };
+  }
+
+  return {
+    include: true,
+    assignmentCentralDomain: centralSubmitted
+      ? String(data.assignmentCentralDomain || data[BH_AD_CENTRAL] || "").trim()
+      : String(old[BH_AD_CENTRAL] || "").trim(),
+    assignmentAdditionalDomains: additionalSubmitted
+      ? BH_AD_join_(data.assignmentAdditionalDomains || data.assignmentDomains || data["תחומי שיוך"] || "")
+      : BH_AD_join_(old["תחומי שיוך"] || "")
+  };
+}
+
 function שמירת_משתמש_מערכת(data) {
   const actor = דרוש_כתיבה_Build11_2_(data && data.authToken);
   if (!data || !data.id) throw new Error("חסר מזהה איש קשר לניהול משתמש מערכת");
@@ -5372,14 +5408,8 @@ function שמירת_משתמש_מערכת(data) {
   const nextPermission = String(data.systemPermission || old["הרשאת מערכת"] || "ללא הרשאה").trim();
   if (דרגת_הרשאה_Build11_2_(nextPermission) > actorRank) throw new Error("אין לך הרשאה להעניק הרשאת מערכת גבוהה משלך");
 
-  const canEditAssignmentDomains = BH_AD_isSuperAdmin_(actor);
-  const submittedCentralDomain = String(data.assignmentCentralDomain || "").trim();
-  const submittedAdditionalDomains = BH_AD_join_(data.assignmentAdditionalDomains || data.assignmentDomains || "");
-  if (!canEditAssignmentDomains && (submittedCentralDomain || submittedAdditionalDomains)) {
-    throw new Error("רק מנהל ראשי רשאי לערוך תחומי שיוך");
-  }
-
-  return שמירת_איש_קשר({
+  const domainFields = BH_SU_assignmentDomainSaveFields_(data, old, actor, nextPermission);
+  const payload = {
     authToken: data.authToken,
     id: old["מזהה איש קשר"],
     name: old["שם מלא"],
@@ -5394,8 +5424,54 @@ function שמירת_משתמש_מערכת(data) {
     owner: data.owner !== undefined ? data.owner : old["אחראי"],
     systemPermission: nextPermission,
     systemActive: nextPermission === "ללא הרשאה" ? "לא" : (String(data.systemActive || old["פעיל במערכת"] || "כן").trim() === "לא" ? "לא" : "כן"),
-    creatorColor: old["גוון יוצר"],
-    assignmentCentralDomain: nextPermission === "מנהל" ? (canEditAssignmentDomains ? submittedCentralDomain : "") : "",
-    assignmentAdditionalDomains: nextPermission === "מנהל" ? (canEditAssignmentDomains ? submittedAdditionalDomains : "") : ""
-  });
+    creatorColor: old["גוון יוצר"]
+  };
+
+  if (domainFields.include) {
+    payload.assignmentCentralDomain = domainFields.assignmentCentralDomain;
+    payload.assignmentAdditionalDomains = domainFields.assignmentAdditionalDomains;
+  }
+
+  return שמירת_איש_קשר(payload);
+}
+
+function BH_SU_staticAssertions_() {
+  const old = {"הרשאת מערכת":"מנהל", "תחום שיוך מרכזי":"A", "תחומי שיוך":"B, C"};
+  const superAdmin = {isOwner:true, role:"מנהל ראשי"};
+  const manager = {role:"מנהל"};
+  const sameManager = "מנהל";
+
+  let out = BH_SU_assignmentDomainSaveFields_({systemActive:"לא"}, old, superAdmin, sameManager);
+  if (out.assignmentCentralDomain !== "A" || out.assignmentAdditionalDomains !== "B, C") throw new Error("manager deactivate must preserve domains");
+
+  out = BH_SU_assignmentDomainSaveFields_({systemActive:"כן"}, old, superAdmin, sameManager);
+  if (out.assignmentCentralDomain !== "A" || out.assignmentAdditionalDomains !== "B, C") throw new Error("manager reactivate must preserve domains");
+
+  out = BH_SU_assignmentDomainSaveFields_({}, old, superAdmin, sameManager);
+  if (out.assignmentCentralDomain !== "A" || out.assignmentAdditionalDomains !== "B, C") throw new Error("super-admin omitted domain fields must preserve domains");
+
+  out = BH_SU_assignmentDomainSaveFields_({assignmentCentralDomain:"D", assignmentAdditionalDomains:"E, F"}, old, superAdmin, sameManager);
+  if (out.assignmentCentralDomain !== "D" || out.assignmentAdditionalDomains !== "E, F") throw new Error("super-admin explicit domain edit must update domains");
+
+  out = BH_SU_assignmentDomainSaveFields_({}, old, manager, sameManager);
+  if (out.include !== false) throw new Error("non-super-admin omitted domain fields must preserve via existing save path");
+
+  try {
+    BH_SU_assignmentDomainSaveFields_({assignmentCentralDomain:""}, old, manager, sameManager);
+    throw new Error("non-super-admin explicit clear was not rejected");
+  } catch(e) {
+    if (String(e.message || "").indexOf("רק מנהל ראשי") === -1) throw e;
+  }
+
+  try {
+    BH_SU_assignmentDomainSaveFields_({assignmentAdditionalDomains:"D"}, old, manager, sameManager);
+    throw new Error("non-super-admin explicit change was not rejected");
+  } catch(e) {
+    if (String(e.message || "").indexOf("רק מנהל ראשי") === -1) throw e;
+  }
+
+  out = BH_SU_assignmentDomainSaveFields_({}, old, superAdmin, "משתמש");
+  if (out.assignmentCentralDomain !== "" || out.assignmentAdditionalDomains !== "") throw new Error("changing role away from manager must clear domains");
+
+  return true;
 }
