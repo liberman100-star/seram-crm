@@ -1,4 +1,4 @@
-﻿/************************************************************
+/************************************************************
  * V2_REFACTOR_STAGE1
  * נוצר מאיחוד של שלושת חלקי V2.
  * ניקוי שמרני: הוסרו רק מופעים ישנים של פונקציות כפולות,
@@ -6,7 +6,7 @@
  ************************************************************/
 
 const CONFIG = {
-  SPREADSHEET_ID: "1xBn3BnYwFKF3O7pVJyUbZlnJVhXWGv-Qf6jlM9_Cchk",
+  SPREADSHEET_ID: "1acCZD34luRR6quM--jrpMlwcSygsrYpGrFkDjcsveMw",
   CALENDAR_ID: "primary",
   TIMEZONE: "Asia/Jerusalem",
   SYSTEM_NAME: "CRM סרם נדל״ן"
@@ -309,10 +309,10 @@ function log_(action, details) {
 }function התקנת_הגדרת_שדות_Build4() {
   const ss = getSS_();
   let sh = ss.getSheetByName("הגדרת שדות");
-  if (!sh) sh = ss.insertSheet("הגדרת שדות");
-
-  sh.clear();
-  sh.setRightToLeft(true);
+  if (!sh) {
+    sh = ss.insertSheet("הגדרת שדות");
+    sh.setRightToLeft(true);
+  }
 
   const headers = [
     "מזהה שדה",
@@ -329,7 +329,7 @@ function log_(action, details) {
     "סדר תצוגה"
   ];
 
-  sh.getRange(1, 1, 1, headers.length).setValues([headers]);
+  יצירת_גיליון_אם_חסר_(ss, "הגדרת שדות", headers);
 
   const rows = [
     ["שדה-001", "פרויקט", "שם פרויקט", "טקסט", "", "כן", "כן", "כן", "כן", "כן", "כן", 1],
@@ -358,8 +358,11 @@ function log_(action, details) {
     ["שדה-206", "משימה", "אחראי", "רשימת בחירה", "משתמש", "לא", "כן", "כן", "כן", "כן", "כן", 6]
   ];
 
-  sh.getRange(2, 1, rows.length, headers.length).setValues(rows);
-  styleHeader_(sh);
+  rows.forEach(row => {
+    const exists = readSheet_("הגדרת שדות").some(r => String(r["ישות"] || "") === String(row[1]) && String(r["שם שדה"] || "") === String(row[2]));
+    if (!exists) sh.appendRow(row);
+  });
+  try { styleHeader_(sh); } catch (e) {}
 
   הוספת_הגדרות_בסיס_לשדות_();
   log_("התקנת הגדרת שדות", "נוצרה טבלת הגדרת שדות Build4");
@@ -488,14 +491,21 @@ function התקנת_הגדרות_אמיתיות_Build4_3() {
 
 function יצירת_גיליון_אם_חסר_(ss, name, headers) {
   let sh = ss.getSheetByName(name);
-  if (!sh) sh = ss.insertSheet(name);
-
-  if (sh.getLastRow() === 0 || sh.getLastColumn() === 0) {
-    sh.clear();
+  if (!sh) {
+    sh = ss.insertSheet(name);
     sh.setRightToLeft(true);
-    sh.getRange(1, 1, 1, headers.length).setValues([headers]);
-    styleHeader_(sh);
   }
+
+  headers = headers || [];
+  if (headers.length) {
+    if (sh.getLastRow() === 0 || sh.getLastColumn() === 0) {
+      sh.getRange(1, 1, 1, headers.length).setValues([headers]);
+      try { styleHeader_(sh); } catch (e) {}
+    } else {
+      headers.forEach(h => הבטח_עמודה_אם_חסרה_(name, h));
+    }
+  }
+  return sh;
 }
 
 function מילוי_ברירות_מחדל_הגדרות_אמיתיות_() {
@@ -584,25 +594,29 @@ function מילוי_ברירות_מחדל_הגדרות_אמיתיות_() {
   });
 
   const email = Session.getActiveUser().getEmail() || "";
-  שמירת_משתמש_Build4_3({
-    name: "אברהם",
-    email: email,
-    role: "מנהל ראשי",
-    active: "כן"
-  });
+  if (!readSheet_(SETTINGS_SHEETS.USERS).some(r => String(r["שם"] || "") === "אברהם" || String(r["מייל"] || "") === email)) {
+    שמירת_משתמש_Build4_3({
+      name: "אברהם",
+      email: email,
+      role: "מנהל ראשי",
+      active: "כן"
+    });
+  }
 
-  שמירת_מיתוג_Build4_3({
-    systemName: "CRM סרם נדל״ן",
-    primaryColor: "#1f4e79",
-    secondaryColor: "#e8eef5",
-    logo: ""
-  });
+  if (!readSheet_(SETTINGS_SHEETS.BRANDING).some(r => String(r["מפתח"] || "").trim())) {
+    appendObject_(SETTINGS_SHEETS.BRANDING, {"מפתח": "שם מערכת", "ערך": "CRM סרם נדל״ן"});
+    appendObject_(SETTINGS_SHEETS.BRANDING, {"מפתח": "צבע ראשי", "ערך": "#1f4e79"});
+    appendObject_(SETTINGS_SHEETS.BRANDING, {"מפתח": "צבע משני", "ערך": "#e8eef5"});
+    appendObject_(SETTINGS_SHEETS.BRANDING, {"מפתח": "לוגו", "ערך": ""});
+  }
 
-  שמירת_יומן_Build4_3({
-    name: "יומן ראשי",
-    calendarId: "primary",
-    active: "כן"
-  });
+  if (!readSheet_(SETTINGS_SHEETS.CALENDARS).some(r => String(r["שם יומן"] || "") === "יומן ראשי")) {
+    שמירת_יומן_Build4_3({
+      name: "יומן ראשי",
+      calendarId: "primary",
+      active: "כן"
+    });
+  }
 
   [
     ["מנהל ראשי", "כן", "כן", "כן", "כן", "כן", "כן", "כן"],
@@ -757,16 +771,9 @@ function שדרוג_מבנה_הגדרות_ערכים_() {
     ];
   });
 
-  sh.clear();
-  sh.setRightToLeft(true);
-  sh.getRange(1, 1, 1, wantedHeaders.length).setValues([wantedHeaders]);
-
-  if (newRows.length) {
-    sh.getRange(2, 1, newRows.length, wantedHeaders.length).setValues(newRows);
-  }
-
-  styleHeader_(sh);
-  sh.autoResizeColumns(1, wantedHeaders.length);
+  wantedHeaders.forEach(h => הבטח_עמודה_אם_חסרה_("הגדרות_ערכים", h));
+  try { styleHeader_(sh); } catch (e) {}
+  try { sh.autoResizeColumns(1, sh.getLastColumn()); } catch (e) {}
 }
 
 function מילוי_שדות_ברירת_מחדל_Build4_4_() {
@@ -789,9 +796,7 @@ function מילוי_שדות_ברירת_מחדל_Build4_4_() {
     "סדר תצוגה"
   ];
 
-  sh.clear();
-  sh.setRightToLeft(true);
-  sh.getRange(1, 1, 1, headers.length).setValues([headers]);
+  יצירת_גיליון_אם_חסר_(ss, "הגדרות_שדות", headers);
 
   const rows = [
     ["שדה-001", "פרויקט", "שם פרויקט", "טקסט", "", "כן", "כן", "כן", "כן", "כן", "כן", 1],
@@ -820,9 +825,12 @@ function מילוי_שדות_ברירת_מחדל_Build4_4_() {
     ["שדה-206", "משימה", "אחראי", "רשימת בחירה", "משתמש", "לא", "כן", "כן", "כן", "כן", "כן", 6]
   ];
 
-  sh.getRange(2, 1, rows.length, headers.length).setValues(rows);
-  styleHeader_(sh);
-  sh.autoResizeColumns(1, headers.length);
+  rows.forEach(row => {
+    const exists = readSheet_("הגדרות_שדות").some(r => String(r["ישות"] || "") === String(row[1]) && String(r["שם שדה"] || "") === String(row[2]));
+    if (!exists) sh.appendRow(row);
+  });
+  try { styleHeader_(sh); } catch (e) {}
+  try { sh.autoResizeColumns(1, sh.getLastColumn()); } catch (e) {}
 }function קבלת_קטגוריות_לבחירה_Build4_4() {
   const rows = readSheet_("הגדרות_ערכים");
 
@@ -4522,6 +4530,42 @@ function BH19_התקנת_גווני_יוצר(){
 function BH19_קוד_גוון_יוצר_(name){
   const map = BH19_גווני_יוצר_מפה_();
   return map[String(name || "").trim()] || "";
+}
+
+
+function התקנת_עדכוני_מערכת_בטוחה() {
+  const ss = getSS_();
+
+  יצירת_גיליון_אם_חסר_(ss, SHEETS.PROJECTS, ["מזהה פרויקט", "שם פרויקט", "עיר", "תחום", "סטטוס", "אחראי", "תגיות", "תיקיית Drive", "תאריך יצירה", "עדכון אחרון"]);
+  יצירת_גיליון_אם_חסר_(ss, SHEETS.CONTACTS, ["מזהה איש קשר", "שם מלא", "טלפון", "אימייל", "כתובת", "מקור הגעה", "סוג איש קשר", "סטטוס לקוח", "תגיות", "אחראי", "תאריך יצירה", "עדכון אחרון"]);
+  יצירת_גיליון_אם_חסר_(ss, SHEETS.LINKS, ["מזהה שיוך", "מזהה פרויקט", "מזהה איש קשר", "תפקיד / כובע", "מורשה צפייה בפורטל", "פעיל", "תאריך יצירה"]);
+  יצירת_גיליון_אם_חסר_(ss, SHEETS.TASKS, ["מזהה משימה", "כותרת", "סוג משימה", "מזהה פרויקט", "מזהה איש קשר", "תאריך", "שעה", "סטטוס", "אחראי", "עדכון אחרון"]);
+  יצירת_גיליון_אם_חסר_(ss, SHEETS.TASK_NOTES, ["מזהה הערה", "מזהה משימה", "תאריך ושעת עדכון", "הערה"]);
+  יצירת_גיליון_אם_חסר_(ss, SETTINGS_SHEETS.VALUES, ["מזהה ערך", "סוג ערך", "סדר קטגוריה", "ערך", "פעיל", "סדר ערך", "סדר"]);
+  יצירת_גיליון_אם_חסר_(ss, SETTINGS_SHEETS.FIELDS, ["מזהה שדה", "ישות", "שם שדה", "סוג שדה", "סוג ערך קשור", "חובה", "פעיל", "מוצג ברשימה", "מוצג בכרטיס", "ניתן לחיפוש", "ניתן לסינון", "סדר תצוגה"]);
+  יצירת_גיליון_אם_חסר_(ss, BUILD7_SESSIONS_SHEET, ["Token", "מייל", "שם", "תפקיד", "מזהה איש קשר", "תאריך יצירה", "יצירה Timestamp", "פעיל", "עדכון אחרון", BH_CAD_SESSION_FIELD]);
+  יצירת_גיליון_אם_חסר_(ss, BH_DB_SHEET, BH_DB_HEADERS);
+  יצירת_גיליון_אם_חסר_(ss, BH15_CAL_PERMS_SHEET, ["מזהה הרשאה", "משתמש", "סוג הרשאה", "ערך", "פעיל", "מעתה ואילך", "תאריך יצירה", "עדכון אחרון"]);
+
+  [BH_AD_CATEGORY, "יוצר"].forEach(h => הבטח_עמודה_אם_חסרה_(SHEETS.PROJECTS, h));
+  ["תחומי שיוך", BH_AD_CENTRAL, "הרשאת מערכת", "פעיל במערכת", "צפיית יומן", "יוצרי יומן מורשים", "יוצר", "גוון יוצר"].forEach(h => הבטח_עמודה_אם_חסרה_(SHEETS.CONTACTS, h));
+  ["יוצר", "מורשה צפייה בפורטל", "תפקיד / כובע"].forEach(h => הבטח_עמודה_אם_חסרה_(SHEETS.LINKS, h));
+  ["שעת סיום", "כניסה ליומן", "הערות למשימה", "עדיפות", "משתתפי יומן", "מזהה אירוע ביומן", "יוצר", "יוצר אירוע", "יוצר אירוע מייל", "צפיית יומן", "יוצרי יומן מורשים", "משך פגישה", "מיקום פגישה"].forEach(h => הבטח_עמודה_אם_חסרה_(SHEETS.TASKS, h));
+  ["יוצר"].forEach(h => הבטח_עמודה_אם_חסרה_(SHEETS.TASK_NOTES, h));
+  ["יצירה Timestamp", "תפוגה Timestamp"].forEach(h => הבטח_עמודה_אם_חסרה_(BUILD7_LOGIN_CODES_SHEET, h));
+  [BH_CAD_SESSION_FIELD].forEach(h => הבטח_עמודה_אם_חסרה_(BUILD7_SESSIONS_SHEET, h));
+  BH_DB_HEADERS.forEach(h => הבטח_עמודה_אם_חסרה_(BH_DB_SHEET, h));
+
+  try { הוספת_אפשרות_בחירה_בטוח_Build11_(BH_AD_CATEGORY, BH_AD_DEFAULT, 1); } catch(e) { Logger.log(e); }
+  try { התקנת_תחום_שיוך_BuildAD(); } catch(e) { Logger.log(e); }
+  try { התקנת_Build14_יוצר_אירוע_ויומן(); } catch(e) { Logger.log(e); }
+  try { התקנת_הרשאות_יומן_Build15(); } catch(e) { Logger.log(e); }
+  try { התקנת_מיתוג_תחומי_שיוך_BuildADBranding(); } catch(e) { Logger.log(e); }
+  try { BH_CAD_installSessionColumn_(); } catch(e) { Logger.log(e); }
+  try { BH19_התקנת_גווני_יוצר(); } catch(e) { Logger.log(e); }
+
+  log_("התקנת עדכוני מערכת בטוחה", "נוספו רק גליונות/עמודות/ברירות מחדל חסרים; נתונים קיימים נשמרו");
+  return true;
 }
 
 /***********************
