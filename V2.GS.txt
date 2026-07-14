@@ -4236,7 +4236,12 @@ function BH_PR_responsibleCandidates_(arg){
   if (legacy && !out.some(x => x.name === legacy)) out.unshift({name: legacy, role: "ערך קיים", contactId: "", label: legacy + " (ערך קיים)", legacy: true});
   return out;
 }
-function קבלת_מועמדי_אחראי_פרויקט(arg){ return BH_PR_responsibleCandidates_(arg || {}); }
+function קבלת_מועמדי_אחראי_פרויקט(arg){
+  arg = arg || {};
+  const token = String(arg.authToken || arg.token || "").trim();
+  const actor = משתמש_מפועל_Build11_2_(token);
+  return BH_PR_responsibleCandidates_(Object.assign({}, arg, {actor: actor}));
+}
 function BH_PR_assertResponsibleAllowed_(actor, data, old, owner){
   owner = String(owner || "").trim();
   const oldOwner = String(old && old["אחראי"] || "").trim();
