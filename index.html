@@ -6396,7 +6396,7 @@ window.calendarTasksForDate = function(d){
     const seen={}; const out=[];
     String(value||'').split(/[;,|\n\r]+/).map(x=>String(x||'').trim()).filter(Boolean).forEach(e=>{
       const key=e.toLowerCase();
-      if(validEmail(e) && !seen[key]){ seen[key]=true; out.push(key); }
+      if(validEmail(e) && !seen[key]){ seen[key]=true; out.push(e); }
     });
     return out;
   }
@@ -6406,7 +6406,7 @@ window.calendarTasksForDate = function(d){
   window.participantCandidatesForTask = function(r={}){
     const out=[]; const seen={};
     function isArchived(row){ return String((row||{})['בארכיון']||'')==='כן' || String((row||{})['פעיל']||'כן')==='לא'; }
-    function add(label,email){ email=String(email||'').trim(); const key=email.toLowerCase(); if(!validEmail(email)||seen[key]) return; seen[key]=true; out.push({label,email:key}); }
+    function add(label,email){ email=String(email||'').trim(); const key=email.toLowerCase(); if(!validEmail(email)||seen[key]) return; seen[key]=true; out.push({label,email}); }
     const project=(DATA.projects||[]).find(p=>p['מזהה פרויקט']===r['מזהה פרויקט'])||{};
     const taskContact=(DATA.contacts||[]).find(c=>c['מזהה איש קשר']===r['מזהה איש קשר'])||{};
     if(!isArchived(taskContact)) add('איש קשר: '+(taskContact['שם מלא']||''), taskContact['אימייל']);
@@ -6432,7 +6432,7 @@ window.calendarTasksForDate = function(d){
   };
 
   window.calendarGuestsSelect = function(r={}){
-    const selected=parseCalendarParticipants(r['משתתפי יומן']||'');
+    const selected=parseCalendarParticipants(r['משתתפי יומן']||'').map(x=>x.toLowerCase());
     const arr=participantCandidatesForTask(r);
     if(!arr.length) return '<p class="muted">אין משתתפים עם מייל</p>';
     return `<div id="tCalendarGuestsBox" class="card" style="max-height:190px;overflow:auto">` + arr.map(p=>`

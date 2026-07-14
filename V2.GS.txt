@@ -2365,7 +2365,7 @@ function נרמול_רשימת_מיילים_Build11_(emails) {
       if (seen[key]) return;
       if (!BH_isValidEmail_(e)) throw new Error("כתובת מייל משתתף יומן אינה תקינה: " + e);
       seen[key] = true;
-      out.push(key);
+      out.push(e);
     });
   return out.join(",");
 }
@@ -3362,7 +3362,7 @@ function BH_calendarApiEventId_(eventId) {
 
 function syncCalendarEvent_(task) {
   if (typeof Calendar === "undefined" || !Calendar.Events) {
-    throw new Error("נדרש להפעיל את Advanced Google Calendar service כדי לשלוח הזמנות ועדכוני משתתפים עם sendUpdates=all");
+    throw new Error("יש להפעיל את שירות Google Calendar API (Advanced Calendar Service) בפרויקט Apps Script לפני שניתן לשלוח זימונים.");
   }
 
   const calendarId = task["מזהה יומן"] || CONFIG.CALENDAR_ID || "primary";

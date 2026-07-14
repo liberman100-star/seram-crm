@@ -11,6 +11,8 @@ has(gs, /BH_hasOwn_\(data, "calendarGuests"\)/, 'server distinguishes client fie
 has(gs, /return old \? נרמול_רשימת_מיילים_Build11_\(old\["משתתפי יומן"\]/, 'omitted field preserves stored participants');
 has(gs, /split\(\/\[;,\|\\n\\r\]\+\//, 'server parses historical delimiters');
 has(gs, /throw new Error\("כתובת מייל משתתף יומן אינה תקינה:/, 'server rejects invalid participant emails');
+has(gs, /out\.push\(e\)/, 'server stores original trimmed email casing while comparing case-insensitively');
+has(gs, /יש להפעיל את שירות Google Calendar API \(Advanced Calendar Service\)/, 'advanced calendar missing-service error is administrator friendly');
 has(gs, /Calendar\.Events\.insert\(resource, calendarId, \{ sendUpdates: "all" \}\)/, 'new calendar events send invitations to all guests');
 has(gs, /Calendar\.Events\.update\(resource, calendarId, existingId, \{ sendUpdates: "all" \}\)/, 'existing calendar events send updates to all guests');
 has(gs, /attendees: guests/, 'calendar resource contains guests');
@@ -22,6 +24,7 @@ has(html, /split\(\/\[;,\|\\n\\r\]\+\//, 'client parses historical delimiters');
 has(html, /משתתף חיצוני\/קיים/, 'client preserves external stored emails as options');
 has(html, /filter\(c=>!isArchived\(c\)\)/, 'candidate list excludes archived contacts');
 has(html, /seen\[key\]/, 'candidate list deduplicates emails');
+has(html, /out\.push\(e\)/, 'client stores original trimmed selected email casing while comparing case-insensitively');
 
 const calendarEmailRefs = [...gs.matchAll(/(CALENDAR_ID|יוצר אירוע מייל|organizer|calendar owner|CalendarApp|getCalendarById).*?[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi)].map(m=>m[0]);
 assert.deepStrictEqual(calendarEmailRefs, [], 'no active hard-coded organizer/calendar owner emails remain');
