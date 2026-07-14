@@ -2414,7 +2414,13 @@ const __renderTaskCard_secure_base = renderTaskCard;
 renderTaskCard = function(d){ __renderTaskCard_secure_base(d); setTimeout(applySecurityUI,0); };
 
 openProjectCard = function(id){ google.script.run.withSuccessHandler(renderProjectCard).withFailureHandler(e=>alert(e.message)).כרטיס_פרויקט({id,authToken:currentToken()}); }
-openContactCard = function(id){ google.script.run.withSuccessHandler(renderContactCard).withFailureHandler(e=>alert(e.message)).כרטיס_איש_קשר({id,authToken:currentToken()}); }
+openContactCard = function(contactOrId){
+  const id = (contactOrId && typeof contactOrId === 'object')
+    ? String(contactOrId['מזהה איש קשר'] || contactOrId.id || '').trim()
+    : String(contactOrId || '').trim();
+  if(!id) return alert('איש הקשר לא נמצא לאחר הרענון');
+  google.script.run.withSuccessHandler(renderContactCard).withFailureHandler(e=>alert(e.message)).כרטיס_איש_קשר({id,authToken:currentToken()});
+}
 openTaskCard = function(id){ google.script.run.withSuccessHandler(renderTaskCard).withFailureHandler(e=>alert(e.message)).קבלת_כרטיס_משימה_Build10({id,authToken:currentToken()}); }
 
 saveProject = function(id){
@@ -5557,9 +5563,24 @@ function isOwnerOrSuperAdmin(){
 }
 
 function canCreateContactsEffective(){
-  if(isOwnerOrSuperAdmin()) return true;
-  const ap = (DATA && DATA.actionPermissions) || {};
-  return ap.canCreate === true && ap.modules && ap.modules.contacts === true;
+  return canCreate();
+}
+
+const __contactInvitationSending = {};
+
+function findStoredContactById(contactId){
+  const id = String(contactId || '').trim();
+  return (DATA.contacts || []).find(c => String(c['מזהה איש קשר'] || '') === id) || null;
+}
+
+function openContactCardById(contactId){
+  const contact = findStoredContactById(contactId);
+  if(!contact){
+    alert('איש הקשר לא נמצא לאחר הרענון');
+    return false;
+  }
+  openContactCard(contact);
+  return true;
 }
 
 function canInviteContact(c){
@@ -5571,14 +5592,23 @@ function canInviteContact(c){
 }
 
 window.sendContactInvitation = function(contactId){
+  contactId = String(contactId || '').trim();
+  if(!contactId) return alert('איש הקשר לא נמצא לאחר הרענון');
+  if(__contactInvitationSending[contactId]) return;
+  __contactInvitationSending[contactId] = true;
+
   const btn = document.getElementById('contactInviteBtn');
   if(btn){ btn.disabled = true; btn.textContent = 'שולח...'; }
   google.script.run
     .withSuccessHandler(()=>{
       alert('ההזמנה נשלחה בהצלחה');
-      openContactCard(contactId);
+      refreshCore(()=>{
+        delete __contactInvitationSending[contactId];
+        openContactCardById(contactId);
+      });
     })
     .withFailureHandler(e=>{
+      delete __contactInvitationSending[contactId];
       if(btn){ btn.disabled = false; btn.textContent = 'הזמן במייל'; }
       alert(e && e.message ? e.message : 'שליחת ההזמנה נכשלה');
     })
@@ -5689,7 +5719,12 @@ window.openContact = function(r={}){
 window.saveContact = function(id){
   google.script.run
     .withSuccessHandler((savedId)=>{
-      refreshCore(()=>openContactCard(savedId || id));
+      if(id){
+        closeM();
+        refreshCore();
+        return;
+      }
+      refreshCore(()=>openContactCardById(savedId));
     })
     .withFailureHandler(e=>alert(e.message))
     .שמירת_איש_קשר({
