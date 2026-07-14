@@ -730,12 +730,8 @@ function שמירת_הרשאה_Build4_3(rowArray) {
   return true;
 }
 
-function שדרוג_מבנה_הגדרות_ערכים_() {
-  const ss = getSS_();
-  const sh = ss.getSheetByName("הגדרות_ערכים");
-  if (!sh) throw new Error("לא נמצא גיליון הגדרות_ערכים");
-
-  const wantedHeaders = [
+function BH_כותרות_הגדרות_ערכים_יעד_() {
+  return [
     "מזהה ערך",
     "סוג ערך",
     "סדר קטגוריה",
@@ -743,37 +739,113 @@ function שדרוג_מבנה_הגדרות_ערכים_() {
     "פעיל",
     "סדר ערך"
   ];
+}
 
-  const oldData = sh.getDataRange().getValues();
-  const oldHeaders = oldData[0] || [];
+function BH_ביקורת_יבשה_שדרוג_מבנה_הגדרות_ערכים__() {
+  const sh = getSS_().getSheetByName("הגדרות_ערכים");
+  if (!sh) throw new Error("לא נמצא גיליון הגדרות_ערכים");
 
-  const rows = oldData.slice(1).filter(r => r.some(c => c !== ""));
+  const data = sh.getDataRange().getValues();
+  const currentHeaders = (data[0] || []).map(h => String(h || "").trim()).filter(h => h !== "");
+  const wantedHeaders = BH_כותרות_הגדרות_ערכים_יעד_();
+  const missingHeaders = wantedHeaders.filter(h => currentHeaders.indexOf(h) === -1);
+  const hasCurrentSchemaPrefix = wantedHeaders.every((h, i) => currentHeaders[i] === h);
+  const sourceRowCount = data.slice(1).filter(r => r.some(c => c !== "")).length;
+
+  return {
+    currentHeaders: currentHeaders,
+    missingHeaders: missingHeaders,
+    migrationRequired: !hasCurrentSchemaPrefix,
+    sourceRowCount: sourceRowCount,
+    expectedTargetRowCount: sourceRowCount
+  };
+}
+
+function שדרוג_מבנה_הגדרות_ערכים_() {
+  const ss = getSS_();
+  const sh = ss.getSheetByName("הגדרות_ערכים");
+  if (!sh) throw new Error("לא נמצא גיליון הגדרות_ערכים");
+
+  const audit = BH_ביקורת_יבשה_שדרוג_מבנה_הגדרות_ערכים__();
+  const wantedHeaders = BH_כותרות_הגדרות_ערכים_יעד_();
+
+  if (!audit.migrationRequired) {
+    audit.missingHeaders.forEach(h => הבטח_עמודה_אם_חסרה_("הגדרות_ערכים", h));
+    try { styleHeader_(sh); } catch (e) {}
+    try { sh.autoResizeColumns(1, sh.getLastColumn()); } catch (e) {}
+    return audit;
+  }
+
+  const sourceData = sh.getDataRange().getValues();
+  const sourceHeaders = (sourceData[0] || []).map(h => String(h || "").trim());
+  const sourceRows = sourceData.slice(1).filter(r => r.some(c => c !== ""));
+  const unknownHeaders = sourceHeaders.filter(h => h && wantedHeaders.indexOf(h) === -1);
+  const targetHeaders = wantedHeaders.concat(unknownHeaders);
 
   const categoryOrder = {};
   let nextCategoryOrder = 1;
+  const hasValue = (obj, key) => Object.prototype.hasOwnProperty.call(obj, key) && obj[key] !== "";
 
-  const newRows = rows.map(r => {
+  const targetRows = sourceRows.map(r => {
     const oldObj = {};
-    oldHeaders.forEach((h, i) => oldObj[h] = r[i]);
+    sourceHeaders.forEach((h, i) => {
+      if (h) oldObj[h] = r[i];
+    });
 
-    const type = oldObj["סוג ערך"] || "";
-    if (!categoryOrder[type]) {
-      categoryOrder[type] = nextCategoryOrder++;
-    }
+    const type = hasValue(oldObj, "סוג ערך") ? oldObj["סוג ערך"] : "";
+    if (!categoryOrder[String(type)]) categoryOrder[String(type)] = nextCategoryOrder++;
 
-    return [
-      oldObj["מזהה ערך"] || makeId_("ערך"),
-      type,
-      oldObj["סדר קטגוריה"] || categoryOrder[type],
-      oldObj["ערך"] || "",
-      oldObj["פעיל"] || "כן",
-      oldObj["סדר ערך"] || oldObj["סדר"] || 999
-    ];
+    const normalized = {
+      "מזהה ערך": hasValue(oldObj, "מזהה ערך") ? oldObj["מזהה ערך"] : makeId_("ערך"),
+      "סוג ערך": type,
+      "סדר קטגוריה": hasValue(oldObj, "סדר קטגוריה") ? oldObj["סדר קטגוריה"] : categoryOrder[String(type)],
+      "ערך": hasValue(oldObj, "ערך") ? oldObj["ערך"] : "",
+      "פעיל": hasValue(oldObj, "פעיל") ? oldObj["פעיל"] : "כן",
+      "סדר ערך": hasValue(oldObj, "סדר ערך") ? oldObj["סדר ערך"] : (hasValue(oldObj, "סדר") ? oldObj["סדר"] : 999)
+    };
+
+    unknownHeaders.forEach(h => normalized[h] = oldObj[h] !== undefined ? oldObj[h] : "");
+    return targetHeaders.map(h => normalized[h] !== undefined ? normalized[h] : "");
   });
 
-  wantedHeaders.forEach(h => הבטח_עמודה_אם_חסרה_("הגדרות_ערכים", h));
-  try { styleHeader_(sh); } catch (e) {}
-  try { sh.autoResizeColumns(1, sh.getLastColumn()); } catch (e) {}
+  const migrationSheetName = "__מיגרציה_בטוחה_הגדרות_ערכים";
+  let migrationSheet = ss.getSheetByName(migrationSheetName);
+  if (!migrationSheet) migrationSheet = ss.insertSheet(migrationSheetName);
+  migrationSheet.clearContents();
+  migrationSheet.getRange(1, 1, 1, targetHeaders.length).setValues([targetHeaders]);
+  if (targetRows.length) migrationSheet.getRange(2, 1, targetRows.length, targetHeaders.length).setValues(targetRows);
+
+  const verificationData = migrationSheet.getDataRange().getValues();
+  const verificationHeaders = (verificationData[0] || []).map(h => String(h || "").trim());
+  const verificationRowCount = verificationData.slice(1).filter(r => r.some(c => c !== "")).length;
+  const headersVerified = wantedHeaders.every((h, i) => verificationHeaders[i] === h);
+
+  if (!headersVerified || verificationRowCount !== sourceRows.length) {
+    throw new Error("מיגרציית הגדרות_ערכים נכשלה באימות; הגיליון המקורי לא שונה");
+  }
+
+  try {
+    sh.clearContents();
+    sh.getRange(1, 1, 1, targetHeaders.length).setValues([targetHeaders]);
+    if (targetRows.length) sh.getRange(2, 1, targetRows.length, targetHeaders.length).setValues(targetRows);
+    try { styleHeader_(sh); } catch (e) {}
+    try { sh.autoResizeColumns(1, targetHeaders.length); } catch (e) {}
+    try { migrationSheet.hideSheet(); } catch (e) {}
+  } catch (e) {
+    sh.clearContents();
+    if (sourceData.length && sourceData[0].length) {
+      sh.getRange(1, 1, sourceData.length, sourceData[0].length).setValues(sourceData);
+    }
+    throw e;
+  }
+
+  return {
+    currentHeaders: sourceHeaders.filter(h => h !== ""),
+    missingHeaders: audit.missingHeaders,
+    migrationRequired: true,
+    sourceRowCount: sourceRows.length,
+    expectedTargetRowCount: targetRows.length
+  };
 }
 
 function מילוי_שדות_ברירת_מחדל_Build4_4_() {
