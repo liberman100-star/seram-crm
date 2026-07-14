@@ -6041,7 +6041,7 @@ window.calendarTasksForDate = function(d){
     const selected=row['תחום שיוך'] || '';
     modalBox.innerHTML=`<h3>${id?'עריכת מיתוג תחום שיוך':'הוספת מיתוג לתחום שיוך'}</h3>
       <input type="hidden" id="domainBrandId" value="${escLocal(row['מזהה מיתוג']||'')}">
-      <label>תחום שיוך</label><select id="domainBrandDomain">${domainBrandOptions(selected, row['מזהה מיתוג']||'')}</select>
+      <label>תחום שיוך</label><select id="domainBrandDomain" ${id?'disabled':''}>${domainBrandOptions(selected, row['מזהה מיתוג']||'')}</select>
       <label>שם מערכת</label><input id="domainBrandName" value="${escLocal(row['שם מערכת']||'')}">
       <label>לוגו</label><input id="domainBrandLogo" value="${escLocal(row['לוגו']||'')}">
       <label>צבע ראשי</label><input id="domainBrandPrimary" value="${escLocal(row['צבע ראשי']||'#1f4e79')}">

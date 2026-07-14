@@ -5073,6 +5073,9 @@ function BH_DB_duplicateIdsForDomain_(rows, domain, keepId, activeOnly){
 function BH_DB_findBrandingTarget_(rows, data, domain){
   const requestedId = String(data && data.id || "").trim();
   const byId = requestedId ? (rows || []).find(r => String(r["מזהה מיתוג"] || "") === requestedId) : null;
+  if(byId && String(byId["תחום שיוך"] || "").trim() !== String(domain || "").trim()){
+    throw new Error("לא ניתן לשנות תחום שיוך של רשומת מיתוג קיימת");
+  }
   if(byId) return byId;
 
   const sameDomain = (rows || []).filter(r => String(r["תחום שיוך"] || "").trim() === String(domain || "").trim());
