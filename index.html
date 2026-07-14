@@ -5926,7 +5926,7 @@ window.calendarTasksForDate = function(d){
 </script>
 <script id="BH_ASSIGNMENT_DOMAIN_BRANDING">
 (function(){
-  function escLocal(v){ return typeof esc === 'function' ? esc(v) : String(v || '').replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+  function escLocal(v){ return String(v==null?'':v).replace(/[&<>"']/g, s=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s])); }
   function activeRootBranding(){ return (window.DATA && (DATA.rootBranding || DATA.system)) || {}; }
   function defaultBranding(){ return (window.DATA && (DATA.defaultBranding || DATA.system)) || {}; }
   function applyBranding(b){
@@ -5981,62 +5981,98 @@ window.calendarTasksForDate = function(d){
     };
   }
 
-  const oldRenderBrandingSettings = window.renderBrandingSettings;
-  window.BH_loadDomainBrandingForm = function(){
-    const admin = (window.DATA && DATA.domainBrandingAdmin) || {};
-    const rows = admin.rows || [];
-    const domain = window.domainBrandDomain ? domainBrandDomain.value : '';
-    const row = rows.find(r => String(r['תחום שיוך'] || '') === String(domain || '')) || {};
-    if(window.domainBrandId) domainBrandId.value = row['מזהה מיתוג'] || '';
-    if(window.domainBrandName) domainBrandName.value = row['שם מערכת'] || '';
-    if(window.domainBrandPrimary) domainBrandPrimary.value = row['צבע ראשי'] || '#1f4e79';
-    if(window.domainBrandSecondary) domainBrandSecondary.value = row['צבע משני'] || '#e8eef5';
-    if(window.domainBrandLogo) domainBrandLogo.value = row['לוגו'] || '';
-    if(window.domainBrandLogoHeight) domainBrandLogoHeight.value = row['גובה לוגו'] || '40';
-    if(window.domainBrandActive) domainBrandActive.value = row['פעיל'] || 'כן';
-    const dupBox = document.getElementById('domainBrandDuplicates');
-    const duplicateIds = ((admin.duplicateDomains || {})[domain] || []).filter(Boolean);
-    if(dupBox) dupBox.textContent = duplicateIds.length ? ('נמצאו רשומות כפולות היסטוריות לתחום זה: ' + duplicateIds.join(', ')) : '';
-  };
+  function domainBrandAdmin(){ return (window.DATA && DATA.domainBrandingAdmin) || null; }
+  function domainBrandRows(){ const admin=domainBrandAdmin(); return (admin && admin.rows) || []; }
+  function isActiveBrandRow(r){ return String((r&&r['פעיל']) || 'כן').trim() !== 'לא'; }
+  function brandRowById(id){ return domainBrandRows().find(r=>String(r['מזהה מיתוג']||'')===String(id||'')) || null; }
+  function activeBrandDomains(exceptId){
+    return domainBrandRows().filter(r=>isActiveBrandRow(r) && String(r['מזהה מיתוג']||'')!==String(exceptId||'')).map(r=>String(r['תחום שיוך']||'').trim()).filter(Boolean);
+  }
+  function domainBrandOptions(selected, editingId){
+    const admin=domainBrandAdmin() || {};
+    const activeDomains=activeBrandDomains(editingId);
+    const all=(admin.domains||[]).filter(d=>d && d!=='ללא');
+    const values=all.filter(d=>String(d)===String(selected||'') || activeDomains.indexOf(String(d))<0);
+    return `<option value="">בחר תחום שיוך</option>` + values.map(d=>`<option value="${escLocal(d)}" ${String(d)===String(selected||'')?'selected':''}>${escLocal(d)}</option>`).join('');
+  }
+  function logoCell(row){
+    const logo=String(row['לוגו']||'').trim();
+    if(!logo) return '<span class="muted">אין</span>';
+    return `<img src="${escLocal(logo)}" alt="לוגו" style="max-height:28px;max-width:80px;object-fit:contain">`;
+  }
+  function formatBrandDate(v){ return v ? escLocal(v) : ''; }
+  function duplicateText(domain){
+    const ids=(((domainBrandAdmin()||{}).duplicateDomains||{})[domain]||[]).filter(Boolean);
+    return ids.length ? `<div class="muted danger">כפילויות היסטוריות: ${escLocal(ids.join(', '))}</div>` : '';
+  }
 
+  const oldRenderBrandingSettings = window.renderBrandingSettings;
   window.renderBrandingSettings = function(){
     if(typeof oldRenderBrandingSettings === 'function') oldRenderBrandingSettings();
-    const admin = (window.DATA && DATA.domainBrandingAdmin) || null;
+    const admin=domainBrandAdmin();
     if(!admin || !settingsBox) return;
-    const rows = admin.rows || [];
-    const domains = admin.domains || [];
-    const firstDomain = domains[0] || '';
-    const current = rows.find(r => String(r['תחום שיוך'] || '') === String(firstDomain)) || {};
-    const opts = domains.map(d=>`<option value="${escLocal(d)}">${escLocal(d)}</option>`).join('');
+    const rows=domainBrandRows().slice().sort((a,b)=>String(a['תחום שיוך']||'').localeCompare(String(b['תחום שיוך']||''),'he'));
+    const body=rows.length ? rows.map(r=>{
+      const id=escLocal(r['מזהה מיתוג']||'');
+      const domain=String(r['תחום שיוך']||'').trim();
+      const active=isActiveBrandRow(r);
+      return `<tr>
+        <td>${escLocal(domain)}${duplicateText(domain)}</td>
+        <td>${escLocal(r['שם מערכת']||'')}</td>
+        <td>${logoCell(r)}</td>
+        <td><span style="display:inline-block;width:18px;height:18px;border:1px solid #ddd;background:${escLocal(r['צבע ראשי']||'transparent')};vertical-align:middle"></span> ${escLocal(r['צבע ראשי']||'')}</td>
+        <td><span style="display:inline-block;width:18px;height:18px;border:1px solid #ddd;background:${escLocal(r['צבע משני']||'transparent')};vertical-align:middle"></span> ${escLocal(r['צבע משני']||'')}</td>
+        <td>${active?'פעיל':'בארכיון'}</td>
+        <td>${formatBrandDate(r['עודכן בתאריך'])}</td>
+        <td><button onclick="openDomainBrandingEditor('${id}')">ערוך</button> ${active?`<button class="danger" onclick="archiveDomainBranding('${id}')">העבר לארכיון</button>`:`<button class="ok" onclick="restoreDomainBranding('${id}')">שחזר</button>`}</td>
+      </tr>`;
+    }).join('') : '<tr><td colspan="8" class="muted">אין עדיין מיתוגי תחומי שיוך</td></tr>';
     settingsBox.insertAdjacentHTML('beforeend', `
-      <div class="card"><h3 class="sectionTitle">מיתוג לפי תחום שיוך</h3>
-        <p class="muted">מנהל ראשי יכול לבחור תחום שיוך פעיל ולהגדיר לו מיתוג. האפשרות “ללא” אינה מוצגת.</p>
-        <input type="hidden" id="domainBrandId" value="${escLocal(current['מזהה מיתוג'] || '')}">
-        <label>תחום שיוך</label><select id="domainBrandDomain" onchange="BH_loadDomainBrandingForm()"><option value="">בחר תחום שיוך</option>${opts}</select>
-        <label>שם מערכת</label><input id="domainBrandName" value="${escLocal(current['שם מערכת'] || '')}">
-        <label>צבע ראשי</label><input id="domainBrandPrimary" value="${escLocal(current['צבע ראשי'] || '#1f4e79')}">
-        <label>צבע משני</label><input id="domainBrandSecondary" value="${escLocal(current['צבע משני'] || '#e8eef5')}">
-        <label>קישור לוגו</label><input id="domainBrandLogo" value="${escLocal(current['לוגו'] || '')}">
-        <label>גובה לוגו בפיקסלים</label><input id="domainBrandLogoHeight" type="number" value="${escLocal(current['גובה לוגו'] || '40')}">
-        <label>פעיל</label><select id="domainBrandActive"><option ${current['פעיל']!=='לא'?'selected':''}>כן</option><option ${current['פעיל']==='לא'?'selected':''}>לא</option></select>
-        <p id="domainBrandDuplicates" class="muted"></p>
-        <button class="primary" onclick="saveDomainBranding()">שמור מיתוג תחום שיוך</button>
+      <div class="card"><h3 class="sectionTitle">מיתוגי תחומי שיוך</h3>
+        <p class="muted">רשומות פעילות משפיעות על תחום השיוך המתאים בלבד. רשומה בארכיון נשמרת אך אינה פעילה והמערכת תחזור למיתוג ברירת המחדל.</p>
+        <div class="toolbar"><button class="primary" onclick="openDomainBrandingEditor()">+ הוסף מיתוג לתחום שיוך</button></div>
+        <div class="tableWrap"><table><thead><tr><th>תחום שיוך</th><th>שם מערכת</th><th>לוגו</th><th>צבע ראשי</th><th>צבע משני</th><th>מצב</th><th>עודכן בתאריך</th><th>פעולות</th></tr></thead><tbody>${body}</tbody></table></div>
       </div>`);
-    if(window.domainBrandDomain){ domainBrandDomain.value = firstDomain; window.BH_loadDomainBrandingForm(); }
+  };
+
+  window.openDomainBrandingEditor = function(id){
+    const row=id ? brandRowById(id) : {};
+    if(id && !row){ alert('רשומת המיתוג לא נמצאה'); return; }
+    const selected=row['תחום שיוך'] || '';
+    modalBox.innerHTML=`<h3>${id?'עריכת מיתוג תחום שיוך':'הוספת מיתוג לתחום שיוך'}</h3>
+      <input type="hidden" id="domainBrandId" value="${escLocal(row['מזהה מיתוג']||'')}">
+      <label>תחום שיוך</label><select id="domainBrandDomain">${domainBrandOptions(selected, row['מזהה מיתוג']||'')}</select>
+      <label>שם מערכת</label><input id="domainBrandName" value="${escLocal(row['שם מערכת']||'')}">
+      <label>לוגו</label><input id="domainBrandLogo" value="${escLocal(row['לוגו']||'')}">
+      <label>צבע ראשי</label><input id="domainBrandPrimary" value="${escLocal(row['צבע ראשי']||'#1f4e79')}">
+      <label>צבע משני</label><input id="domainBrandSecondary" value="${escLocal(row['צבע משני']||'#e8eef5')}">
+      <label>גובה לוגו</label><input id="domainBrandLogoHeight" type="number" value="${escLocal(row['גובה לוגו']||'40')}">
+      <label>פעיל</label><select id="domainBrandActive"><option value="כן" ${String(row['פעיל']||'כן')!=='לא'?'selected':''}>כן</option><option value="לא" ${String(row['פעיל']||'כן')==='לא'?'selected':''}>לא</option></select>
+      <p class="muted">אם קיימת רשומה בארכיון לאותו תחום, השמירה תעדכן/תשחזר אותה במקום ליצור כפילות לא מבוקרת.</p>
+      <div class="actions"><button class="primary" onclick="saveDomainBranding()">שמור</button><button onclick="closeM()">ביטול</button></div>`;
+    modal.classList.remove('hidden');
   };
 
   window.saveDomainBranding = function(){
     google.script.run.withSuccessHandler((res)=>{
+        closeM();
         load(false);
-        const duplicates = (res && res.duplicateIds && res.duplicateIds.length) ? ('\nנמצאו כפילויות היסטוריות שלא נמחקו: ' + res.duplicateIds.join(', ')) : '';
-        alert('מיתוג תחום השיוך נשמר' + duplicates);
-      })
-      .withFailureHandler(e=>alert(e.message))
-      .שמירת_מיתוג_תחום_שיוך({
+        const duplicates=(res&&res.duplicateIds&&res.duplicateIds.length)?('\nנמצאו כפילויות היסטוריות שלא נמחקו: '+res.duplicateIds.join(', ')):'';
+        alert('מיתוג תחום השיוך נשמר'+duplicates);
+      }).withFailureHandler(e=>alert(e.message)).שמירת_מיתוג_תחום_שיוך({
         authToken: currentToken(), id: domainBrandId.value, assignmentDomain: domainBrandDomain.value,
-        systemName: domainBrandName.value, primaryColor: domainBrandPrimary.value, secondaryColor: domainBrandSecondary.value,
-        logo: domainBrandLogo.value, logoHeight: domainBrandLogoHeight.value, active: domainBrandActive.value
+        systemName: domainBrandName.value, logo: domainBrandLogo.value, primaryColor: domainBrandPrimary.value,
+        secondaryColor: domainBrandSecondary.value, logoHeight: domainBrandLogoHeight.value, active: domainBrandActive.value
       });
+  };
+
+  window.archiveDomainBranding = function(id){
+    if(!confirm('להעביר את מיתוג תחום השיוך לארכיון?')) return;
+    google.script.run.withSuccessHandler(()=>load(false)).withFailureHandler(e=>alert(e.message)).העברת_מיתוג_תחום_שיוך_לארכיון({authToken:currentToken(),id});
+  };
+
+  window.restoreDomainBranding = function(id){
+    google.script.run.withSuccessHandler(()=>load(false)).withFailureHandler(e=>alert(e.message)).שחזור_מיתוג_תחום_שיוך({authToken:currentToken(),id});
   };
 })();
 </script>
