@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html dir="rtl" lang="he">
 <head>
   <base target="_top">
@@ -2414,7 +2414,13 @@ const __renderTaskCard_secure_base = renderTaskCard;
 renderTaskCard = function(d){ __renderTaskCard_secure_base(d); setTimeout(applySecurityUI,0); };
 
 openProjectCard = function(id){ google.script.run.withSuccessHandler(renderProjectCard).withFailureHandler(e=>alert(e.message)).כרטיס_פרויקט({id,authToken:currentToken()}); }
-openContactCard = function(id){ google.script.run.withSuccessHandler(renderContactCard).withFailureHandler(e=>alert(e.message)).כרטיס_איש_קשר({id,authToken:currentToken()}); }
+openContactCard = function(contactOrId){
+  const id = (contactOrId && typeof contactOrId === 'object')
+    ? String(contactOrId['מזהה איש קשר'] || contactOrId.id || '').trim()
+    : String(contactOrId || '').trim();
+  if(!id) return alert('איש הקשר לא נמצא לאחר הרענון');
+  google.script.run.withSuccessHandler(renderContactCard).withFailureHandler(e=>alert(e.message)).כרטיס_איש_קשר({id,authToken:currentToken()});
+}
 openTaskCard = function(id){ google.script.run.withSuccessHandler(renderTaskCard).withFailureHandler(e=>alert(e.message)).קבלת_כרטיס_משימה_Build10({id,authToken:currentToken()}); }
 
 saveProject = function(id){
@@ -2564,7 +2570,6 @@ const readOnly = isArchived || !canWriteProject;
         פריט זה נמצא בארכיון. לעריכה יש לשחזר אותו תחילה.
       </div>`
     : '';
-
   modalBox.className='box';
   modalBox.innerHTML=`
     <h2>${esc(p['שם פרויקט'])}</h2>
@@ -2616,6 +2621,9 @@ renderContactCard = function(d){
         פריט זה נמצא בארכיון. לעריכה יש לשחזר אותו תחילה.
       </div>`
     : '';
+  const inviteButton = canInviteContact(c)
+    ? `<button id="contactInviteBtn" class="primary" onclick="sendContactInvitation('${esc(c['מזהה איש קשר'])}')">הזמן במייל</button>`
+    : '';
 
   modalBox.className='box';
   modalBox.innerHTML=`
@@ -2624,6 +2632,7 @@ renderContactCard = function(d){
     <div class="toolbar">
       ${!readOnly ? `<button class="primary" onclick='openContact(${JSON.stringify(c)})'>ערוך</button>` : ''}
       ${!readOnly && canDelete() ? `<button class="danger" onclick='delContact("${esc(c['מזהה איש קשר'])}")'>העבר לארכיון</button>` : ''}
+      ${inviteButton}
       <button onclick="closeM()">סגור</button>
     </div>
     <div class="grid2">
@@ -5544,6 +5553,68 @@ window.updateContactPermissionFields = function(){
   }
 };
 
+function isValidStoredContactEmail(email){
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email || '').trim());
+}
+
+function isOwnerOrSuperAdmin(){
+  const u = (DATA && DATA.currentUser) || {};
+  return u.isOwner === true || String(u.role || '').trim() === 'מנהל ראשי';
+}
+
+function canCreateContactsEffective(){
+  return canCreate();
+}
+
+const __contactInvitationSending = {};
+
+function findStoredContactById(contactId){
+  const id = String(contactId || '').trim();
+  return (DATA.contacts || []).find(c => String(c['מזהה איש קשר'] || '') === id) || null;
+}
+
+function openContactCardById(contactId){
+  const contact = findStoredContactById(contactId);
+  if(!contact){
+    alert('איש הקשר לא נמצא לאחר הרענון');
+    return false;
+  }
+  openContactCard(contact);
+  return true;
+}
+
+function canInviteContact(c){
+  if(!c || !c['מזהה איש קשר']) return false;
+  if(!canCreateContactsEffective()) return false;
+  if(!isValidStoredContactEmail(c['אימייל'])) return false;
+  if(isOwnerOrSuperAdmin()) return true;
+  return !String(c['כניסה ראשונה למערכת'] || '').trim();
+}
+
+window.sendContactInvitation = function(contactId){
+  contactId = String(contactId || '').trim();
+  if(!contactId) return alert('איש הקשר לא נמצא לאחר הרענון');
+  if(__contactInvitationSending[contactId]) return;
+  __contactInvitationSending[contactId] = true;
+
+  const btn = document.getElementById('contactInviteBtn');
+  if(btn){ btn.disabled = true; btn.textContent = 'שולח...'; }
+  google.script.run
+    .withSuccessHandler(()=>{
+      alert('ההזמנה נשלחה בהצלחה');
+      refreshCore(()=>{
+        delete __contactInvitationSending[contactId];
+        openContactCardById(contactId);
+      });
+    })
+    .withFailureHandler(e=>{
+      delete __contactInvitationSending[contactId];
+      if(btn){ btn.disabled = false; btn.textContent = 'הזמן במייל'; }
+      alert(e && e.message ? e.message : 'שליחת ההזמנה נכשלה');
+    })
+    .שליחת_הזמנה_לאיש_קשר({authToken: currentToken(), contactId});
+};
+
 window.openContact = function(r={}){
   const isEdit = !!r['מזהה איש קשר'];
 
@@ -5647,9 +5718,13 @@ window.openContact = function(r={}){
 
 window.saveContact = function(id){
   google.script.run
-    .withSuccessHandler(()=>{
-      closeM();
-      refreshCore();
+    .withSuccessHandler((savedId)=>{
+      if(id){
+        closeM();
+        refreshCore();
+        return;
+      }
+      refreshCore(()=>openContactCardById(savedId));
     })
     .withFailureHandler(e=>alert(e.message))
     .שמירת_איש_קשר({

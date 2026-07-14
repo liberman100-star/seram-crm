@@ -9,7 +9,8 @@ const CONFIG = {
   SPREADSHEET_ID: "1acCZD34luRR6quM--jrpMlwcSygsrYpGrFkDjcsveMw",
   CALENDAR_ID: "primary",
   TIMEZONE: "Asia/Jerusalem",
-  SYSTEM_NAME: "CRM סרם נדל״ן"
+  SYSTEM_NAME: "CRM סרם נדל״ן",
+  WEB_APP_URL: "https://script.google.com/macros/s/AKfycbyfXuvUth9j7L5-rp0TKEc3CC2gffmgo44y_VDZHwMFObT4pxuNkNrL7Jf0HX5CSQQaCQ/exec"
 };
 
 const SHEETS = {
@@ -1384,6 +1385,7 @@ function קבלת_אנשי_קשר_עם_הרשאה_Build6_2() {
 function התקנת_Build6_3_הרשאות_דרך_שיוכים() {
   הוספת_עמודה_אם_חסרה_(SHEETS.CONTACTS, "הרשאת מערכת");
   הוספת_עמודה_אם_חסרה_(SHEETS.CONTACTS, "פעיל במערכת");
+  הוספת_עמודה_אם_חסרה_(SHEETS.CONTACTS, "כניסה ראשונה למערכת");
   הוספת_עמודה_אם_חסרה_(SHEETS.LINKS, "מורשה צפייה בפורטל");
   הוספת_עמודה_אם_חסרה_(SHEETS.LINKS, "תפקיד / כובע");
   ensureColumnTextFormat_(SHEETS.CONTACTS, "טלפון");
@@ -1400,6 +1402,7 @@ function שמירת_איש_קשר_Build6_3(data) {
   הוספת_עמודה_אם_חסרה_(SHEETS.CONTACTS, "הרשאת מערכת");
   הוספת_עמודה_אם_חסרה_(SHEETS.CONTACTS, "פעיל במערכת");
   ensureColumnTextFormat_(SHEETS.CONTACTS, "טלפון");
+  הוספת_עמודה_אם_חסרה_(SHEETS.CONTACTS, "כניסה ראשונה למערכת");
 
   const old = data.id ? readSheet_(SHEETS.CONTACTS).find(c => c["מזהה איש קשר"] === data.id) : null;
   const id = data.id || makeId_("איש");
@@ -1437,7 +1440,8 @@ function שמירת_איש_קשר_Build6_3(data) {
     "הרשאת מערכת": permission,
     "פעיל במערכת": permission === "ללא הרשאה" ? "לא" : "כן",
     "תאריך יצירה": data.created || (old ? old["תאריך יצירה"] : new Date()),
-    "עדכון אחרון": new Date()
+    "עדכון אחרון": new Date(),
+    "כניסה ראשונה למערכת": old ? (old["כניסה ראשונה למערכת"] || "") : ""
   };
 
   upsert_ללא_אימות_(SHEETS.CONTACTS, "מזהה איש קשר", id, row);
@@ -1524,6 +1528,7 @@ function התקנת_Build7_כניסה_פנימית() {
 
   הוספת_עמודה_אם_חסרה_(SHEETS.CONTACTS, "הרשאת מערכת");
   הוספת_עמודה_אם_חסרה_(SHEETS.CONTACTS, "פעיל במערכת");
+  הוספת_עמודה_אם_חסרה_(SHEETS.CONTACTS, "כניסה ראשונה למערכת");
   הוספת_עמודה_אם_חסרה_(SHEETS.LINKS, "מורשה צפייה בפורטל");
   ensureColumnTextFormat_(SHEETS.CONTACTS, "טלפון");
 
@@ -1642,6 +1647,8 @@ function אימות_קוד_כניסה_Build7(email, code) {
 
   const token = "TOK-" + Utilities.getUuid();
   const now = new Date();
+  עדכון_כניסה_ראשונה_לאיש_קשר_(user.contactId);
+
   appendObject_(BUILD7_SESSIONS_SHEET, {
     "Token": token,
     "מייל": email,
@@ -1656,6 +1663,77 @@ function אימות_קוד_כניסה_Build7(email, code) {
 
   log_("כניסה למערכת", email + " | " + user.role);
   return { ok: true, token, user };
+}
+
+function עדכון_כניסה_ראשונה_לאיש_קשר_(contactId) {
+  contactId = String(contactId || "").trim();
+  if (!contactId) return false;
+  הוספת_עמודה_אם_חסרה_(SHEETS.CONTACTS, "כניסה ראשונה למערכת");
+  const contact = readSheet_(SHEETS.CONTACTS).find(c => String(c["מזהה איש קשר"] || "") === contactId);
+  if (!contact || String(contact["כניסה ראשונה למערכת"] || "").trim()) return false;
+  contact["כניסה ראשונה למערכת"] = new Date();
+  upsert_ללא_אימות_(SHEETS.CONTACTS, "מזהה איש קשר", contactId, contact);
+  return true;
+}
+
+function BH_INV_isValidEmail_(email) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email || "").trim());
+}
+
+function BH_INV_webAppUrl_() {
+  const url = String(CONFIG.WEB_APP_URL || "").trim();
+  if (!url || url === "PASTE_DEPLOYED_WEB_APP_EXEC_URL_HERE" || url.indexOf("/exec") === -1) {
+    throw new Error("כתובת WEB_APP_URL חסרה או היא עדיין מציינת מקום. יש להגדיר כתובת /exec לפני שליחת הזמנות.");
+  }
+  return url;
+}
+
+function BH_INV_canCreateContacts_(user) {
+  if (user && (user.isOwner === true || String(user.role || "").trim() === "מנהל ראשי")) return true;
+  return BH22_הרשאת_מודול_פעילה_(user, "אנשי קשר") && פעולות_מותרות_Build11_2_(user).canCreate === true;
+}
+
+function BH_INV_isSuperAdmin_(user) {
+  return user && (user.isOwner === true || String(user.role || "").trim() === "מנהל ראשי");
+}
+
+function שליחת_הזמנה_לאיש_קשר(data) {
+  const actor = משתמש_מפועל_Build11_2_(data && data.authToken);
+  if (!BH_INV_canCreateContacts_(actor)) throw new Error("אין לך הרשאה להזמין אנשי קשר");
+
+  const contactId = String(data && data.contactId || data && data.id || "").trim();
+  if (!contactId) throw new Error("חסר מזהה איש קשר");
+
+  הוספת_עמודה_אם_חסרה_(SHEETS.CONTACTS, "כניסה ראשונה למערכת");
+  const contact = readSheet_(SHEETS.CONTACTS).find(c => String(c["מזהה איש קשר"] || "") === contactId);
+  if (!contact) throw new Error("איש הקשר לא נמצא");
+
+  const email = String(contact["אימייל"] || "").trim();
+  const name = String(contact["שם מלא"] || "");
+  if (!BH_INV_isValidEmail_(email)) throw new Error("כתובת המייל של איש הקשר אינה תקינה");
+
+  if (!BH_INV_isSuperAdmin_(actor) && String(contact["כניסה ראשונה למערכת"] || "").trim()) {
+    throw new Error("איש הקשר כבר נכנס למערכת ולכן רק מנהל ראשי יכול לשלוח הזמנה חוזרת");
+  }
+
+  const url = BH_INV_webAppUrl_();
+  const inviter = BH_FINAL_userName_(actor) || actor.name || actor.email || "";
+  const subject = "הזמנה למערכת סרמ החכמה";
+  const body = `שלום ${name},
+
+הוזמנת על ידי ${inviter}, להשתמש במערכת סרמ החכמה.
+
+הכניסה היא ע"י הקישור הבא:
+${url}
+
+להתחברות, יש להזין את כתובת המייל הזו ולפעול ע"פ ההנחיות.
+
+מחכים לך :)
+צוות "מערכת ניהול חכמה"`;
+
+  MailApp.sendEmail(email, subject, body);
+  log_("הזמנה נשלחה", `איש קשר: ${contactId} | ${name} <${email}> | מזמין: ${inviter} | ${new Date()}`);
+  return { ok: true };
 }
 
 function קבלת_משתמש_מסשן_Build7_(token) {
@@ -2010,6 +2088,7 @@ function התקנת_Build10_מאוחד_יציב() {
   // עמודות חסרות בלבד — ללא שינוי ערכים קיימים
   הוספת_עמודה_אם_חסרה_(SHEETS.CONTACTS, "הרשאת מערכת");
   הוספת_עמודה_אם_חסרה_(SHEETS.CONTACTS, "פעיל במערכת");
+  הוספת_עמודה_אם_חסרה_(SHEETS.CONTACTS, "כניסה ראשונה למערכת");
   הוספת_עמודה_אם_חסרה_(SHEETS.LINKS, "מורשה צפייה בפורטל");
   הוספת_עמודה_אם_חסרה_(SHEETS.LINKS, "תפקיד / כובע");
   הבטח_עמודה_אם_חסרה_(SHEETS.TASKS, "שעת סיום");
@@ -3320,7 +3399,7 @@ function formatValue_(v, header) {
       return Utilities.formatDate(v, CONFIG.TIMEZONE, "HH:mm");
     }
 
-    if (header === "תאריך ושעת עדכון" || header === "תאריך יצירה" || header === "עדכון אחרון") {
+    if (header === "תאריך ושעת עדכון" || header === "תאריך יצירה" || header === "עדכון אחרון" || header === "כניסה ראשונה למערכת") {
       return Utilities.formatDate(v, CONFIG.TIMEZONE, "yyyy-MM-dd HH:mm");
     }
 
@@ -3471,8 +3550,8 @@ function שליחת_קוד_כניסה_Build7(email) {
   const senderName = שם_שולח_מערכת_();
   MailApp.sendEmail({
     to: email,
-    subject: "קוד כניסה למערכת בית חכם",
-    body: "שלום " + (user.name || "") + ",\n\nקוד הכניסה שלך למערכת בית חכם הוא:\n\n" + code + "\n\nהקוד תקף ל-10 דקות. אם ביקשת קוד נוסף, רק הקוד האחרון יהיה תקף.\n\n" + senderName,
+    subject: "קוד כניסה למערכת ניהול - בית חכם",
+    body: "שלום " + (user.name || "") + ",\n\nקוד הכניסה שלך למערכת הניהול של בית חכם הוא:\n\n" + code + "\n\nהקוד תקף ל-10 דקות. אם ביקשת קוד נוסף, רק הקוד האחרון יהיה תקף.\n\n" + senderName,
     name: senderName
   });
 
@@ -4414,6 +4493,7 @@ function שמירת_איש_קשר(data) {
   הוספת_עמודה_אם_חסרה_(SHEETS.CONTACTS, "תחומי שיוך");
   הוספת_עמודה_אם_חסרה_(SHEETS.CONTACTS, BH_AD_CENTRAL);
   ensureColumnTextFormat_(SHEETS.CONTACTS, "טלפון");
+  הוספת_עמודה_אם_חסרה_(SHEETS.CONTACTS, "כניסה ראשונה למערכת");
 
   const old = data.id
     ? readSheet_(SHEETS.CONTACTS).find(c => c["מזהה איש קשר"] === data.id)
@@ -4526,7 +4606,8 @@ function שמירת_איש_קשר(data) {
     "תחומי שיוך": BH_AD_join_(BH_AD_split_(additionalDomains).filter(v => v !== centralDomain)),
     "יוצר": old && old["יוצר"] ? old["יוצר"] : currentUser,
     "תאריך יצירה": data.created || (old ? old["תאריך יצירה"] : new Date()),
-    "עדכון אחרון": new Date()
+    "עדכון אחרון": new Date(),
+    "כניסה ראשונה למערכת": old ? (old["כניסה ראשונה למערכת"] || "") : ""
   };
 
   upsert_ללא_אימות_(SHEETS.CONTACTS, "מזהה איש קשר", id, row);
