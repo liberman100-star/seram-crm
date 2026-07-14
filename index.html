@@ -2884,15 +2884,19 @@ function renderShell_Build13_2(d){
 }
 
 function load(forceDashboard=true){
+  if(window.__BH_CORE_LOADING__) return;
+  window.__BH_CORE_LOADING__ = true;
   const token = currentToken();
 
   if(!token){
+    window.__BH_CORE_LOADING__ = false;
     showLogin();
     return;
   }
 
   google.script.run
     .withSuccessHandler(d=>{
+      window.__BH_CORE_LOADING__ = false;
       if(window.BH_isCustomerDomainSelectionRequired && window.BH_isCustomerDomainSelectionRequired(d)){ window.BH_showCustomerDomainDialog(d); return; }
       if(!d || !d.auth || d.auth.allowed !== true){
         clearToken();
@@ -2920,6 +2924,7 @@ function load(forceDashboard=true){
       }
     })
     .withFailureHandler(e=>{
+      window.__BH_CORE_LOADING__ = false;
       clearToken();
       showLogin('שגיאה בטעינה: ' + e.message);
     })
@@ -3001,7 +3006,7 @@ function loadModule_Build13_2(module){
       __BH_LOADING_MODULE__[module] = false;
       alert(e.message);
     })
-    .קבלת_נתוני_ליבה_Build13(token);
+    .קבלת_מודול_Build13_2(token, module);
 }
 
 function renderModule_Build13_2(module){
@@ -3015,15 +3020,19 @@ function renderModule_Build13_2(module){
 }
 
 function refreshCore(after){
+  if(window.__BH_CORE_REFRESHING__) return;
+  window.__BH_CORE_REFRESHING__ = true;
   const token = currentToken();
 
   if(!token){
+    window.__BH_CORE_REFRESHING__ = false;
     showLogin();
     return;
   }
 
   google.script.run
     .withSuccessHandler(d=>{
+      window.__BH_CORE_REFRESHING__ = false;
       if(window.BH_isCustomerDomainSelectionRequired && window.BH_isCustomerDomainSelectionRequired(d)){ window.BH_showCustomerDomainDialog(d); return; }
       if(!d || !d.auth || d.auth.allowed !== true){
         clearToken();
@@ -3058,7 +3067,7 @@ function refreshCore(after){
         after();
       }
     })
-    .withFailureHandler(e=>alert(e.message))
+    .withFailureHandler(e=>{ window.__BH_CORE_REFRESHING__ = false; alert(e.message); })
     .קבלת_נתוני_ליבה_Build13(token);
 }
 </script>
