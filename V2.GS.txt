@@ -5902,45 +5902,6 @@ function BH_coreAllowedAdmin_(user){
   const role = String(user && (user.role || user['הרשאת מערכת'] || user.permission) || '').trim();
   return user && (user.isOwner === true || role === 'מנהל ראשי');
 }
-function BH_trimInitialCorePayload_(data){
-  if(!data || !data.auth || data.auth.allowed !== true) return data;
-  const admin = BH_coreAllowedAdmin_(data.currentUser);
-  const out = {
-    auth: data.auth,
-    system: data.system,
-    defaultBranding: data.defaultBranding,
-    rootBranding: data.rootBranding,
-    currentUser: data.currentUser,
-    canSeeSettings: data.canSeeSettings,
-    canSeeDashboard: data.canSeeDashboard,
-    canSeeArchive: data.canSeeArchive,
-    canSeeTimeline: data.canSeeTimeline,
-    actionPermissions: data.actionPermissions,
-    canCreate: data.canCreate,
-    canEdit: data.canEdit,
-    canDelete: data.canDelete,
-    readOnly: data.readOnly,
-    accessNotice: data.accessNotice || '',
-    dashboard: data.dashboard || calcDashboard_(data.projects || [], data.contacts || [], data.tasks || []),
-    projects: [],
-    contacts: [],
-    links: [],
-    tasks: (data.tasks || []).filter(function(t){ return !!t['תאריך']; }),
-    notes: [],
-    projectNotes: [],
-    taskNotes: [],
-    timeline: [],
-    categories: [],
-    realSettings: {},
-    fields: [],
-    permissions: {},
-    loadedModules: { dashboard: true },
-    deferredDatasets: ['projects','contacts','links','settings/categories','admin','task notes','project notes','timeline','archive','project cards']
-  };
-  if(admin && data.domainBrandingAdmin) out.domainBrandingAdmin = data.domainBrandingAdmin;
-  if(data.customerDomainSelection) out.customerDomainSelection = data.customerDomainSelection;
-  return out;
-}
 
 var BH_perf_originalCoreFinal_ = קבלת_נתוני_ליבה_Build13;
 קבלת_נתוני_ליבה_Build13 = function(token){
@@ -5948,7 +5909,7 @@ var BH_perf_originalCoreFinal_ = קבלת_נתוני_ליבה_Build13;
     const authStart = BH_perfStart_('authentication/session validation');
     const data = BH_perf_originalCoreFinal_(token);
     BH_perfEnd_('authentication/session validation', authStart);
-    return BH_trimInitialCorePayload_(data);
+    return data;
   });
 };
 
@@ -5957,12 +5918,6 @@ if(BH_perf_originalModuleFinal_){
   קבלת_מודול_Build13_2 = function(token, moduleName){
     return BH_withRequestRows_('קבלת_מודול_Build13_2:' + moduleName, function(){
       const out = BH_perf_originalModuleFinal_(token, moduleName);
-      if(out && out.auth && out.auth.allowed === true && !BH_coreAllowedAdmin_(out.currentUser)){
-        delete out.domainBrandingAdmin;
-        if(moduleName !== 'settings'){
-          out.permissions = {};
-        }
-      }
       return out;
     });
   };
