@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html dir="rtl" lang="he">
 <head>
   <base target="_top">
@@ -2564,7 +2564,6 @@ const readOnly = isArchived || !canWriteProject;
         פריט זה נמצא בארכיון. לעריכה יש לשחזר אותו תחילה.
       </div>`
     : '';
-
   modalBox.className='box';
   modalBox.innerHTML=`
     <h2>${esc(p['שם פרויקט'])}</h2>
@@ -2616,6 +2615,9 @@ renderContactCard = function(d){
         פריט זה נמצא בארכיון. לעריכה יש לשחזר אותו תחילה.
       </div>`
     : '';
+  const inviteButton = canInviteContact(c)
+    ? `<button id="contactInviteBtn" class="primary" onclick="sendContactInvitation('${esc(c['מזהה איש קשר'])}')">הזמן במייל</button>`
+    : '';
 
   modalBox.className='box';
   modalBox.innerHTML=`
@@ -2624,6 +2626,7 @@ renderContactCard = function(d){
     <div class="toolbar">
       ${!readOnly ? `<button class="primary" onclick='openContact(${JSON.stringify(c)})'>ערוך</button>` : ''}
       ${!readOnly && canDelete() ? `<button class="danger" onclick='delContact("${esc(c['מזהה איש קשר'])}")'>העבר לארכיון</button>` : ''}
+      ${inviteButton}
       <button onclick="closeM()">סגור</button>
     </div>
     <div class="grid2">
@@ -5544,6 +5547,44 @@ window.updateContactPermissionFields = function(){
   }
 };
 
+function isValidStoredContactEmail(email){
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email || '').trim());
+}
+
+function isOwnerOrSuperAdmin(){
+  const u = (DATA && DATA.currentUser) || {};
+  return u.isOwner === true || String(u.role || '').trim() === 'מנהל ראשי';
+}
+
+function canCreateContactsEffective(){
+  if(isOwnerOrSuperAdmin()) return true;
+  const ap = (DATA && DATA.actionPermissions) || {};
+  return ap.canCreate === true && ap.modules && ap.modules.contacts === true;
+}
+
+function canInviteContact(c){
+  if(!c || !c['מזהה איש קשר']) return false;
+  if(!canCreateContactsEffective()) return false;
+  if(!isValidStoredContactEmail(c['אימייל'])) return false;
+  if(isOwnerOrSuperAdmin()) return true;
+  return !String(c['כניסה ראשונה למערכת'] || '').trim();
+}
+
+window.sendContactInvitation = function(contactId){
+  const btn = document.getElementById('contactInviteBtn');
+  if(btn){ btn.disabled = true; btn.textContent = 'שולח...'; }
+  google.script.run
+    .withSuccessHandler(()=>{
+      alert('ההזמנה נשלחה בהצלחה');
+      openContactCard(contactId);
+    })
+    .withFailureHandler(e=>{
+      if(btn){ btn.disabled = false; btn.textContent = 'הזמן במייל'; }
+      alert(e && e.message ? e.message : 'שליחת ההזמנה נכשלה');
+    })
+    .שליחת_הזמנה_לאיש_קשר({authToken: currentToken(), contactId});
+};
+
 window.openContact = function(r={}){
   const isEdit = !!r['מזהה איש קשר'];
 
@@ -5647,9 +5688,8 @@ window.openContact = function(r={}){
 
 window.saveContact = function(id){
   google.script.run
-    .withSuccessHandler(()=>{
-      closeM();
-      refreshCore();
+    .withSuccessHandler((savedId)=>{
+      refreshCore(()=>openContactCard(savedId || id));
     })
     .withFailureHandler(e=>alert(e.message))
     .שמירת_איש_קשר({
