@@ -6090,5 +6090,141 @@ window.calendarTasksForDate = function(d){
 })();
 </script>
 
+
+<script id="BH_SYSTEM_USERS_ADMIN_FLOW">
+(function(){
+  function systemUserRows(){
+    return (DATA.contacts || []).filter(c => String(c['הרשאת מערכת'] || 'ללא הרשאה').trim() !== 'ללא הרשאה');
+  }
+
+  function userResponsibleManager(row){
+    const role = String(row['הרשאת מערכת'] || '').trim();
+    if(role === 'משתמש') return row['מנהל'] || '';
+    if(role === 'לקוח') return row['אחראי'] || '';
+    return row['מנהל'] || row['אחראי'] || '';
+  }
+
+  function systemUsersTable(rows){
+    const superAdmin = canManageAssignmentDomains();
+    const hasFirstLogin = rows.some(r => Object.prototype.hasOwnProperty.call(r, 'כניסה ראשונה למערכת'));
+    const cols = [
+      ['שם מלא','שם'],
+      ['אימייל','אימייל'],
+      ['טלפון','טלפון'],
+      ['הרשאת מערכת','הרשאת מערכת'],
+      ['פעיל במערכת','פעיל במערכת'],
+      ['__manager','מנהל אחראי']
+    ];
+    if(superAdmin){
+      cols.push(['תחום שיוך מרכזי','תחום שיוך מרכזי']);
+      cols.push(['תחומי שיוך','תחומי שיוך נוספים']);
+    }
+    if(hasFirstLogin) cols.push(['כניסה ראשונה למערכת','כניסה ראשונה למערכת']);
+
+    if(!rows.length) return '<p class="muted">אין כרגע אנשי קשר עם הרשאת מערכת.</p>';
+    let html = '<table><tr>' + cols.map(c=>`<th>${esc(c[1])}</th>`).join('') + '<th>פעולות</th></tr>';
+    rows.forEach(row=>{
+      html += '<tr>' + cols.map(([key])=>{
+        const value = key === '__manager' ? userResponsibleManager(row) : row[key];
+        return `<td>${esc(value || '')}</td>`;
+      }).join('') + `<td>
+        <button onclick='openSystemUserEditor(${JSON.stringify(row)})'>ערוך משתמש</button>
+        <button onclick="toggleSystemUserAccess('${esc(row['מזהה איש קשר'] || '')}','${String(row['פעיל במערכת'] || 'כן') === 'לא' ? 'כן' : 'לא'}')">${String(row['פעיל במערכת'] || 'כן') === 'לא' ? 'הפעל גישה' : 'השבת גישה'}</button>
+        <button class="primary" onclick='openUserCalendarPerms && openUserCalendarPerms(${JSON.stringify(row)})'>הרשאות יומן</button>
+      </td></tr>`;
+    });
+    return html + '</table>';
+  }
+
+  window.renderUsersSettings = function(){
+    const rows = systemUserRows();
+    let html = `<div class="toolbar"><button class="primary" onclick="openPermissionContactPicker()">+ מתן הרשאה לאיש קשר</button></div>`;
+    html += `<p class="muted"><b>משתמשים</b> מנהל את זהות הגישה של אנשי קשר למערכת: הרשאת מערכת, מצב פעיל, מנהל אחראי ותחומי שיוך למנהלים. פרטי CRM רגילים ממשיכים להתנהל בלשונית אנשי קשר.</p>`;
+    html += systemUsersTable(rows);
+    settingsBox.innerHTML = html;
+  };
+
+  window.renderPermissionsSettings = (function(original){
+    return function(){
+      if(typeof original === 'function') original();
+      if(settingsBox){
+        settingsBox.insertAdjacentHTML('afterbegin', `<p class="muted"><b>הרשאות</b> מגדיר מה כל תפקיד או הרשאה פרטנית רשאים לעשות במערכת. זהו מסך מטריצת הרשאות, ולא עריכת משתמשים יחידים.</p>`);
+      }
+    };
+  })(window.renderPermissionsSettings);
+
+  window.openSystemUserEditor = function(row={}){
+    const role = String(row['הרשאת מערכת'] || 'משתמש').trim();
+    const active = String(row['פעיל במערכת'] || 'כן').trim() === 'לא' ? 'לא' : 'כן';
+    const superAdmin = canManageAssignmentDomains();
+    modalBox.className='box small';
+    modalBox.innerHTML = `
+      <h2>עריכת משתמש מערכת</h2>
+      <p class="muted">עורך שדות גישה בלבד. שם, אימייל וטלפון מוצגים לזיהוי ונערכים מכרטיס איש הקשר.</p>
+      <div class="card">
+        <div><b>שם:</b> ${esc(row['שם מלא'] || '')}</div>
+        <div><b>אימייל:</b> ${esc(row['אימייל'] || '')}</div>
+        <div><b>טלפון:</b> ${esc(row['טלפון'] || '')}</div>
+      </div>
+      <label>הרשאת מערכת</label>
+      <select id="suPermission" onchange="updateSystemUserEditorFields()">${permissionOptions(role)}</select>
+      <label>פעיל במערכת</label>
+      <select id="suActive"><option value="כן" ${active==='כן'?'selected':''}>כן</option><option value="לא" ${active==='לא'?'selected':''}>לא</option></select>
+      <div id="suManagerBox" class="hidden"><label>מנהל אחראי</label><select id="suManager"><option value="">בחר מנהל</option>${permissionUsersOptions('מנהל', row['מנהל'])}</select></div>
+      <div id="suOwnerBox" class="hidden"><label>מנהל אחראי</label><select id="suOwner"><option value="">בחר אחראי</option>${permissionUsersOptions('משתמש', row['אחראי'])}</select></div>
+      ${superAdmin ? `<div id="suAssignmentDomainsBox" class="hidden">
+        <label>תחום שיוך מרכזי</label><select id="suCentralAssignmentDomain"><option value="">ללא</option>${assignmentDomainOptions(row['תחום שיוך מרכזי'] || '').replace(/<option value="ללא"[^>]*>ללא<\/option>/,'')}</select>
+        <label>תחומי שיוך נוספים</label><select id="suAdditionalAssignmentDomains" multiple size="5">${assignmentDomainsMulti(row['תחומי שיוך'] || '')}</select>
+        <p class="muted">זמין רק לבעלים / מנהל ראשי ורק עבור הרשאת מנהל. “ללא” לא נשמר בתחומים נוספים, והתחום המרכזי לא יופיע בהם.</p>
+      </div>` : ''}
+      <button class="primary" onclick="saveSystemUser('${esc(row['מזהה איש קשר'] || '')}')">שמור משתמש</button>
+      <button onclick="closeM()">ביטול</button>`;
+    modal.classList.remove('hidden');
+    setTimeout(updateSystemUserEditorFields, 0);
+  };
+
+  window.updateSystemUserEditorFields = function(){
+    const role = String((window.suPermission && suPermission.value) || '').trim();
+    if(window.suManagerBox) suManagerBox.classList.toggle('hidden', role !== 'משתמש');
+    if(window.suOwnerBox) suOwnerBox.classList.toggle('hidden', role !== 'לקוח');
+    if(window.suAssignmentDomainsBox) suAssignmentDomainsBox.classList.toggle('hidden', role !== 'מנהל' || !canManageAssignmentDomains());
+    if(window.suAdditionalAssignmentDomains && window.suCentralAssignmentDomain){
+      const central = suCentralAssignmentDomain.value;
+      Array.from(suAdditionalAssignmentDomains.options).forEach(o=>{
+        o.disabled = !o.value || o.value === 'ללא' || o.value === central;
+        if(o.disabled) o.selected = false;
+      });
+      suCentralAssignmentDomain.onchange = updateSystemUserEditorFields;
+    }
+  };
+
+  window.selectedSystemUserAdditionalDomains = function(){
+    if(!window.suAdditionalAssignmentDomains) return '';
+    const central = window.suCentralAssignmentDomain ? suCentralAssignmentDomain.value : '';
+    return Array.from(suAdditionalAssignmentDomains.selectedOptions).map(o=>o.value).filter(v=>v && v !== 'ללא' && v !== central).join(', ');
+  };
+
+  window.saveSystemUser = function(id){
+    google.script.run.withSuccessHandler(()=>{closeM();refreshCore();}).withFailureHandler(e=>alert(e.message))
+      .שמירת_משתמש_מערכת({
+        authToken: currentToken(), id,
+        systemPermission: suPermission.value,
+        systemActive: suActive.value,
+        manager: window.suManager ? suManager.value : '',
+        owner: window.suOwner ? suOwner.value : '',
+        assignmentCentralDomain: window.suCentralAssignmentDomain ? suCentralAssignmentDomain.value : '',
+        assignmentAdditionalDomains: selectedSystemUserAdditionalDomains()
+      });
+  };
+
+  window.toggleSystemUserAccess = function(id, nextActive){
+    const row = (DATA.contacts || []).find(c => String(c['מזהה איש קשר'] || '') === String(id || ''));
+    if(!row) return alert('המשתמש לא נמצא');
+    google.script.run.withSuccessHandler(()=>refreshCore()).withFailureHandler(e=>alert(e.message))
+      .שמירת_משתמש_מערכת({authToken: currentToken(), id, systemPermission: row['הרשאת מערכת'], systemActive: nextActive});
+  };
+})();
+</script>
+
 </body>
 </html>

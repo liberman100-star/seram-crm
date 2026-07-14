@@ -4412,7 +4412,7 @@ function שמירת_איש_קשר(data) {
     "מנהל": manager,
     "אחראי": owner,
     "הרשאת מערכת": permission,
-    "פעיל במערכת": permission === "ללא הרשאה" ? "לא" : "כן",
+    "פעיל במערכת": permission === "ללא הרשאה" ? "לא" : (String(data.systemActive || data.active || (old ? old["פעיל במערכת"] : "כן") || "כן").trim() === "לא" ? "לא" : "כן"),
     "גוון יוצר": creatorColor,
     "תחום שיוך מרכזי": centralDomain,
     "תחומי שיוך": BH_AD_join_(BH_AD_split_(additionalDomains).filter(v => v !== centralDomain)),
@@ -5351,4 +5351,51 @@ function BH_CAD_staticAssertions_(){
   if(out.timeline.some(n => BH_CAD_projectIdFromRow_(n) === "P2")) throw new Error("BH_CAD static assertion failed: timeline not narrowed");
   if(out.calendarItems.some(n => BH_CAD_taskIdFromRow_(n) === "T2")) throw new Error("BH_CAD static assertion failed: calendar/activity not narrowed");
   return true;
+}
+
+
+/***********************
+ * System Users Administration – dedicated save wrapper
+ ***********************/
+function שמירת_משתמש_מערכת(data) {
+  const actor = דרוש_כתיבה_Build11_2_(data && data.authToken);
+  if (!data || !data.id) throw new Error("חסר מזהה איש קשר לניהול משתמש מערכת");
+
+  const contacts = readSheet_(SHEETS.CONTACTS);
+  const old = contacts.find(c => String(c["מזהה איש קשר"] || "") === String(data.id || ""));
+  if (!old) throw new Error("איש הקשר לא נמצא");
+
+  const oldRank = דרגת_הרשאה_Build11_2_(old["הרשאת מערכת"] || "ללא הרשאה");
+  const actorRank = דרגת_הרשאה_Build11_2_(actor.role);
+  if (oldRank > actorRank) throw new Error("אין לך הרשאה לערוך משתמש בדרגת הרשאה גבוהה משלך");
+
+  const nextPermission = String(data.systemPermission || old["הרשאת מערכת"] || "ללא הרשאה").trim();
+  if (דרגת_הרשאה_Build11_2_(nextPermission) > actorRank) throw new Error("אין לך הרשאה להעניק הרשאת מערכת גבוהה משלך");
+
+  const canEditAssignmentDomains = BH_AD_isSuperAdmin_(actor);
+  const submittedCentralDomain = String(data.assignmentCentralDomain || "").trim();
+  const submittedAdditionalDomains = BH_AD_join_(data.assignmentAdditionalDomains || data.assignmentDomains || "");
+  if (!canEditAssignmentDomains && (submittedCentralDomain || submittedAdditionalDomains)) {
+    throw new Error("רק מנהל ראשי רשאי לערוך תחומי שיוך");
+  }
+
+  return שמירת_איש_קשר({
+    authToken: data.authToken,
+    id: old["מזהה איש קשר"],
+    name: old["שם מלא"],
+    phone: old["טלפון"],
+    email: old["אימייל"],
+    address: old["כתובת"],
+    source: old["מקור הגעה"],
+    contactType: old["סוג איש קשר"],
+    status: old["סטטוס לקוח"],
+    tags: old["תגיות"],
+    manager: data.manager !== undefined ? data.manager : old["מנהל"],
+    owner: data.owner !== undefined ? data.owner : old["אחראי"],
+    systemPermission: nextPermission,
+    systemActive: nextPermission === "ללא הרשאה" ? "לא" : (String(data.systemActive || old["פעיל במערכת"] || "כן").trim() === "לא" ? "לא" : "כן"),
+    creatorColor: old["גוון יוצר"],
+    assignmentCentralDomain: nextPermission === "מנהל" ? (canEditAssignmentDomains ? submittedCentralDomain : "") : "",
+    assignmentAdditionalDomains: nextPermission === "מנהל" ? (canEditAssignmentDomains ? submittedAdditionalDomains : "") : ""
+  });
 }
