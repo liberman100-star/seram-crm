@@ -2812,7 +2812,11 @@ function mergeData_Build13_2(d){
   }
 
   if(d.loadedModules){
-    __BH_LOADED_MODULES__ = Object.assign(__BH_LOADED_MODULES__ || {}, d.loadedModules || {});
+    Object.keys(d.loadedModules || {}).forEach(function(moduleName){
+      if(d.loadedModules[moduleName] === true && hasRealModuleData_Build13_2(moduleName, d)){
+        __BH_LOADED_MODULES__[moduleName] = true;
+      }
+    });
   }
 
   if(DATA.currentUser){
@@ -2825,6 +2829,44 @@ function mergeData_Build13_2(d){
     DATA.canSeeSettings === true ||
     (DATA.currentUser && DATA.currentUser.isOwner === true) ||
     String((DATA.currentUser && DATA.currentUser.role) || '').trim() === 'מנהל ראשי';
+}
+
+function hasRealModuleData_Build13_2(moduleName, d){
+  d = d || {};
+  if(moduleName === 'dashboard'){
+    return !!(d.dashboard && Object.keys(d.dashboard).length);
+  }
+  if(moduleName === 'settings'){
+    return !!(
+      (d.realSettings && Object.keys(d.realSettings).length) ||
+      (Array.isArray(d.fields) && d.fields.length) ||
+      (d.permissions && Object.keys(d.permissions).length)
+    );
+  }
+  if(moduleName === 'archive'){
+    return Array.isArray(d.archive) || Array.isArray(d.archiveProjects) || Array.isArray(d.projects);
+  }
+  const value = d[moduleName];
+  return Array.isArray(value) ? value.length > 0 : value !== undefined && value !== null;
+}
+
+function markLoadedModulesFromFullCore_Build13_2(d){
+  d = d || {};
+  ['dashboard','projects','contacts','tasks'].forEach(function(moduleName){
+    if(Object.prototype.hasOwnProperty.call(d, moduleName)){
+      __BH_LOADED_MODULES__[moduleName] = true;
+    }
+  });
+  if(
+    Object.prototype.hasOwnProperty.call(d, 'realSettings') ||
+    Object.prototype.hasOwnProperty.call(d, 'fields') ||
+    Object.prototype.hasOwnProperty.call(d, 'permissions')
+  ){
+    __BH_LOADED_MODULES__.settings = true;
+  }
+  if(hasRealModuleData_Build13_2('archive', d)){
+    __BH_LOADED_MODULES__.archive = true;
+  }
 }
 
 function renderShell_Build13_2(d){
@@ -2912,6 +2954,7 @@ function load(forceDashboard=true, after){
 
       DATA = d || {};
       window.DATA = DATA;
+      markLoadedModulesFromFullCore_Build13_2(d);
 
       hideLogin();
       render(DATA);
@@ -2939,7 +2982,7 @@ function load(forceDashboard=true, after){
       window.__BH_CORE_LOAD_WAITERS__ = [];
       showLogin('שגיאה בטעינה: ' + e.message);
     })
-    .קבלת_נתוני_פתיחה_Build13_2(token);
+    .קבלת_נתוני_ליבה_Build13(token);
 }
 
 function firstAllowedTab_Build13_2(){
