@@ -1,49 +1,39 @@
 # CRM load-performance audit
 
-## Scope correction
+## Diagnosis
+The old live path called `קבלת_נתוני_ליבה_Build13`, which returns the full CRM payload before the dashboard is usable. That payload includes projects, contacts, links, full tasks, settings and permissions. The request-scoped read cache reduced duplicate reads within one Apps Script execution, but it did not reduce the initial JSON payload or defer module datasets.
 
-This optimization preserves the observable contract of `קבלת_נתוני_ליבה_Build13`. The initial payload structure is not redesigned: datasets that existing initial-render paths may expect remain available from the canonical core loader.
+## Instrumentation
+Temporary instrumentation is present but disabled by default with `BH_PERF_AUDIT_ENABLED = false`. When enabled for one request it logs only aggregate timings, physical Sheet read counts and payload byte size; it does not log record contents.
 
-Performance improvements in this PR are limited to:
+A callable super-admin-only diagnostic, `BH13_4_מדידת_ליבה_מול_פתיחה(token)`, measures one old full-core execution and one new fast-shell execution and returns only:
+- total milliseconds;
+- physical Sheet read count by sheet name;
+- serialized payload byte size.
 
-1. Request-scoped Sheet row caching.
-2. Eliminating duplicate spreadsheet reads within one Apps Script request.
-3. Preventing duplicate concurrent `load` / `refreshCore` calls on the client.
-4. Using the already-existing module lazy-load endpoint for module navigation instead of routing those lazy requests back through the full core endpoint.
+## Customer fast-shell correction
+Customer domain discovery for the initial shell first uses `BH_CAD_availableDomainsForCustomerMinimal_(contactId)`. For the domain gate it reads only:
+- `שיוכים` for active portal-visible links for the authenticated customer contact id;
+- `פרויקטים` for the linked project ids and their Assignment Domain values, excluding archived projects;
+- `הגדרות_ערכים` for active Assignment Domain options.
 
-## Highest-cost paths found
+After a single domain is auto-selected or a stored selected domain is valid, the real customer dashboard shell additionally reads `משימות` and returns only tasks linked to the selected-domain visible projects, including dated records needed by the initial dashboard/calendar. It does not read notes, timeline, settings administration, permissions administration, full contact lists, or card details. Multi-domain customers still receive the selection gate before normal dashboard data is exposed.
 
-Focused inspection of the current initial load path showed that `קבלת_נתוני_ליבה_Build13` delegates through the full data loader and customer-domain wrapper. That path can repeatedly request the same Sheets during one server execution, including sessions, projects, contacts, links, tasks, task notes, settings, field settings, role permissions, user permissions, branding, and domain-branding rows.
+## New loading flow
+### Stage 1 fast initial shell
+The client calls `קבלת_נתוני_פתיחה_Build13_2` on login. The initial shell contains auth/current user, branding, real authorized dashboard totals, dated task/calendar records required by the initial dashboard where applicable, navigation flags and permission flags. `loadedModules.dashboard` is set only after those dashboard values are actually computed.
 
-The highest-cost categories were:
+### Stage 2 lazy modules
+Deferred datasets:
+- projects: loaded only by the Projects tab;
+- contacts: loaded only by the Contacts tab;
+- full task table with project/contact lookup data: loaded only by the Tasks tab;
+- settings/admin data: loaded only by Settings and still rejects unauthorized users;
+- archive records: loaded only by Archive;
+- project/contact/task card details: loaded through dedicated card endpoints.
 
-1. Spreadsheet reads of large core sheets (`פרויקטים`, `אנשי קשר`, `שיוכים`, `משימות`).
-2. Repeated helper-level `readSheet_` calls for settings, branding, permissions, and customer-domain evaluation during a single core request.
-3. Client-side duplicate top-level core calls caused by unguarded `load` / `refreshCore` paths.
-4. Module navigation that was intended to be lazy but called the full core endpoint.
+## Authorization rules
+Every lazy endpoint validates the auth token, applies role permissions via the existing user filter, applies Assignment Domain restrictions, applies selected-domain customer filtering only to payloads that include project-related collections, and preserves existing archive behavior unless the Archive module is explicitly requested.
 
-Production personal-data logging remains disabled by default. The timing hooks are controlled by `BH_PERF_AUDIT_ENABLED`, which defaults to `false`, and log only aggregate timings/read counts/payload byte size when explicitly enabled.
-
-## Before / after
-
-| Metric | Before | After |
-| --- | ---: | ---: |
-| Initial core spreadsheet reads | Repeated read calls possible for the same sheet during one representative owner/customer-domain load | One physical `readSheet_` call per sheet name per wrapped core/module request; repeated helper calls reuse `__BH_REQUEST_ROWS__` |
-| Initial payload contents | Canonical `קבלת_נתוני_ליבה_Build13` payload | Same canonical `קבלת_נתוני_ליבה_Build13` payload |
-| Initial payload size | Canonical payload size | Same payload contract; no dataset is removed, renamed, or omitted from core |
-| Server execution timing | Dominated by repeated Sheet reads and full payload construction | Request-scoped row cache removes duplicate Sheet IO within the request; instrumentation records aggregate timing when enabled |
-| Client render timing | Initial render could overlap with an immediate duplicate full refresh; lazy module navigation could call full core | `load` and `refreshCore` have duplicate in-flight guards; module navigation calls the already-existing module endpoint |
-
-## Datasets moved to lazy loading
-
-No new initial-core datasets were moved to lazy loading in this corrected change. Existing lazy module/card endpoints continue to handle data that was already loaded lazily before this PR.
-
-## Remaining bottlenecks
-
-- Apps Script still reads the base Sheets required to build the canonical authorized core payload and preserve Assignment Domain/customer-domain filtering.
-- Payload size is unchanged by design because backward compatibility of `קבלת_נתוני_ליבה_Build13` is required.
-- Google Sheets API latency remains an external bottleneck; the request-scoped cache reduces duplicate reads but cannot eliminate the first read of a large sheet.
-
-## PR #21 finalization on current main
-
-The PR #21 performance patch is intentionally limited to the request-scoped `readSheet_` cache, disabled-by-default aggregate perf hooks, unchanged canonical core payload, existing module endpoint loading, duplicate initial-load guard, and queued `refreshCore` callbacks. No current-main functional fixes from PR #20 are replaced or reverted by this performance layer.
+## Measurement status
+Actual live production before/after numbers were not obtained from this repository environment because the Apps Script service and production spreadsheet cannot be executed locally. Use `BH13_4_מדידת_ליבה_מול_פתיחה(token)` with a super-admin token in Apps Script to obtain verified production totals without exposing record contents.

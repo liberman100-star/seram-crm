@@ -665,7 +665,7 @@ function render(d){
   tableContacts();
   tableTasks();
 
-  if(DATA.canSeeSettings) renderSettings();
+  if(DATA.canSeeSettings && settingsPayloadLoaded_Build13_4()) renderSettings();
   if(typeof renderModernKpis === 'function') renderModernKpis();
   if(typeof updateCalendarViewButtons === 'function') updateCalendarViewButtons();
   if(typeof applySecurityUI === 'function') applySecurityUI();
@@ -1352,6 +1352,12 @@ function saveProjectNote(projectId){
 }
 
 /* Settings */
+
+function settingsPayloadLoaded_Build13_4(){
+  return !!((window.__BH_LOADED_MODULES__ && window.__BH_LOADED_MODULES__.settings) ||
+    (DATA && DATA.domainBrandingAdmin) ||
+    (DATA && DATA.loadedModules && DATA.loadedModules.settings));
+}
 function settingsTab(name, btn){
   SETTINGS_TAB = name;
   document.querySelectorAll('.settings-tabs button').forEach(b=>b.classList.remove('active'));
@@ -1359,6 +1365,13 @@ function settingsTab(name, btn){
   renderSettings();
 }
 function renderSettings(){
+  if(!settingsPayloadLoaded_Build13_4()){
+    if(typeof loadModule_Build13_2 === 'function' && DATA && DATA.canSeeSettings){
+      loadModule_Build13_2('settings');
+    }
+    if(typeof settingsBox !== 'undefined') settingsBox.innerHTML = '<div class="card module-loading">טוען הגדרות...</div>';
+    return;
+  }
   if(SETTINGS_TAB==='categories') return renderCategoriesSettings();
   if(SETTINGS_TAB==='options') return renderOptionsSettings();
   if(SETTINGS_TAB==='fields') return renderSystemFieldsSettings();
@@ -2883,13 +2896,18 @@ function renderShell_Build13_2(d){
   try{ applySecurityUI(); }catch(e){}
 }
 
-function load(forceDashboard=true){
-  if(window.__BH_CORE_LOADING__) return;
+window.__BH_CORE_LOAD_WAITERS__ = window.__BH_CORE_LOAD_WAITERS__ || [];
+function load(forceDashboard=true, after){
+  if(window.__BH_CORE_LOADING__){
+    if(typeof after === 'function') window.__BH_CORE_LOAD_WAITERS__.push(after);
+    return;
+  }
   window.__BH_CORE_LOADING__ = true;
   const token = currentToken();
 
   if(!token){
     window.__BH_CORE_LOADING__ = false;
+    window.__BH_CORE_LOAD_WAITERS__ = [];
     showLogin();
     return;
   }
@@ -2897,8 +2915,9 @@ function load(forceDashboard=true){
   google.script.run
     .withSuccessHandler(d=>{
       window.__BH_CORE_LOADING__ = false;
-      if(window.BH_isCustomerDomainSelectionRequired && window.BH_isCustomerDomainSelectionRequired(d)){ window.BH_showCustomerDomainDialog(d); return; }
+      if(window.BH_isCustomerDomainSelectionRequired && window.BH_isCustomerDomainSelectionRequired(d)){ window.__BH_CORE_LOAD_WAITERS__ = []; window.BH_showCustomerDomainDialog(d); return; }
       if(!d || !d.auth || d.auth.allowed !== true){
+        window.__BH_CORE_LOAD_WAITERS__ = [];
         clearToken();
         showLogin((d && d.auth && d.auth.reason) ? d.auth.reason : 'אין הרשאה או שהחיבור פג');
         return;
@@ -2922,13 +2941,18 @@ function load(forceDashboard=true){
       if(typeof updateCalendarViewButtons === 'function'){
         updateCalendarViewButtons();
       }
+
+      const loadWaiters = (typeof after === 'function' ? [after] : []).concat(window.__BH_CORE_LOAD_WAITERS__ || []);
+      window.__BH_CORE_LOAD_WAITERS__ = [];
+      loadWaiters.forEach(cb=>{ try{ cb(); }catch(err){ console.log(err); } });
     })
     .withFailureHandler(e=>{
       window.__BH_CORE_LOADING__ = false;
       clearToken();
+      window.__BH_CORE_LOAD_WAITERS__ = [];
       showLogin('שגיאה בטעינה: ' + e.message);
     })
-    .קבלת_נתוני_ליבה_Build13(token);
+    .קבלת_נתוני_פתיחה_Build13_2(token);
 }
 
 function firstAllowedTab_Build13_2(){
@@ -2962,26 +2986,50 @@ function ensureModule_Build13_2(id){
   loadModule_Build13_2(module);
 }
 
-function loadModule_Build13_2(module){
+
+function showModuleLoading_Build13_4(module){
+  const map = {projects:'projectsTable', contacts:'contactsTable', tasks:'tasksTable', settings:'settingsBox', archive:'archiveBox'};
+  const el = document.getElementById(map[module] || (module + 'Table'));
+  if(el) el.innerHTML = '<div class="card module-loading">טוען נתונים...</div>';
+}
+function hideModuleLoading_Build13_4(module){
+  const el = document.querySelector('#' + module + ' .module-loading');
+  if(el) el.remove();
+}
+function loadModule_Build13_2(module, after){
+  window.__BH_MODULE_WAITERS__ = window.__BH_MODULE_WAITERS__ || {};
+  window.__BH_MODULE_WAITERS__[module] = window.__BH_MODULE_WAITERS__[module] || [];
   const token = currentToken();
 
   if(!token){
+    __BH_LOADING_MODULE__[module] = false;
+    hideModuleLoading_Build13_4(module);
+    window.__BH_MODULE_WAITERS__[module] = [];
     showLogin();
     return;
   }
 
   if(__BH_LOADING_MODULE__[module]){
+    if(typeof after === 'function') window.__BH_MODULE_WAITERS__[module].push(after);
     return;
   }
+  if(typeof after === 'function') window.__BH_MODULE_WAITERS__[module].push(after);
 
   __BH_LOADING_MODULE__[module] = true;
+  showModuleLoading_Build13_4(module);
 
   google.script.run
     .withSuccessHandler(d=>{
       __BH_LOADING_MODULE__[module] = false;
+      hideModuleLoading_Build13_4(module);
 
-      if(window.BH_isCustomerDomainSelectionRequired && window.BH_isCustomerDomainSelectionRequired(d)){ window.BH_showCustomerDomainDialog(d); return; }
+      if(window.BH_isCustomerDomainSelectionRequired && window.BH_isCustomerDomainSelectionRequired(d)){
+        window.__BH_MODULE_WAITERS__[module] = [];
+        window.BH_showCustomerDomainDialog(d);
+        return;
+      }
       if(!d || !d.auth || d.auth.allowed !== true){
+        window.__BH_MODULE_WAITERS__[module] = [];
         clearToken();
         showLogin((d && d.auth && d.auth.reason) ? d.auth.reason : 'אין הרשאה או שהחיבור פג');
         return;
@@ -2994,16 +3042,21 @@ function loadModule_Build13_2(module){
       tableContacts();
       tableTasks();
 
-      if(DATA.canSeeSettings){
+      if(module === 'settings' && DATA.canSeeSettings && settingsPayloadLoaded_Build13_4()){
         renderSettings();
       }
 
       renderDashboard();
 
       __BH_LOADED_MODULES__[module] = true;
+      const moduleWaiters = window.__BH_MODULE_WAITERS__[module] || [];
+      window.__BH_MODULE_WAITERS__[module] = [];
+      moduleWaiters.forEach(cb=>{ try{ cb(); }catch(err){ console.log(err); } });
     })
     .withFailureHandler(e=>{
       __BH_LOADING_MODULE__[module] = false;
+      hideModuleLoading_Build13_4(module);
+      window.__BH_MODULE_WAITERS__[module] = [];
       alert(e.message);
     })
     .קבלת_מודול_Build13_2(token, module);
@@ -3065,7 +3118,7 @@ function refreshCore(after){
       tableContacts();
       tableTasks();
 
-      if(DATA.canSeeSettings){
+      if(DATA.canSeeSettings && settingsPayloadLoaded_Build13_4()){
         renderSettings();
       }
 
@@ -5603,29 +5656,35 @@ function findStoredContactById(contactId){
   return (DATA.contacts || []).find(c => String(c['מזהה איש קשר'] || '') === id) || null;
 }
 
-function openContactCardById(contactId){
-  const contact = findStoredContactById(contactId);
-  if(!contact){
-    alert('איש הקשר לא נמצא לאחר הרענון');
-    return false;
-  }
-  openContactCard(contact);
+window.openContactCardById = function(contactId){
+  const id = String(contactId || '').trim();
+  if(!id){ alert('חסר מזהה איש קשר לפתיחת כרטיס'); return false; }
+  google.script.run
+    .withSuccessHandler(function(fullPayload){
+      renderContactCard(fullPayload);
+    })
+    .withFailureHandler(function(e){
+      alert('פתיחת כרטיס איש קשר נכשלה: ' + ((e && e.message) || e || 'שגיאה לא ידועה'));
+    })
+    .כרטיס_איש_קשר({id:id, authToken:currentToken(), token:currentToken()});
   return true;
-}
+};
 
-function openContactEditorById(contactId){
-  const contact = findStoredContactById(contactId);
+window.openContactEditorById = function(contactId){
+  const id = String(contactId || '').trim();
+  if(!id){ alert('חסר מזהה איש קשר לעריכה'); return false; }
+  const contact = findStoredContactById(id);
   if(!contact){
-    alert('איש הקשר לא נמצא לאחר הרענון');
+    alert('איש הקשר לא נטען. פתח את לשונית אנשי קשר ונסה שוב.');
     return false;
   }
   if(!canEdit()) {
-    openContactCardById(contactId);
+    alert('אין לך הרשאה לערוך איש קשר זה');
     return false;
   }
   openContact(contact);
   return true;
-}
+};
 
 function canInviteContact(c){
   if(!c || !c['מזהה איש קשר']) return false;

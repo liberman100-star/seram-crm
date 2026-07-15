@@ -5922,3 +5922,254 @@ if(BH_perf_originalModuleFinal_){
     });
   };
 }
+
+/***********************
+ * Build 13.4 – production lazy shell hardening
+ * Keeps performance logging disabled by default; when enabled it reports total time,
+ * physical Sheet reads, build sections, and JSON payload bytes for one request.
+ ***********************/
+
+function BH_CAD_activeDomainSetMinimal_(){
+  const set = {};
+  readSheet_("הגדרות_ערכים")
+    .filter(r => String(r["סוג ערך"] || "").trim() === BH_AD_CATEGORY && String(r["פעיל"] || "כן").trim() === "כן")
+    .forEach(r => { const v = String(r["ערך"] || "").trim(); if(v && v !== BH_AD_DEFAULT) set[v] = true; });
+  return set;
+}
+
+function BH_CAD_isActivePortalLink_(link, contactId){
+  return String(link && link["מזהה איש קשר"] || "").trim() === String(contactId || "").trim() &&
+    String(link && link["מורשה צפייה בפורטל"] || "").trim() === "כן" &&
+    String(link && link["פעיל"] || "כן").trim() !== "לא" &&
+    String(link && link["בארכיון"] || "").trim() !== "כן";
+}
+
+function BH_CAD_availableDomainsForCustomerMinimal_(contactId){
+  const active = BH_CAD_activeDomainSetMinimal_();
+  const linkedProjectIds = {};
+  readSheet_(SHEETS.LINKS)
+    .filter(l => BH_CAD_isActivePortalLink_(l, contactId))
+    .forEach(l => { const id = String(l["מזהה פרויקט"] || "").trim(); if(id) linkedProjectIds[id] = true; });
+  const seen = {};
+  return readSheet_(SHEETS.PROJECTS)
+    .filter(p => linkedProjectIds[String(p["מזהה פרויקט"] || "").trim()])
+    .filter(p => String(p["בארכיון"] || "").trim() !== "כן")
+    .map(BH_AD_projectDomain_)
+    .map(d => String(d || "").trim())
+    .filter(d => d && d !== BH_AD_DEFAULT && active[d])
+    .filter(d => { if(seen[d]) return false; seen[d] = true; return true; });
+}
+
+function BH13_4_customerShellPayload_(user, selectedDomain, visibleProjects, authorizedTasks, visibleLinks){
+  const actions = פעולות_מותרות_Build11_2_(user);
+  const system = selectedDomain ? (BH_DB_brandingForDomain_(selectedDomain) || BH_DB_defaultBranding_()) : BH_DB_defaultBranding_();
+  const currentUser = Object.assign({}, user || {});
+  if(selectedDomain){
+    currentUser[BH_CAD_SESSION_FIELD] = selectedDomain;
+    currentUser.activeAssignmentDomain = selectedDomain;
+  }
+  visibleProjects = (visibleProjects || []).filter(p => String(p["בארכיון"] || "").trim() !== "כן");
+  authorizedTasks = (authorizedTasks || []).filter(t => String(t["בארכיון"] || "").trim() !== "כן");
+  visibleLinks = visibleLinks || [];
+  const dashboard = calcDashboard_(visibleProjects, [], authorizedTasks);
+  const relatedContacts = {};
+  visibleLinks.forEach(l => { const id = String(l["מזהה איש קשר"] || "").trim(); if(id) relatedContacts[id] = true; });
+  if(user && user.contactId) relatedContacts[String(user.contactId)] = true;
+  dashboard.contactsCount = Object.keys(relatedContacts).length;
+  const datedTasks = authorizedTasks.filter(t => !!t["תאריך"]);
+  return {
+    _payloadType: "openingShell",
+    auth: { allowed: true },
+    system: system,
+    rootBranding: system,
+    defaultBranding: BH_DB_defaultBranding_(),
+    currentUser: currentUser,
+    canSeeSettings: actions.canSeeSettings,
+    canSeeDashboard: actions.canSeeDashboard,
+    canSeeArchive: actions.canSeeArchive,
+    canSeeTimeline: actions.canSeeTimeline,
+    actionPermissions: actions,
+    canCreate: actions.canCreate,
+    canEdit: actions.canEdit,
+    canDelete: actions.canDelete,
+    readOnly: actions.readOnly,
+    accessNotice: "",
+    dashboard: dashboard,
+    tasks: datedTasks,
+    calendarTasks: datedTasks,
+    projects: [],
+    contacts: [],
+    links: [],
+    realSettings: {},
+    categories: [],
+    fields: [],
+    permissions: {},
+    loadedModules: { dashboard:true }
+  };
+}
+
+function BH13_4_customerDashboardShellForDomain_(user, selectedDomain){
+  const contactId = String(user && user.contactId || "").trim();
+  const portalLinks = readSheet_(SHEETS.LINKS).filter(l => BH_CAD_isActivePortalLink_(l, contactId));
+  const linkedProjectIds = {};
+  portalLinks.forEach(l => { const id = String(l["מזהה פרויקט"] || "").trim(); if(id) linkedProjectIds[id] = true; });
+  const visibleProjects = readSheet_(SHEETS.PROJECTS)
+    .filter(p => linkedProjectIds[String(p["מזהה פרויקט"] || "").trim()])
+    .filter(p => String(p["בארכיון"] || "").trim() !== "כן")
+    .filter(p => BH_AD_projectDomain_(p) === selectedDomain);
+  const selectedProjectIds = {};
+  visibleProjects.forEach(p => { selectedProjectIds[String(p["מזהה פרויקט"] || "").trim()] = true; });
+  const selectedLinks = portalLinks.filter(l => selectedProjectIds[String(l["מזהה פרויקט"] || "").trim()]);
+  const authorizedTasks = readSheet_(SHEETS.TASKS)
+    .filter(t => selectedProjectIds[String(t["מזהה פרויקט"] || "").trim()])
+    .filter(t => String(t["בארכיון"] || "").trim() !== "כן");
+  return BH13_4_customerShellPayload_(user, selectedDomain, visibleProjects, authorizedTasks, selectedLinks);
+}
+
+
+function BH13_4_filterContactsModuleForCustomer_(payload, user, selectedDomain){
+  if(!payload || !Array.isArray(payload.contacts)) return payload;
+  const contactId = String(user && user.contactId || "").trim();
+  const portalLinks = readSheet_(SHEETS.LINKS).filter(l => BH_CAD_isActivePortalLink_(l, contactId));
+  const linkedProjectIds = {};
+  portalLinks.forEach(l => { const id = String(l["מזהה פרויקט"] || "").trim(); if(id) linkedProjectIds[id] = true; });
+  const selectedProjectIds = {};
+  readSheet_(SHEETS.PROJECTS)
+    .filter(p => linkedProjectIds[String(p["מזהה פרויקט"] || "").trim()])
+    .filter(p => String(p["בארכיון"] || "").trim() !== "כן")
+    .filter(p => BH_AD_projectDomain_(p) === selectedDomain)
+    .forEach(p => { selectedProjectIds[String(p["מזהה פרויקט"] || "").trim()] = true; });
+  const relatedContactIds = {};
+  portalLinks
+    .filter(l => selectedProjectIds[String(l["מזהה פרויקט"] || "").trim()])
+    .forEach(l => { const id = String(l["מזהה איש קשר"] || "").trim(); if(id) relatedContactIds[id] = true; });
+  if(contactId) relatedContactIds[contactId] = true;
+  payload.contacts = payload.contacts.filter(c => !!relatedContactIds[String(c["מזהה איש קשר"] || "").trim()]);
+  return payload;
+}
+
+function BH13_4_stripInternalPayloadMarkers_(payload){
+  if(payload && typeof payload === "object") delete payload._payloadType;
+  return payload;
+}
+
+function BH13_4_applyCustomerDomainIfNeeded_(payload, token, payloadType){
+  const baseUser = קבלת_משתמש_מסשן_Build7_(token);
+  if(!baseUser || !baseUser.allowed || String(baseUser.role || '').trim() !== 'לקוח') return BH13_4_stripInternalPayloadMarkers_(payload);
+  payloadType = payloadType || (payload && payload._payloadType) || "unknown";
+  const domains = BH_CAD_availableDomainsForCustomerMinimal_(baseUser.contactId || '');
+  const session = BH_CAD_session_(token);
+  let selected = session ? String(session[BH_CAD_SESSION_FIELD] || '').trim() : '';
+  if(domains.length === 1){
+    selected = domains[0];
+    if(session && String(session[BH_CAD_SESSION_FIELD] || '').trim() !== selected) BH_CAD_setSessionDomain_(token, selected);
+  } else if(domains.indexOf(selected) === -1) {
+    if(selected) BH_CAD_setSessionDomain_(token, '');
+    selected = '';
+  }
+  if(domains.length > 1 && !selected) return BH_CAD_domainRequiredPayload_(baseUser, domains);
+  if(!payload || payloadType === "openingShell") return BH13_4_stripInternalPayloadMarkers_(BH13_4_customerDashboardShellForDomain_(baseUser, selected));
+  if(selected && payload && payload.auth && payload.auth.allowed === true && payloadType === "contacts"){
+    return BH13_4_stripInternalPayloadMarkers_(BH13_4_filterContactsModuleForCustomer_(payload, baseUser, selected));
+  }
+  const projectPayloadTypes = {projects:true, tasks:true, archive:true, canonical:true, fullCore:true};
+  if(selected && payload && payload.auth && payload.auth.allowed === true && projectPayloadTypes[payloadType]){
+    return BH13_4_stripInternalPayloadMarkers_(BH_CAD_applySelectedDomainFilter_(payload, payload.currentUser || baseUser, selected));
+  }
+  if(selected && payload && payload.currentUser){
+    payload.currentUser[BH_CAD_SESSION_FIELD] = selected;
+    payload.currentUser.activeAssignmentDomain = selected;
+  }
+  return BH13_4_stripInternalPayloadMarkers_(payload);
+}
+
+var BH13_4_originalOpening_ = קבלת_נתוני_פתיחה_Build13_2;
+קבלת_נתוני_פתיחה_Build13_2 = function(token){
+  return BH_withRequestRows_('קבלת_נתוני_פתיחה_Build13_2', function(){
+    const authStart = BH_perfStart_('auth/current user');
+    const user = קבלת_משתמש_מסשן_Build7_(token);
+    BH_perfEnd_('auth/current user', authStart);
+    if(user && user.allowed && String(user.role || '').trim() === 'לקוח'){
+      const filterStart = BH_perfStart_('permissions/domain filtering');
+      const customerShell = BH13_4_applyCustomerDomainIfNeeded_(null, token, "openingShell");
+      BH_perfEnd_('permissions/domain filtering', filterStart);
+      return customerShell;
+    }
+    const out = BH13_4_originalOpening_(token);
+    return out;
+  });
+};
+
+
+function BH13_4_archivePayloadFromCanonical_(baseOut, data, user){
+  const role = String(user && user.role || "").trim();
+  const isCustomer = role === "לקוח";
+  const archivedProjects = (data.projects || []).filter(r => String(r['בארכיון'] || '') === 'כן');
+  const archivedProjectIds = {};
+  archivedProjects.forEach(p => { const id = String(p['מזהה פרויקט'] || '').trim(); if(id) archivedProjectIds[id] = true; });
+  const archiveLinks = (data.links || []).filter(l => archivedProjectIds[String(l['מזהה פרויקט'] || '').trim()]);
+  const out = Object.assign({}, baseOut || {}, {
+    projects: archivedProjects,
+    contacts: (data.contacts || []).filter(r => String(r['בארכיון'] || '') === 'כן'),
+    tasks: (data.tasks || []).filter(r => String(r['בארכיון'] || '') === 'כן' && archivedProjectIds[String(r['מזהה פרויקט'] || '').trim()]),
+    links: isCustomer ? archiveLinks : [],
+    loadedModules: { archive:true }
+  });
+  if(isCustomer){
+    const relatedContactIds = {};
+    archiveLinks.forEach(l => { const id = String(l['מזהה איש קשר'] || '').trim(); if(id) relatedContactIds[id] = true; });
+    const ownId = String(user && user.contactId || '').trim();
+    if(ownId && (data.contacts || []).some(c => String(c['מזהה איש קשר'] || '').trim() === ownId)) relatedContactIds[ownId] = true;
+    out.contacts = (data.contacts || []).filter(c => String(c['בארכיון'] || '') === 'כן' && relatedContactIds[String(c['מזהה איש קשר'] || '').trim()]);
+  }
+  return out;
+}
+
+var BH13_4_originalModule_ = קבלת_מודול_Build13_2;
+קבלת_מודול_Build13_2 = function(token, moduleName){
+  return BH_withRequestRows_('קבלת_מודול_Build13_2:' + moduleName, function(){
+    const module = String(moduleName || '').trim();
+    const buildStart = BH_perfStart_('build module ' + module);
+    let out = BH13_4_originalModule_(token, module);
+    BH_perfEnd_('build module ' + module, buildStart);
+    if(module === 'settings' && out && out.auth && out.auth.allowed === true){
+      out = BH_DB_attachCoreBranding_(out);
+      out.loadedModules = Object.assign(out.loadedModules || {}, { settings:true });
+      return out;
+    }
+    if(module === 'archive' && out && out.auth && out.auth.allowed === true){
+      const user = קבלת_משתמש_מסשן_Build7_(token);
+      const data = קבלת_נתונים_Build7(token);
+      out = BH13_4_archivePayloadFromCanonical_(out, data, user);
+    }
+    out = BH13_4_applyCustomerDomainIfNeeded_(out, token, module);
+    if(out && out.auth && out.auth.allowed === true){
+      out.loadedModules = out.loadedModules || {};
+      out.loadedModules[module] = true;
+    }
+    return out;
+  });
+};
+
+
+function BH13_4_measureEndpointAggregate_(label, fn){
+  let out;
+  const started = Date.now();
+  __BH_REQUEST_ROWS__ = {};
+  __BH_REQUEST_PERF__ = { started: started, reads: {}, timings: {}, payloadBytes: 0 };
+  try {
+    out = fn();
+    const bytes = JSON.stringify(out || {}).length;
+    return { label: label, totalMs: Date.now() - started, reads: Object.assign({}, __BH_REQUEST_PERF__.reads || {}), payloadBytes: bytes };
+  } finally {
+    __BH_REQUEST_ROWS__ = null;
+  }
+}
+
+function BH13_4_מדידת_ליבה_מול_פתיחה(token){
+  BH_AD_requireSuperAdminToken_(token);
+  return {
+    oldFullCore: BH13_4_measureEndpointAggregate_('oldFullCore', function(){ return BH_perf_originalCoreFinal_(token); }),
+    newFastShell: BH13_4_measureEndpointAggregate_('newFastShell', function(){ return קבלת_נתוני_פתיחה_Build13_2(token); })
+  };
+}
