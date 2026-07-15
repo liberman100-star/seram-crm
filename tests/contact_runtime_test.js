@@ -10,6 +10,14 @@ assert(/function canInviteContact\(c\)/.test(html), 'canonical canInviteContact 
 assert(!/safeCanInviteContact/.test(html), 'renderContactCard does not reference a renamed helper');
 assert(/typeof canInviteContact === 'function' && canInviteContact\(c\)/.test(html), 'renderContactCard guards the canonical helper before calling it');
 assert(/window\.__contactInvitationSending = __contactInvitationSending;/.test(html), 'invitation sending state remains available on window');
+assert(/r=>`openContactCardById\('\$\{esc\(r\['מזהה איש קשר'\]\)\}'\)`/.test(html), 'contact row click uses canonical card opener');
+assert(/<button onclick="openContactEditorById\('\$\{id\}'\)">ערוך<\/button>/.test(html), 'contact edit action keeps editor opener');
+assert(/id="assignmentDomainsBox"/.test(html), 'contact editor renders assignment-domain box');
+assert(/id="cCentralAssignmentDomain"/.test(html), 'contact editor renders central assignment-domain field');
+assert(/id="cAdditionalAssignmentDomains"/.test(html), 'contact editor renders additional assignment-domain field');
+assert(/p === 'מנהל'[\s\S]*canManageAssignmentDomains\(\)[\s\S]*assignmentDomainsBox\.classList\.remove\('hidden'\)/.test(html), 'assignment-domain controls show only for manager with domain-management permission');
+assert(/assignmentCentralDomain: \(window\.cCentralAssignmentDomain \? cCentralAssignmentDomain\.value : \(\(window\.__editingContactForSave \|\| \{\}\)\['תחום שיוך מרכזי'\] \|\| ''\)\)/.test(html), 'contact save preserves central assignment domain when field is absent');
+assert(/assignmentAdditionalDomains: \(window\.cAdditionalAssignmentDomains \? selectedAdditionalAssignmentDomains\(\) : \(\(window\.__editingContactForSave \|\| \{\}\)\['תחומי שיוך'\] \|\| ''\)\)/.test(html), 'contact save preserves additional assignment domains when field is absent');
 
 const helperStart = html.indexOf('function isValidStoredContactEmail(email)');
 const renderStart = html.indexOf('renderContactCard = function(d){', helperStart);

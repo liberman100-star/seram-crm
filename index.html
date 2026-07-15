@@ -5679,6 +5679,10 @@ window.updateContactPermissionFields = function(){
     contactCreatorColorBox.classList.add('hidden');
   }
 
+  if(window.assignmentDomainsBox){
+    assignmentDomainsBox.classList.add('hidden');
+  }
+
   if(p === 'משתמש' && window.contactManagerBox){
     contactManagerBox.classList.remove('hidden');
   }
@@ -5689,6 +5693,10 @@ window.updateContactPermissionFields = function(){
 
   if(['מנהל ראשי','מנהל','משתמש'].includes(p) && window.contactCreatorColorBox){
     contactCreatorColorBox.classList.remove('hidden');
+  }
+
+  if(p === 'מנהל' && typeof canManageAssignmentDomains === 'function' && canManageAssignmentDomains() && window.assignmentDomainsBox){
+    assignmentDomainsBox.classList.remove('hidden');
   }
 };
 
@@ -5712,6 +5720,13 @@ window.openContactCardById = function(contactId){
     })
     .כרטיס_איש_קשר({id:id, authToken:currentToken(), token:currentToken()});
   return true;
+};
+
+window.openContactCard = function(contactOrId){
+  const id = (contactOrId && typeof contactOrId === 'object')
+    ? String(contactOrId['מזהה איש קשר'] || contactOrId.id || '').trim()
+    : String(contactOrId || '').trim();
+  return openContactCardById(id);
 };
 
 window.openContactEditorById = function(contactId){
@@ -5756,6 +5771,7 @@ window.sendContactInvitation = function(contactId){
 
 window.openContact = function(r={}){
   const isEdit = !!r['מזהה איש קשר'];
+  window.__editingContactForSave = r || {};
 
   modalBox.className='box small';
   modalBox.innerHTML=`
@@ -5798,6 +5814,14 @@ window.openContact = function(r={}){
     <select id="cPermission" onchange="updateContactPermissionFields()">
       ${permissionOptions(r['הרשאת מערכת'] || 'ללא הרשאה')}
     </select>
+
+    ${canManageAssignmentDomains() ? `<div id="assignmentDomainsBox" class="${(r['הרשאת מערכת'] || 'ללא הרשאה') === 'מנהל' ? '' : 'hidden'}">
+      <label>תחום שיוך מרכזי</label>
+      <select id="cCentralAssignmentDomain"><option value="">ללא</option>${assignmentDomainOptions(r['תחום שיוך מרכזי'] || '').replace(/<option value="ללא"[^>]*>ללא<\/option>/,'')}</select>
+      <label>תחומי שיוך נוספים</label>
+      <select id="cAdditionalAssignmentDomains" multiple size="5">${assignmentDomainsMulti(r['תחומי שיוך'] || '')}</select>
+      <p class="muted">זמין רק לבעלים / מנהל ראשי ורק עבור הרשאת מנהל. “ללא” לא נשמר בתחומים נוספים, והתחום המרכזי לא יופיע בהם.</p>
+    </div>` : ''}
 
     <div id="contactManagerBox" class="hidden">
       <label>מנהל</label>
@@ -5880,7 +5904,10 @@ window.saveContact = function(id){
       manager: (window.cManager ? cManager.value : ""),
       owner: (window.cOwner ? cOwner.value : ""),
       systemPermission: cPermission.value,
-      creatorColor: (window.cCreatorColor ? cCreatorColor.value : "")
+      creatorColor: (window.cCreatorColor ? cCreatorColor.value : ""),
+      assignmentCentralDomain: (window.cCentralAssignmentDomain ? cCentralAssignmentDomain.value : ((window.__editingContactForSave || {})['תחום שיוך מרכזי'] || '')),
+      assignmentAdditionalDomains: (window.cAdditionalAssignmentDomains ? selectedAdditionalAssignmentDomains() : ((window.__editingContactForSave || {})['תחומי שיוך'] || '')),
+      assignmentDomains: (window.cAdditionalAssignmentDomains ? selectedAdditionalAssignmentDomains() : ((window.__editingContactForSave || {})['תחומי שיוך'] || ''))
     });
 };
 
