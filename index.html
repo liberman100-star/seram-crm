@@ -2894,6 +2894,7 @@ function load(forceDashboard=true, after){
 
   if(!token){
     window.__BH_CORE_LOADING__ = false;
+    window.__BH_CORE_LOAD_WAITERS__ = [];
     showLogin();
     return;
   }
@@ -2903,6 +2904,7 @@ function load(forceDashboard=true, after){
       window.__BH_CORE_LOADING__ = false;
       if(window.BH_isCustomerDomainSelectionRequired && window.BH_isCustomerDomainSelectionRequired(d)){ window.__BH_CORE_LOAD_WAITERS__ = []; window.BH_showCustomerDomainDialog(d); return; }
       if(!d || !d.auth || d.auth.allowed !== true){
+        window.__BH_CORE_LOAD_WAITERS__ = [];
         clearToken();
         showLogin((d && d.auth && d.auth.reason) ? d.auth.reason : 'אין הרשאה או שהחיבור פג');
         return;
@@ -2981,19 +2983,24 @@ function hideModuleLoading_Build13_4(module){
   const el = document.querySelector('#' + module + ' .module-loading');
   if(el) el.remove();
 }
-function loadModule_Build13_2(module){
+function loadModule_Build13_2(module, after){
+  window.__BH_MODULE_WAITERS__ = window.__BH_MODULE_WAITERS__ || {};
+  window.__BH_MODULE_WAITERS__[module] = window.__BH_MODULE_WAITERS__[module] || [];
   const token = currentToken();
 
   if(!token){
+    __BH_LOADING_MODULE__[module] = false;
+    hideModuleLoading_Build13_4(module);
+    window.__BH_MODULE_WAITERS__[module] = [];
     showLogin();
     return;
   }
 
-  window.__BH_MODULE_WAITERS__ = window.__BH_MODULE_WAITERS__ || {};
-  window.__BH_MODULE_WAITERS__[module] = window.__BH_MODULE_WAITERS__[module] || [];
   if(__BH_LOADING_MODULE__[module]){
+    if(typeof after === 'function') window.__BH_MODULE_WAITERS__[module].push(after);
     return;
   }
+  if(typeof after === 'function') window.__BH_MODULE_WAITERS__[module].push(after);
 
   __BH_LOADING_MODULE__[module] = true;
   showModuleLoading_Build13_4(module);
@@ -3003,8 +3010,13 @@ function loadModule_Build13_2(module){
       __BH_LOADING_MODULE__[module] = false;
       hideModuleLoading_Build13_4(module);
 
-      if(window.BH_isCustomerDomainSelectionRequired && window.BH_isCustomerDomainSelectionRequired(d)){ window.BH_showCustomerDomainDialog(d); return; }
+      if(window.BH_isCustomerDomainSelectionRequired && window.BH_isCustomerDomainSelectionRequired(d)){
+        window.__BH_MODULE_WAITERS__[module] = [];
+        window.BH_showCustomerDomainDialog(d);
+        return;
+      }
       if(!d || !d.auth || d.auth.allowed !== true){
+        window.__BH_MODULE_WAITERS__[module] = [];
         clearToken();
         showLogin((d && d.auth && d.auth.reason) ? d.auth.reason : 'אין הרשאה או שהחיבור פג');
         return;

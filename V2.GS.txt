@@ -5928,11 +5928,80 @@ if(BH_perf_originalModuleFinal_){
  * Keeps performance logging disabled by default; when enabled it reports total time,
  * physical Sheet reads, build sections, and JSON payload bytes for one request.
  ***********************/
+
+function BH_CAD_activeDomainSetMinimal_(){
+  const set = {};
+  readSheet_("הגדרות_ערכים")
+    .filter(r => String(r["סוג ערך"] || "").trim() === BH_AD_CATEGORY && String(r["פעיל"] || "כן").trim() === "כן")
+    .forEach(r => { const v = String(r["ערך"] || "").trim(); if(v && v !== BH_AD_DEFAULT) set[v] = true; });
+  return set;
+}
+
+function BH_CAD_isActivePortalLink_(link, contactId){
+  return String(link && link["מזהה איש קשר"] || "").trim() === String(contactId || "").trim() &&
+    String(link && link["מורשה צפייה בפורטל"] || "").trim() === "כן" &&
+    String(link && link["פעיל"] || "כן").trim() !== "לא" &&
+    String(link && link["בארכיון"] || "").trim() !== "כן";
+}
+
+function BH_CAD_availableDomainsForCustomerMinimal_(contactId){
+  const active = BH_CAD_activeDomainSetMinimal_();
+  const linkedProjectIds = {};
+  readSheet_(SHEETS.LINKS)
+    .filter(l => BH_CAD_isActivePortalLink_(l, contactId))
+    .forEach(l => { const id = String(l["מזהה פרויקט"] || "").trim(); if(id) linkedProjectIds[id] = true; });
+  const seen = {};
+  return readSheet_(SHEETS.PROJECTS)
+    .filter(p => linkedProjectIds[String(p["מזהה פרויקט"] || "").trim()])
+    .filter(p => String(p["בארכיון"] || "").trim() !== "כן")
+    .map(BH_AD_projectDomain_)
+    .map(d => String(d || "").trim())
+    .filter(d => d && d !== BH_AD_DEFAULT && active[d])
+    .filter(d => { if(seen[d]) return false; seen[d] = true; return true; });
+}
+
+function BH13_4_customerShellPayload_(user, selectedDomain){
+  const actions = פעולות_מותרות_Build11_2_(user);
+  const system = selectedDomain ? (BH_DB_brandingForDomain_(selectedDomain) || BH_DB_defaultBranding_()) : BH_DB_defaultBranding_();
+  const currentUser = Object.assign({}, user || {});
+  if(selectedDomain){
+    currentUser[BH_CAD_SESSION_FIELD] = selectedDomain;
+    currentUser.activeAssignmentDomain = selectedDomain;
+  }
+  return {
+    auth: { allowed: true },
+    system: system,
+    rootBranding: system,
+    defaultBranding: BH_DB_defaultBranding_(),
+    currentUser: currentUser,
+    canSeeSettings: actions.canSeeSettings,
+    canSeeDashboard: actions.canSeeDashboard,
+    canSeeArchive: actions.canSeeArchive,
+    canSeeTimeline: actions.canSeeTimeline,
+    actionPermissions: actions,
+    canCreate: actions.canCreate,
+    canEdit: actions.canEdit,
+    canDelete: actions.canDelete,
+    readOnly: actions.readOnly,
+    accessNotice: "",
+    dashboard: { projects:0, contacts:0, tasks:0, openTasks:0, lateTasks:0, todayTasks:0 },
+    tasks: [],
+    calendarTasks: [],
+    projects: [],
+    contacts: [],
+    links: [],
+    realSettings: {},
+    categories: [],
+    fields: [],
+    permissions: {},
+    loadedModules: { dashboard:true }
+  };
+}
+
 function BH13_4_applyCustomerDomainIfNeeded_(payload, token){
   const baseUser = קבלת_משתמש_מסשן_Build7_(token);
   if(!baseUser || !baseUser.allowed || String(baseUser.role || '').trim() !== 'לקוח') return payload;
-  const full = קבלת_נתוני_מערכת_מלאים_Build10_();
-  const domains = BH_CAD_availableDomainsForCustomer_(full, baseUser.contactId || '');
+  const domains = BH_CAD_availableDomainsForCustomerMinimal_(baseUser.contactId || '');
   const session = BH_CAD_session_(token);
   let selected = session ? String(session[BH_CAD_SESSION_FIELD] || '').trim() : '';
   if(domains.length === 1){
@@ -5943,8 +6012,13 @@ function BH13_4_applyCustomerDomainIfNeeded_(payload, token){
     selected = '';
   }
   if(domains.length > 1 && !selected) return BH_CAD_domainRequiredPayload_(baseUser, domains);
-  if(selected && payload && payload.auth && payload.auth.allowed === true){
+  if(!payload) return BH13_4_customerShellPayload_(baseUser, selected);
+  if(selected && payload && payload.auth && payload.auth.allowed === true && (payload.projects || payload.tasks || payload.links)){
     return BH_CAD_applySelectedDomainFilter_(payload, payload.currentUser || baseUser, selected);
+  }
+  if(selected && payload && payload.currentUser){
+    payload.currentUser[BH_CAD_SESSION_FIELD] = selected;
+    payload.currentUser.activeAssignmentDomain = selected;
   }
   return payload;
 }
@@ -5953,12 +6027,16 @@ var BH13_4_originalOpening_ = קבלת_נתוני_פתיחה_Build13_2;
 קבלת_נתוני_פתיחה_Build13_2 = function(token){
   return BH_withRequestRows_('קבלת_נתוני_פתיחה_Build13_2', function(){
     const authStart = BH_perfStart_('auth/current user');
-    const out = BH13_4_originalOpening_(token);
+    const user = קבלת_משתמש_מסשן_Build7_(token);
     BH_perfEnd_('auth/current user', authStart);
-    const filterStart = BH_perfStart_('permissions/domain filtering');
-    const filtered = BH13_4_applyCustomerDomainIfNeeded_(out, token);
-    BH_perfEnd_('permissions/domain filtering', filterStart);
-    return filtered;
+    if(user && user.allowed && String(user.role || '').trim() === 'לקוח'){
+      const filterStart = BH_perfStart_('permissions/domain filtering');
+      const customerShell = BH13_4_applyCustomerDomainIfNeeded_(null, token);
+      BH_perfEnd_('permissions/domain filtering', filterStart);
+      return customerShell;
+    }
+    const out = BH13_4_originalOpening_(token);
+    return out;
   });
 };
 
@@ -5985,3 +6063,26 @@ var BH13_4_originalModule_ = קבלת_מודול_Build13_2;
     return out;
   });
 };
+
+
+function BH13_4_measureEndpointAggregate_(label, fn){
+  let out;
+  const started = Date.now();
+  __BH_REQUEST_ROWS__ = {};
+  __BH_REQUEST_PERF__ = { started: started, reads: {}, timings: {}, payloadBytes: 0 };
+  try {
+    out = fn();
+    const bytes = JSON.stringify(out || {}).length;
+    return { label: label, totalMs: Date.now() - started, reads: Object.assign({}, __BH_REQUEST_PERF__.reads || {}), payloadBytes: bytes };
+  } finally {
+    __BH_REQUEST_ROWS__ = null;
+  }
+}
+
+function BH13_4_מדידת_ליבה_מול_פתיחה(token){
+  BH_AD_requireSuperAdminToken_(token);
+  return {
+    oldFullCore: BH13_4_measureEndpointAggregate_('oldFullCore', function(){ return BH_perf_originalCoreFinal_(token); }),
+    newFastShell: BH13_4_measureEndpointAggregate_('newFastShell', function(){ return קבלת_נתוני_פתיחה_Build13_2(token); })
+  };
+}
