@@ -705,6 +705,7 @@ function opts(type, selected=''){
   return optionsForCategory(type, selected);
 }
 function canManageAssignmentDomains(){ const u=DATA.currentUser||{}; return u.isOwner===true || String(u.role||'').trim()==='מנהל ראשי'; }
+function canEditAssignmentDomains(){ return canManageAssignmentDomains(); }
 function assignmentDomainValue(r={}){ return r['תחום שיוך'] || 'ללא'; }
 function assignmentDomainOptions(selected='ללא'){
   selected = selected || 'ללא';
@@ -2621,7 +2622,7 @@ renderContactCard = function(d){
         פריט זה נמצא בארכיון. לעריכה יש לשחזר אותו תחילה.
       </div>`
     : '';
-  const inviteButton = safeCanInviteContact(c)
+  const inviteButton = canInviteContact(c)
     ? `<button id="contactInviteBtn" class="primary" onclick="sendContactInvitation('${esc(c['מזהה איש קשר'])}')">הזמן במייל</button>`
     : '';
 
@@ -5718,25 +5719,18 @@ window.openContactEditorById = function(contactId){
 };
 
 function canInviteContact(c){
-  if(!c || !c['מזהה איש קשר']) return false;
-  if(!canCreateContactsEffective()) return false;
-  if(!isValidStoredContactEmail(c['אימייל'])) return false;
-  if(isOwnerOrSuperAdmin()) return true;
-  return !String(c['כניסה ראשונה למערכת'] || '').trim();
-}
-window.canInviteContact = canInviteContact;
-
-function safeCanInviteContact(c){
   try {
-    const helper = typeof window.canInviteContact === 'function'
-      ? window.canInviteContact
-      : (typeof canInviteContact === 'function' ? canInviteContact : null);
-    return !!(helper && helper(c));
+    if(!c || !c['מזהה איש קשר']) return false;
+    if(!canCreateContactsEffective()) return false;
+    if(!isValidStoredContactEmail(c['אימייל'])) return false;
+    if(isOwnerOrSuperAdmin()) return true;
+    return !String(c['כניסה ראשונה למערכת'] || '').trim();
   } catch(e) {
     console.warn('contact invitation eligibility unavailable', e);
     return false;
   }
 }
+window.canInviteContact = canInviteContact;
 
 window.sendContactInvitation = function(contactId){
   contactId = String(contactId || '').trim();
@@ -5831,6 +5825,18 @@ window.openContact = function(r={}){
       <p class="muted">הגוון משמש לזיהוי אירועים שהמשתמש יוצר בלוח הפעילות.</p>
     </div>
 
+    <div id="assignmentDomainsBox" class="hidden">
+      <label>תחום שיוך מרכזי</label>
+      <select id="cCentralAssignmentDomain" ${canEditAssignmentDomains() ? '' : 'disabled'}>
+        ${assignmentDomainOptions(r['תחום שיוך מרכזי'] || '')}
+      </select>
+      <label>תחומי שיוך נוספים</label>
+      <select id="cAdditionalAssignmentDomains" multiple size="5" ${canEditAssignmentDomains() ? '' : 'disabled'}>
+        ${assignmentDomainsMulti(r['תחומי שיוך'])}
+      </select>
+      <p class="muted">רלוונטי למנהל בלבד. עריכה זמינה רק לבעל המערכת או מנהל ראשי.</p>
+    </div>
+
     ${isEdit ? `
       <label>משויך לפרויקט</label>
       <select id="contactProjectLinkSelect">
@@ -5861,20 +5867,24 @@ window.openContact = function(r={}){
 
   modal.classList.remove('hidden');
   setTimeout(updateContactPermissionFields, 0);
+  setTimeout(updateContactAssignmentDomainsField, 0);
+};
+
+function updateContactAssignmentDomainsField(){
+  const box = document.getElementById('assignmentDomainsBox');
+  if(!box) return;
+  const permission = document.getElementById('cPermission');
+  box.classList.toggle('hidden', !permission || permission.value !== 'מנהל');
+}
+
+const __updateContactPermissionFields_assignment_base = window.updateContactPermissionFields || updateContactPermissionFields;
+window.updateContactPermissionFields = function(){
+  if(typeof __updateContactPermissionFields_assignment_base === 'function') __updateContactPermissionFields_assignment_base();
+  updateContactAssignmentDomainsField();
 };
 
 window.saveContact = function(id){
-  google.script.run
-    .withSuccessHandler((savedId)=>{
-      if(id){
-        closeM();
-        refreshCore();
-        return;
-      }
-      refreshCore(()=>openContactCardById(savedId));
-    })
-    .withFailureHandler(e=>alert(e.message))
-    .שמירת_איש_קשר({
+  const contactPayload = {
       authToken: currentToken(),
       id,
       name: cName.value,
@@ -5889,7 +5899,24 @@ window.saveContact = function(id){
       owner: (window.cOwner ? cOwner.value : ""),
       systemPermission: cPermission.value,
       creatorColor: (window.cCreatorColor ? cCreatorColor.value : "")
-    });
+  };
+  if(window.cCentralAssignmentDomain && !cCentralAssignmentDomain.disabled && cPermission.value === 'מנהל'){
+    contactPayload.assignmentCentralDomain = cCentralAssignmentDomain.value;
+    contactPayload.assignmentAdditionalDomains = selectedAdditionalAssignmentDomains();
+    contactPayload.assignmentDomains = selectedAdditionalAssignmentDomains();
+  }
+
+  google.script.run
+    .withSuccessHandler((savedId)=>{
+      if(id){
+        closeM();
+        refreshCore();
+        return;
+      }
+      refreshCore(()=>openContactCardById(savedId));
+    })
+    .withFailureHandler(e=>alert(e.message))
+    .שמירת_איש_קשר(contactPayload);
 };
 
 window.saveContactPermissionFromPicker = function(){

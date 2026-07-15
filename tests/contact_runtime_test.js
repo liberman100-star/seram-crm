@@ -5,7 +5,8 @@ const html = fs.readFileSync('index.html','utf8');
 assert(/window\.openContactCardById = function\(contactId\)/.test(html), 'card opener is assigned to window');
 assert(/\.כרטיס_איש_קשר\(\{id:id, authToken:currentToken\(\), token:currentToken\(\)\}\)/.test(html), 'card opener calls authenticated contact-card endpoint');
 assert(!/function openContactCardById\(contactId\)[\s\S]*?openContactCard\(contact\)/.test(html), 'card opener no longer passes raw contact to render path');
-assert(/const inviteButton = safeCanInviteContact\(c\)/.test(html), 'renderContactCard uses defensive invitation guard');
+assert(/const inviteButton = canInviteContact\(c\)/.test(html), 'renderContactCard uses the canonical invitation helper');
+assert(!/safeCanInviteContact/.test(html), 'canInviteContact is the only invitation eligibility helper');
 assert(/window\.canInviteContact = canInviteContact;/.test(html), 'canonical invitation helper is exposed on window');
 assert(/window\.__contactInvitationSending = __contactInvitationSending;/.test(html), 'invitation sending state is exposed on window');
 
@@ -49,7 +50,7 @@ assert.strictEqual(sandbox.window.openContactEditorById('C1'), true, 'editor ope
 assert.strictEqual(opened, stored, 'openContact receives stored object');
 
 function buildRenderSandbox({contact, user, canCreateValue = true, helperMissing = false} = {}){
-  const inviteMarker = html.indexOf('const inviteButton = safeCanInviteContact(c)');
+  const inviteMarker = html.indexOf('const inviteButton = canInviteContact(c)');
   const renderStart = html.lastIndexOf('renderContactCard = function(d){', inviteMarker);
   const renderEnd = html.indexOf('</script>', renderStart);
   assert(renderStart > -1 && renderEnd > renderStart, 'renderContactCard block found');
@@ -67,7 +68,7 @@ function buildRenderSandbox({contact, user, canCreateValue = true, helperMissing
   sb.window = sb;
   vm.createContext(sb);
   vm.runInContext(code, sb);
-  if(helperMissing) sb.window.canInviteContact = function(){ throw new Error('helper unavailable'); };
+  if(helperMissing) sb.canCreate = function(){ throw new Error('permission helper unavailable'); };
   vm.runInContext(renderCode, sb);
   sb.renderContactCard({contact, links:[], tasks:[], readOnly:false});
   return sb;
@@ -80,8 +81,8 @@ assert(!/contactInviteBtn/.test(buildRenderSandbox({contact:{...eligible, 'אי�
 assert(!/contactInviteBtn/.test(buildRenderSandbox({contact:{...eligible, 'כניסה ראשונה למערכת':'2026-07-01'}, user:{role:'משתמש'}}).modalBox.innerHTML), 'ordinary user after first login does not see invitation');
 assert(/contactInviteBtn/.test(buildRenderSandbox({contact:{...eligible, 'כניסה ראשונה למערכת':'2026-07-01'}, user:{role:'מנהל ראשי'}}).modalBox.innerHTML), 'main admin after first login may see invitation');
 assert(/contactInviteBtn/.test(buildRenderSandbox({contact:{...eligible, 'כניסה ראשונה למערכת':'2026-07-01'}, user:{isOwner:true, role:'משתמש'}}).modalBox.innerHTML), 'owner after first login may see invitation');
-assert.doesNotThrow(()=>buildRenderSandbox({contact:eligible, helperMissing:true}), 'missing invitation helper cannot crash the whole card');
-assert(!/contactInviteBtn/.test(buildRenderSandbox({contact:eligible, helperMissing:true}).modalBox.innerHTML), 'missing invitation helper hides invitation section');
+assert.doesNotThrow(()=>buildRenderSandbox({contact:eligible, helperMissing:true}), 'invitation eligibility failure cannot crash the whole card');
+assert(!/contactInviteBtn/.test(buildRenderSandbox({contact:eligible, helperMissing:true}).modalBox.innerHTML), 'invitation eligibility failure hides invitation section');
 
 let inviteArgs;
 const sendSandbox = {window:{}, DATA:{currentUser:{role:'משתמש'}}, console, currentToken:()=>'TOKEN1', document:{getElementById:()=>({disabled:false,textContent:''})}, alert(){}, refreshCore(){}, openContactCardById(){}, canCreate:()=>true, google:{script:{run:{withSuccessHandler(){return this}, withFailureHandler(){return this}, שליחת_הזמנה_לאיש_קשר(arg){inviteArgs = arg; return this;}}}}};
