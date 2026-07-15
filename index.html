@@ -2611,6 +2611,27 @@ const readOnly = isArchived || !canWriteProject;
   loadProjectNotesAndTimeline(p['מזהה פרויקט']);
 };
 
+function isValidStoredContactEmail(email){
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email || '').trim());
+}
+
+function isOwnerOrSuperAdmin(){
+  const u = (DATA && DATA.currentUser) || {};
+  return u.isOwner === true || String(u.role || '').trim() === 'מנהל ראשי';
+}
+
+function canCreateContactsEffective(){
+  return canCreate();
+}
+
+function canInviteContact(c){
+  if(!c || !c['מזהה איש קשר']) return false;
+  if(!canCreateContactsEffective()) return false;
+  if(!isValidStoredContactEmail(c['אימייל'])) return false;
+  if(isOwnerOrSuperAdmin()) return true;
+  return !String(c['כניסה ראשונה למערכת'] || '').trim();
+}
+
 renderContactCard = function(d){
   const c = d.contact || {};
   const isArchived = String(c['בארכיון'] || '') === 'כן';
@@ -2621,9 +2642,14 @@ renderContactCard = function(d){
         פריט זה נמצא בארכיון. לעריכה יש לשחזר אותו תחילה.
       </div>`
     : '';
-  const inviteButton = canInviteContact(c)
-    ? `<button id="contactInviteBtn" class="primary" onclick="sendContactInvitation('${esc(c['מזהה איש קשר'])}')">הזמן במייל</button>`
-    : '';
+  let inviteButton = '';
+  try {
+    inviteButton = (typeof canInviteContact === 'function' && canInviteContact(c))
+      ? `<button id="contactInviteBtn" class="primary" onclick="sendContactInvitation('${esc(c['מזהה איש קשר'])}')">הזמן במייל</button>`
+      : '';
+  } catch(e) {
+    console.warn('contact invitation eligibility unavailable', e);
+  }
 
   modalBox.className='box';
   modalBox.innerHTML=`
@@ -5666,20 +5692,8 @@ window.updateContactPermissionFields = function(){
   }
 };
 
-function isValidStoredContactEmail(email){
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email || '').trim());
-}
-
-function isOwnerOrSuperAdmin(){
-  const u = (DATA && DATA.currentUser) || {};
-  return u.isOwner === true || String(u.role || '').trim() === 'מנהל ראשי';
-}
-
-function canCreateContactsEffective(){
-  return canCreate();
-}
-
-const __contactInvitationSending = {};
+const __contactInvitationSending = window.__contactInvitationSending || {};
+window.__contactInvitationSending = __contactInvitationSending;
 
 function findStoredContactById(contactId){
   const id = String(contactId || '').trim();
@@ -5715,14 +5729,6 @@ window.openContactEditorById = function(contactId){
   openContact(contact);
   return true;
 };
-
-function canInviteContact(c){
-  if(!c || !c['מזהה איש קשר']) return false;
-  if(!canCreateContactsEffective()) return false;
-  if(!isValidStoredContactEmail(c['אימייל'])) return false;
-  if(isOwnerOrSuperAdmin()) return true;
-  return !String(c['כניסה ראשונה למערכת'] || '').trim();
-}
 
 window.sendContactInvitation = function(contactId){
   contactId = String(contactId || '').trim();
