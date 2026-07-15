@@ -5922,3 +5922,66 @@ if(BH_perf_originalModuleFinal_){
     });
   };
 }
+
+/***********************
+ * Build 13.4 – production lazy shell hardening
+ * Keeps performance logging disabled by default; when enabled it reports total time,
+ * physical Sheet reads, build sections, and JSON payload bytes for one request.
+ ***********************/
+function BH13_4_applyCustomerDomainIfNeeded_(payload, token){
+  const baseUser = קבלת_משתמש_מסשן_Build7_(token);
+  if(!baseUser || !baseUser.allowed || String(baseUser.role || '').trim() !== 'לקוח') return payload;
+  const full = קבלת_נתוני_מערכת_מלאים_Build10_();
+  const domains = BH_CAD_availableDomainsForCustomer_(full, baseUser.contactId || '');
+  const session = BH_CAD_session_(token);
+  let selected = session ? String(session[BH_CAD_SESSION_FIELD] || '').trim() : '';
+  if(domains.length === 1){
+    selected = domains[0];
+    if(session && String(session[BH_CAD_SESSION_FIELD] || '').trim() !== selected) BH_CAD_setSessionDomain_(token, selected);
+  } else if(domains.indexOf(selected) === -1) {
+    if(selected) BH_CAD_setSessionDomain_(token, '');
+    selected = '';
+  }
+  if(domains.length > 1 && !selected) return BH_CAD_domainRequiredPayload_(baseUser, domains);
+  if(selected && payload && payload.auth && payload.auth.allowed === true){
+    return BH_CAD_applySelectedDomainFilter_(payload, payload.currentUser || baseUser, selected);
+  }
+  return payload;
+}
+
+var BH13_4_originalOpening_ = קבלת_נתוני_פתיחה_Build13_2;
+קבלת_נתוני_פתיחה_Build13_2 = function(token){
+  return BH_withRequestRows_('קבלת_נתוני_פתיחה_Build13_2', function(){
+    const authStart = BH_perfStart_('auth/current user');
+    const out = BH13_4_originalOpening_(token);
+    BH_perfEnd_('auth/current user', authStart);
+    const filterStart = BH_perfStart_('permissions/domain filtering');
+    const filtered = BH13_4_applyCustomerDomainIfNeeded_(out, token);
+    BH_perfEnd_('permissions/domain filtering', filterStart);
+    return filtered;
+  });
+};
+
+var BH13_4_originalModule_ = קבלת_מודול_Build13_2;
+קבלת_מודול_Build13_2 = function(token, moduleName){
+  return BH_withRequestRows_('קבלת_מודול_Build13_2:' + moduleName, function(){
+    const module = String(moduleName || '').trim();
+    const buildStart = BH_perfStart_('build module ' + module);
+    let out = BH13_4_originalModule_(token, module);
+    BH_perfEnd_('build module ' + module, buildStart);
+    out = BH13_4_applyCustomerDomainIfNeeded_(out, token);
+    if(module === 'archive' && out && out.auth && out.auth.allowed === true){
+      const data = קבלת_נתונים_Build7(token);
+      out.projects = (data.projects || []).filter(r => String(r['בארכיון'] || '') === 'כן');
+      out.contacts = (data.contacts || []).filter(r => String(r['בארכיון'] || '') === 'כן');
+      out.tasks = (data.tasks || []).filter(r => String(r['בארכיון'] || '') === 'כן');
+      out.links = [];
+      out.loadedModules = { archive:true };
+    }
+    if(out && out.auth && out.auth.allowed === true){
+      out.loadedModules = out.loadedModules || {};
+      out.loadedModules[module] = true;
+    }
+    return out;
+  });
+};

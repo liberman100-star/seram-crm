@@ -15,8 +15,8 @@ has(html, /task-status-\$\{esc\(statusValue\)\}/, 'task status is visually disti
 has(html, /if\(f==='done'\) return t\['סטטוס'\]==='בוצע'/, 'done filter still uses canonical status');
 has(html, /if\(f==='open'\) return t\['סטטוס'\]!=='בוצע' && t\['סטטוס'\]!=='בוטל'/, 'open filter still uses canonical status');
 
-has(html, /function openContactCardById\(contactId\)[\s\S]*?findStoredContactById\(contactId\)[\s\S]*?openContactCard\(contact\)/, 'contact row opens canonical saved contact card path');
-has(html, /function openContactEditorById\(contactId\)[\s\S]*?findStoredContactById\(contactId\)[\s\S]*?openContact\(contact\)/, 'edit opens the saved contact in editor');
+has(html, /window\.openContactCardById = function\(contactId\)[\s\S]*?\.כרטיס_איש_קשר\(\{id:id, authToken:currentToken\(\), token:currentToken\(\)\}\)/, 'contact row opens authenticated server contact-card endpoint');
+has(html, /window\.openContactEditorById = function\(contactId\)[\s\S]*?findStoredContactById\(id\)[\s\S]*?openContact\(contact\)/, 'edit opens the saved contact in editor');
 has(html, /r=>`openContactCardById\('\$\{esc\(r\['מזהה איש קשר'\]\)\}'\)`/, 'contact row click uses canonical opener');
 has(html, /onclick="openContactEditorById\('\$\{id\}'\)"/, 'explicit edit action uses editor opener');
 has(html, /<td onclick="event\.stopPropagation\(\)"/, 'action cell does not allow row-click swallowing explicit edit');
