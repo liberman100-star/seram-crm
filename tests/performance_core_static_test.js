@@ -8,10 +8,9 @@ function notHas(src, re, msg){ assert(!re.test(src), msg); }
 has(gs, /var __BH_REQUEST_ROWS__ = null/, 'request-scoped sheet cache exists');
 has(gs, /Object\.prototype\.hasOwnProperty\.call\(__BH_REQUEST_ROWS__, name\)/, 'readSheet_ reuses request rows');
 has(gs, /BH_PERF_AUDIT_ENABLED = false/, 'performance audit logging is disabled by default');
-has(gs, /preserves the canonical payload unchanged/, 'server comment states canonical payload is preserved');
-has(gs, /return data;\s*\}\);\s*\};\s*\n\s*var BH_perf_originalModuleFinal_/, 'core wrapper returns canonical data unchanged');
-notHas(gs, /BH_trimInitialCorePayload_/, 'core payload trimming is not present');
-notHas(gs, /deferredDatasets/, 'core payload does not add deferred contract markers');
+has(gs, /Build 13\.4 – production lazy shell hardening/, 'server contains production lazy shell hardening');
+has(gs, /קבלת_נתוני_פתיחה_Build13_2 = function\(token\)/, 'initial shell endpoint is wrapped and instrumented');
+has(gs, /BH13_4_applyCustomerDomainIfNeeded_/, 'lazy endpoints apply customer selected-domain filtering');
 has(html, /__BH_CORE_REFRESH_WAITERS__ = window\.__BH_CORE_REFRESH_WAITERS__ \|\| \[\]/, 'central refresh callback queue exists');
 has(html, /if\(window\.__BH_CORE_REFRESHING__\)\{\s*if\(typeof after === 'function'\) window\.__BH_CORE_REFRESH_WAITERS__\.push\(after\);\s*return;\s*\}/, 'simultaneous refresh queues callback without second request');
 has(html, /const waiters = \(primaryAfter \? \[primaryAfter\] : \[\]\)\.concat\(window\.__BH_CORE_REFRESH_WAITERS__ \|\| \[\]\)/, 'primary and queued callbacks are drained together after success');
@@ -21,8 +20,8 @@ has(html, /withFailureHandler\(e=>\{\s*window\.__BH_CORE_REFRESHING__ = false;\s
 has(html, /BH_isCustomerDomainSelectionRequired[\s\S]*?window\.__BH_CORE_REFRESH_WAITERS__ = \[\];[\s\S]*?BH_showCustomerDomainDialog/, 'domain selection clears refresh queue before dialog');
 has(html, /\.קבלת_מודול_Build13_2\(token, module\)/, 'lazy module loading uses existing module endpoint');
 has(html, /mergeData_Build13_2\(d\);\s*renderShell_Build13_2\(d\);[\s\S]*?__BH_LOADED_MODULES__\[module\] = true;/, 'module endpoint response shape remains compatible with existing handler');
-has(html, /function load\(forceDashboard=true\)\{[\s\S]*?__BH_CORE_LOADING__ = true[\s\S]*?if\(!token\)\{\s*window\.__BH_CORE_LOADING__ = false;[\s\S]*?withSuccessHandler\(d=>\{\s*window\.__BH_CORE_LOADING__ = false;[\s\S]*?withFailureHandler\(e=>\{\s*window\.__BH_CORE_LOADING__ = false;/, 'load guard clears on token, success/domain/unauthorized, and failure paths');
+has(html, /function load\(forceDashboard=true, after\)\{[\s\S]*?__BH_CORE_LOADING__ = true[\s\S]*?if\(!token\)\{\s*window\.__BH_CORE_LOADING__ = false;[\s\S]*?withSuccessHandler\(d=>\{\s*window\.__BH_CORE_LOADING__ = false;[\s\S]*?withFailureHandler\(e=>\{\s*window\.__BH_CORE_LOADING__ = false;/, 'load guard clears on token, success/domain/unauthorized, and failure paths');
 has(html, /__BH_CORE_LOADING__/, 'duplicate initial core request guard exists');
 has(html, /__BH_CORE_REFRESHING__/, 'duplicate refresh guard exists');
-has(audit, /No new initial-core datasets were moved to lazy loading/, 'audit documents no new deferred core datasets');
+has(audit, /Stage 1 fast initial shell/, 'audit documents fast initial shell');
 console.log('performance core static assertions passed');
