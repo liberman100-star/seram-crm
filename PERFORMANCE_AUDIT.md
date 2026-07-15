@@ -12,16 +12,16 @@ A callable super-admin-only diagnostic, `BH13_4_מדידת_ליבה_מול_פת�
 - serialized payload byte size.
 
 ## Customer fast-shell correction
-Customer domain discovery for the initial shell now uses `BH_CAD_availableDomainsForCustomerMinimal_(contactId)`. It reads only:
+Customer domain discovery for the initial shell first uses `BH_CAD_availableDomainsForCustomerMinimal_(contactId)`. For the domain gate it reads only:
 - `שיוכים` for active portal-visible links for the authenticated customer contact id;
 - `פרויקטים` for the linked project ids and their Assignment Domain values, excluding archived projects;
 - `הגדרות_ערכים` for active Assignment Domain options.
 
-It does not read tasks, notes, settings administration, permissions administration, branding administration, unrelated contacts or unrelated project records for the customer shell gate. Single-domain customers are still auto-selected and persisted in the session; multi-domain customers still receive the selection gate.
+After a single domain is auto-selected or a stored selected domain is valid, the real customer dashboard shell additionally reads `משימות` and returns only tasks linked to the selected-domain visible projects, including dated records needed by the initial dashboard/calendar. It does not read notes, timeline, settings administration, permissions administration, full contact lists, or card details. Multi-domain customers still receive the selection gate before normal dashboard data is exposed.
 
 ## New loading flow
 ### Stage 1 fast initial shell
-The client calls `קבלת_נתוני_פתיחה_Build13_2` on login. The initial shell contains auth/current user, branding, dashboard totals or safe customer shell totals, dated task/calendar records where applicable, navigation flags and permission flags.
+The client calls `קבלת_נתוני_פתיחה_Build13_2` on login. The initial shell contains auth/current user, branding, real authorized dashboard totals, dated task/calendar records required by the initial dashboard where applicable, navigation flags and permission flags. `loadedModules.dashboard` is set only after those dashboard values are actually computed.
 
 ### Stage 2 lazy modules
 Deferred datasets:
