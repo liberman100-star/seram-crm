@@ -6100,6 +6100,31 @@ var BH13_4_originalOpening_ = קבלת_נתוני_פתיחה_Build13_2;
   });
 };
 
+
+function BH13_4_archivePayloadFromCanonical_(baseOut, data, user){
+  const role = String(user && user.role || "").trim();
+  const isCustomer = role === "לקוח";
+  const archivedProjects = (data.projects || []).filter(r => String(r['בארכיון'] || '') === 'כן');
+  const archivedProjectIds = {};
+  archivedProjects.forEach(p => { const id = String(p['מזהה פרויקט'] || '').trim(); if(id) archivedProjectIds[id] = true; });
+  const archiveLinks = (data.links || []).filter(l => archivedProjectIds[String(l['מזהה פרויקט'] || '').trim()]);
+  const out = Object.assign({}, baseOut || {}, {
+    projects: archivedProjects,
+    contacts: (data.contacts || []).filter(r => String(r['בארכיון'] || '') === 'כן'),
+    tasks: (data.tasks || []).filter(r => String(r['בארכיון'] || '') === 'כן' && archivedProjectIds[String(r['מזהה פרויקט'] || '').trim()]),
+    links: isCustomer ? archiveLinks : [],
+    loadedModules: { archive:true }
+  });
+  if(isCustomer){
+    const relatedContactIds = {};
+    archiveLinks.forEach(l => { const id = String(l['מזהה איש קשר'] || '').trim(); if(id) relatedContactIds[id] = true; });
+    const ownId = String(user && user.contactId || '').trim();
+    if(ownId && (data.contacts || []).some(c => String(c['מזהה איש קשר'] || '').trim() === ownId)) relatedContactIds[ownId] = true;
+    out.contacts = (data.contacts || []).filter(c => String(c['בארכיון'] || '') === 'כן' && relatedContactIds[String(c['מזהה איש קשר'] || '').trim()]);
+  }
+  return out;
+}
+
 var BH13_4_originalModule_ = קבלת_מודול_Build13_2;
 קבלת_מודול_Build13_2 = function(token, moduleName){
   return BH_withRequestRows_('קבלת_מודול_Build13_2:' + moduleName, function(){
@@ -6107,15 +6132,12 @@ var BH13_4_originalModule_ = קבלת_מודול_Build13_2;
     const buildStart = BH_perfStart_('build module ' + module);
     let out = BH13_4_originalModule_(token, module);
     BH_perfEnd_('build module ' + module, buildStart);
-    out = BH13_4_applyCustomerDomainIfNeeded_(out, token, module);
     if(module === 'archive' && out && out.auth && out.auth.allowed === true){
+      const user = קבלת_משתמש_מסשן_Build7_(token);
       const data = קבלת_נתונים_Build7(token);
-      out.projects = (data.projects || []).filter(r => String(r['בארכיון'] || '') === 'כן');
-      out.contacts = (data.contacts || []).filter(r => String(r['בארכיון'] || '') === 'כן');
-      out.tasks = (data.tasks || []).filter(r => String(r['בארכיון'] || '') === 'כן');
-      out.links = [];
-      out.loadedModules = { archive:true };
+      out = BH13_4_archivePayloadFromCanonical_(out, data, user);
     }
+    out = BH13_4_applyCustomerDomainIfNeeded_(out, token, module);
     if(out && out.auth && out.auth.allowed === true){
       out.loadedModules = out.loadedModules || {};
       out.loadedModules[module] = true;
