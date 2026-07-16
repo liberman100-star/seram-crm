@@ -10,6 +10,14 @@ assert(!/safeCanInviteContact/.test(html), 'canInviteContact is the only invitat
 assert(/window\.canInviteContact = canInviteContact;/.test(html), 'canonical invitation helper is exposed on window');
 assert(/window\.__contactInvitationSending = __contactInvitationSending;/.test(html), 'invitation sending state is exposed on window');
 
+assert(/id="addAssignmentDomainBtn"[^>]*>הוסף תחום שיוך/.test(html), 'contact editor shows add-assignment-domain button');
+assert(!/id="cAdditionalAssignmentDomains"[^>]*multiple/.test(html), 'contact editor no longer renders additional domains as an open multi-select');
+assert(/function addAdditionalAssignmentDomain\(value\)[\s\S]*values\.indexOf\(value\) === -1/.test(html), 'additional assignment domain add path blocks duplicates');
+assert(/assignmentDomainChoices\(current\.concat\(\[central\]\)\)/.test(html), 'additional assignment domain picker excludes central domain');
+assert(/<option value="">ללא<\/option>/.test(html), 'contact project link default is none');
+assert(!/<option value="">הכל<\/option>/.test(html), 'contact project link default is not all');
+assert(/function normalizeContactProjectLinkValue\(value\)[\s\S]*v === 'הכל' \? '' : v/.test(html), 'legacy all project-link value normalizes to none');
+
 const start = html.indexOf('function isValidStoredContactEmail(email)');
 const end = html.indexOf('window.openContact = function', start);
 assert(start > -1 && end > start, 'contact runtime block found');
