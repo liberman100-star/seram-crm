@@ -4570,6 +4570,71 @@ function BH_SELECTION_VALIDATE_(category, value, label, oldValue) {
   }
 }
 
+
+function BH_CONTACT_normalizeEmailForCompare_(email) {
+  return String(email || "").trim().toLowerCase();
+}
+
+function BH_CONTACT_normalizePhoneForCompare_(phone) {
+  let value = String(phone || "").trim();
+  if (!value) return "";
+  value = value.replace(/[\s\-().]/g, "");
+  if (value.indexOf("+972") === 0) value = "0" + value.slice(4);
+  return value;
+}
+
+function BH_CONTACT_isValidIsraeliPhone_(phone) {
+  const raw = String(phone || "").trim();
+  if (!raw) return true;
+  if (!/^\+?[0-9\s\-().]+$/.test(raw)) return false;
+  const normalized = BH_CONTACT_normalizePhoneForCompare_(raw);
+  return /^05\d{8}$/.test(normalized) || /^0[23489]\d{7}$/.test(normalized);
+}
+
+function BH_CONTACT_hasArchiveAccess_(user) {
+  const actions = פעולות_מותרות_Build11_2_(user);
+  return !!(actions && actions.canSeeArchive === true);
+}
+
+function BH_CONTACT_duplicateMessage_(matches, user) {
+  const active = matches.filter(m => !m.archived);
+  const archived = matches.filter(m => m.archived);
+  if (archived.length) {
+    if (BH_CONTACT_hasArchiveAccess_(user)) {
+      return "איש קשר עם מספר טלפון או אימייל זה כבר קיים בארכיון. פעולות זמינות: פתח בארכיון, שחזר איש קשר.";
+    }
+    return "איש קשר זה כבר קיים בארכיון. יש לפנות למנהל מערכת.";
+  }
+
+  const phone = active.some(m => m.phone);
+  const email = active.some(m => m.email);
+  let message = phone && email
+    ? "כבר קיים איש קשר עם מספר הטלפון הזה וכתובת האימייל הזו"
+    : (phone ? "כבר קיים איש קשר עם מספר הטלפון הזה" : "כבר קיים איש קשר עם כתובת האימייל הזו");
+
+  const visible = active.some(m => משתמש_רשאי_לאיש_קשר_Build11_2_(user, m.id));
+  if (visible) message += ". פעולה זמינה: פתח איש קשר קיים.";
+  return message;
+}
+
+function BH_CONTACT_checkDuplicate_(data, editedId, user) {
+  const phone = BH_CONTACT_normalizePhoneForCompare_(data && data.phone);
+  const email = BH_CONTACT_normalizeEmailForCompare_(data && data.email);
+  if (!phone && !email) return { ok: true, matches: [] };
+
+  const matches = readSheet_(SHEETS.CONTACTS).map(c => {
+    const id = String(c["מזהה איש קשר"] || "").trim();
+    if (id && String(editedId || "").trim() === id) return null;
+    const phoneMatch = !!phone && BH_CONTACT_normalizePhoneForCompare_(c["טלפון"]) === phone;
+    const emailMatch = !!email && BH_CONTACT_normalizeEmailForCompare_(c["אימייל"]) === email;
+    if (!phoneMatch && !emailMatch) return null;
+    return { id, phone: phoneMatch, email: emailMatch, archived: String(c["בארכיון"] || "").trim() === "כן" };
+  }).filter(Boolean);
+
+  if (matches.length) throw new Error(BH_CONTACT_duplicateMessage_(matches, user));
+  return { ok: true, matches: [] };
+}
+
 function שמירת_איש_קשר(data) {
   const actor = דרוש_כתיבה_Build11_2_(data && data.authToken);
 
@@ -4587,9 +4652,15 @@ function שמירת_איש_קשר(data) {
   ensureColumnTextFormat_(SHEETS.CONTACTS, "טלפון");
   הוספת_עמודה_אם_חסרה_(SHEETS.CONTACTS, "כניסה ראשונה למערכת");
 
+  if (!BH_CONTACT_isValidIsraeliPhone_(data.phone)) {
+    throw new Error("מספר הטלפון שהוזן אינו תקין.");
+  }
+
   const old = data.id
     ? readSheet_(SHEETS.CONTACTS).find(c => c["מזהה איש קשר"] === data.id)
     : null;
+
+  BH_CONTACT_checkDuplicate_(data, old ? old["מזהה איש קשר"] : "", actor);
 
   const actorRank = דרגת_הרשאה_Build11_2_(actor.role);
   const oldRank = old ? דרגת_הרשאה_Build11_2_(old["הרשאת מערכת"] || "ללא הרשאה") : 0;
