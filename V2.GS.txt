@@ -609,7 +609,9 @@ function מילוי_ברירות_מחדל_הגדרות_אמיתיות_() {
     appendObject_(SETTINGS_SHEETS.BRANDING, {"מפתח": "צבע ראשי", "ערך": "#1f4e79"});
     appendObject_(SETTINGS_SHEETS.BRANDING, {"מפתח": "צבע משני", "ערך": "#e8eef5"});
     appendObject_(SETTINGS_SHEETS.BRANDING, {"מפתח": "לוגו", "ערך": ""});
+    appendObject_(SETTINGS_SHEETS.BRANDING, {"מפתח": "ניתוק אוטומטי לאחר אי־פעילות", "ערך": "30"});
   }
+  BH_IDLE_ensureSetting_();
 
   if (!readSheet_(SETTINGS_SHEETS.CALENDARS).some(r => String(r["שם יומן"] || "") === "יומן ראשי")) {
     שמירת_יומן_Build4_3({
@@ -2142,6 +2144,32 @@ function השלמת_סוגי_משימות_יומן_Build10_SAFE_() {
   });
 }
 
+
+function BH_IDLE_ensureSetting_() {
+  const sh = getSS_().getSheetByName(SETTINGS_SHEETS.BRANDING);
+  if (!sh) throw new Error("לא נמצא גיליון מיתוג");
+  const rows = readSheet_(SETTINGS_SHEETS.BRANDING);
+  const key = "ניתוק אוטומטי לאחר אי־פעילות";
+  const existing = rows.find(r => String(r["מפתח"] || "").trim() === key);
+  if (!existing) {
+    appendObject_(SETTINGS_SHEETS.BRANDING, {"מפתח": key, "ערך": "30"});
+    return 30;
+  }
+  const value = Number(existing["ערך"] || 30);
+  if ([15, 30, 60, 90].indexOf(value) === -1) {
+    existing["ערך"] = "30";
+    upsert_(SETTINGS_SHEETS.BRANDING, "מפתח", key, existing);
+    return 30;
+  }
+  return value;
+}
+
+function BH_IDLE_validateMinutes_(value) {
+  const minutes = Number(value || 30);
+  if ([15, 30, 60, 90].indexOf(minutes) === -1) throw new Error("זמן ניתוק אוטומטי חייב להיות 15, 30, 60 או 90 דקות");
+  return String(minutes);
+}
+
 function שמירת_מיתוג_Build4_3(data) {
   const items = [
     ["שם מערכת", data.systemName || data.name || ""],
@@ -2149,7 +2177,8 @@ function שמירת_מיתוג_Build4_3(data) {
     ["צבע משני", data.secondaryColor || ""],
     ["לוגו", data.logo || ""],
     ["גובה לוגו", data.logoHeight || "40"],
-    ["מיקום לוגו", data.logoPosition || "ימין"]
+    ["מיקום לוגו", data.logoPosition || "ימין"],
+    ["ניתוק אוטומטי לאחר אי־פעילות", BH_IDLE_validateMinutes_(data.idleLogoutMinutes)]
   ];
 
   const sh = getSS_().getSheetByName("מיתוג");

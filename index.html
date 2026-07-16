@@ -467,6 +467,7 @@ let SETTINGS_TAB = 'categories';
 
 function goDashboard(){ tab('dashboard', document.getElementById('btn_dashboard')); }
 function tab(id,b){
+  if(window.BH_IDLE && typeof window.BH_IDLE.markUserActivity === 'function') window.BH_IDLE.markUserActivity();
   document.querySelectorAll('main section').forEach(s=>s.classList.add('hidden'));
   document.getElementById(id).classList.remove('hidden');
   document.querySelectorAll('nav button').forEach(x=>x.classList.remove('active'));
@@ -1585,6 +1586,11 @@ function saveUser(id=''){ alert('משתמשים מנוהלים דרך אנשי �
 function toggleUser(id){ alert('כדי להשבית משתמש, פתח את איש הקשר ושנה הרשאת מערכת ל"ללא הרשאה".'); }
 
 function brandingObj(){ const o={}; ((DATA.realSettings||{}).branding||[]).forEach(r=>o[r['מפתח']]=r['ערך']); return o; }
+function idleLogoutMinutes(){
+  const b = brandingObj();
+  const v = Number(b['ניתוק אוטומטי לאחר אי־פעילות'] || 30);
+  return [15,30,60,90].includes(v) ? v : 30;
+}
 function renderBrandingSettings(){
   const b=brandingObj();
   settingsBox.innerHTML=`
@@ -1595,12 +1601,13 @@ function renderBrandingSettings(){
     <label>קישור לוגו</label><input id="brandLogoUrl" value="${esc(b['לוגו']||'')}" placeholder="קישור ישיר לתמונה או קישור Drive משותף">
     <label>גובה לוגו בפיקסלים</label><input id="brandLogoHeight" type="number" value="${esc(b['גובה לוגו']||'40')}">
     <label>מיקום לוגו</label><select id="brandLogoPosition"><option ${b['מיקום לוגו']!=='שמאל'?'selected':''}>ימין</option><option ${b['מיקום לוגו']==='שמאל'?'selected':''}>שמאל</option></select>
+    <label>ניתוק אוטומטי לאחר אי־פעילות</label><select id="brandIdleLogoutMinutes">${[15,30,60,90].map(m=>`<option value="${m}" ${idleLogoutMinutes()===m?'selected':''}>${m} דקות</option>`).join('')}</select>
     ${b['לוגו']?`<p><img src="${esc(normalizeLogoUrl(b['לוגו']))}" style="height:${esc(b['גובה לוגו']||'40')}px;background:white;border:1px solid #ddd;padding:4px"></p>`:''}
     <button class="primary" onclick="saveBranding()">שמור מיתוג</button></div>`;
 }
 function saveBranding(){
   google.script.run.withSuccessHandler(()=>{load();alert('המיתוג נשמר')}).withFailureHandler(e=>alert(e.message))
-    .שמירת_מיתוג_Build4_3({systemName:brandName.value,primaryColor:brandPrimary.value,secondaryColor:brandSecondary.value,logo:brandLogoUrl.value,logoHeight:brandLogoHeight.value,logoPosition:brandLogoPosition.value});
+    .שמירת_מיתוג_Build4_3({systemName:brandName.value,primaryColor:brandPrimary.value,secondaryColor:brandSecondary.value,logo:brandLogoUrl.value,logoHeight:brandLogoHeight.value,logoPosition:brandLogoPosition.value,idleLogoutMinutes:brandIdleLogoutMinutes.value});
 }
 function renderCalendarsSettings(){
   const rows = ((DATA.realSettings||{}).calendars||[]);
@@ -2728,11 +2735,12 @@ renderContactCard = function(d){
  * Build 12 – Modern UI + home + idle logout
  ***********************/
 (function(){
-  const IDLE_LIMIT_MS = 60 * 60 * 1000;
-  const IDLE_WARNING_MS = 55 * 60 * 1000;
+  const IDLE_WARNING_BEFORE_MS = 5 * 60 * 1000;
+  const IDLE_DEFAULT_MINUTES = 30;
+  const IDLE_ALLOWED_MINUTES = [15, 30, 60, 90];
   let idleTimer = null;
   let idleWarnTimer = null;
-  let idleWarned = false;
+  let idleWarningOpen = false;
 
   const navLabels = {
     btn_dashboard:'🏠 דשבורד',
@@ -2741,6 +2749,19 @@ renderContactCard = function(d){
     btn_tasks:'✓ משימות',
     btn_settings:'⚙ הגדרות'
   };
+
+  function idleLimitMinutes(){
+    let val = IDLE_DEFAULT_MINUTES;
+    try{
+      const rows = (((window.DATA || {}).realSettings || {}).branding || []);
+      const row = rows.find(r => String(r['מפתח'] || '').trim() === 'ניתוק אוטומטי לאחר אי־פעילות');
+      val = Number(row && row['ערך'] || IDLE_DEFAULT_MINUTES);
+    }catch(e){}
+    return IDLE_ALLOWED_MINUTES.includes(val) ? val : IDLE_DEFAULT_MINUTES;
+  }
+
+  function idleLimitMs(){ return idleLimitMinutes() * 60 * 1000; }
+  function idleWarningMs(){ return Math.max(0, idleLimitMs() - IDLE_WARNING_BEFORE_MS); }
 
   function decorateNav(){
     Object.keys(navLabels).forEach(id=>{
@@ -2758,33 +2779,71 @@ renderContactCard = function(d){
     }catch(e){}
   }
 
-  function forceLogoutByIdle(){
-    const token = currentToken && currentToken();
-    if(token){
-      try{ google.script.run.התנתקות_Build7(token); }catch(e){}
-    }
+  function closeIdleWarning(){
+    if(idleWarningOpen && typeof modal !== 'undefined') modal.classList.add('hidden');
+    idleWarningOpen = false;
+  }
+
+  function scheduleIdleTimers(){
+    idleWarnTimer = setTimeout(warnIdle, idleWarningMs());
+    idleTimer = setTimeout(forceLogoutByIdle, idleLimitMs());
+  }
+
+  function continueWorkingFromWarning(){
+    resetIdleTimer();
+  }
+
+  function performClientLogout(message){
+    const token = (typeof currentToken === 'function') ? currentToken() : '';
     if(typeof clearToken === 'function') clearToken();
-    if(typeof closeM === 'function') closeM();
-    if(typeof showLogin === 'function') showLogin('נותקת מהמערכת עקב חוסר פעילות. יש להתחבר מחדש.');
+    window.DATA = {};
+    try{ DATA = {}; }catch(e){}
+    try{ localStorage.removeItem('crmLastTab'); sessionStorage.removeItem('crmLastTab'); }catch(e){}
+    closeIdleWarning();
+    try{
+      google.script.run
+        .withSuccessHandler(()=>showLogin(message || 'התנתקת מהמערכת'))
+        .withFailureHandler(()=>showLogin(message || 'התנתקת מהמערכת'))
+        .התנתקות_Build7(token);
+    }catch(e){
+      if(typeof showLogin === 'function') showLogin(message || 'התנתקת מהמערכת');
+    }
+  }
+
+  function forceLogoutByIdle(){
+    performClientLogout('נותקת מהמערכת עקב חוסר פעילות. יש להתחבר מחדש.');
+  }
+
+  function idleLogoutNow(){
+    performClientLogout('התנתקת מהמערכת');
   }
 
   function warnIdle(){
     if(!currentToken || !currentToken()) return;
-    idleWarned = true;
-    const stay = confirm('המערכת תתנתק בעוד 5 דקות עקב חוסר פעילות. להמשיך לעבוד?');
-    if(stay) resetIdleTimer();
+    // Opening the warning modal is not user activity; keep the logout timer running.
+    idleWarningOpen = true;
+    modalBox.className='box small';
+    modalBox.innerHTML=`<h3>ניתוק עקב אי־פעילות</h3><p>המערכת תתנתק בעוד 5 דקות עקב חוסר פעילות. להמשיך לעבוד?</p><div class="toolbar"><button class="primary" onclick="BH_IDLE.continueWorking()">המשך עבודה</button><button onclick="BH_IDLE.logoutNow()">התנתק עכשיו</button></div>`;
+    modal.classList.remove('hidden');
   }
 
   function resetIdleTimer(){
-    idleWarned = false;
+    closeIdleWarning();
     clearTimeout(idleTimer);
     clearTimeout(idleWarnTimer);
     if(!currentToken || !currentToken()) return;
-    idleWarnTimer = setTimeout(warnIdle, IDLE_WARNING_MS);
-    idleTimer = setTimeout(forceLogoutByIdle, IDLE_LIMIT_MS);
+    scheduleIdleTimers();
   }
 
-  ['click','keydown','mousemove','touchstart','scroll'].forEach(ev=>{
+  window.BH_IDLE = {
+    markUserActivity: resetIdleTimer,
+    continueWorking: continueWorkingFromWarning,
+    logoutNow: idleLogoutNow,
+    getLimitMinutes: idleLimitMinutes,
+    forceLogoutByIdle: forceLogoutByIdle
+  };
+
+  ['click','keydown','wheel','scroll','touchstart','pointerdown'].forEach(ev=>{
     window.addEventListener(ev, resetIdleTimer, {passive:true});
   });
 
@@ -3071,6 +3130,7 @@ function openTabById_Build13_2(id){
 }
 
 function tab(id,b){
+  if(window.BH_IDLE && typeof window.BH_IDLE.markUserActivity === 'function') window.BH_IDLE.markUserActivity();
   document.querySelectorAll('main section').forEach(s=>s.classList.add('hidden'));
   document.getElementById(id).classList.remove('hidden');
   document.querySelectorAll('nav button').forEach(x=>x.classList.remove('active'));
