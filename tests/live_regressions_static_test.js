@@ -28,5 +28,11 @@ has(html, /שם מלא[\s\S]*?—[\s\S]*?email/, 'matching visible contact shows
 has(html, /משתתף חיצוני/, 'external participant is labelled');
 has(html, /אין משתתפים ביומן/, 'empty participants state is visible');
 has(html, /'משתתפי יומן':normalized/, 'participant persistence field remains canonical');
+
+has(html, /function dashList\(rows,type\)[\s\S]*?onclick="openTaskCard\('\$\{esc\(r\['מזהה משימה'\]\)\}'\)"/, 'dashboard task click opens task card instead of task editor');
+has(html, /<button class="primary" onclick='openTask\(\$\{JSON\.stringify\(t\)\}\)'>ערוך<\/button>/, 'task card keeps explicit edit button');
+has(gs, /function משימה_מותרת_לפתיחה_Build11_2_\(user, task\)[\s\S]*?משתמש_רשאי_לפרויקט_Build11_2_\(user, projectId\)[\s\S]*?משתמש_רשאי_לאיש_קשר_Build11_2_\(user, contactId\)/, 'task list filtering reuses the same project/contact open permissions');
+has(gs, /out\.tasks = \(data\.tasks \|\| \[\]\)\.filter\(t => משימה_מותרת_לפתיחה_Build11_2_\(user, t\)\)/, 'authorized task lists are filtered before dashboard/table/calendar payloads are built');
+has(gs, /if \(!משימה_מותרת_לפתיחה_Build11_2_\(user, task\)\) \{[\s\S]*?throw new Error\("אין הרשאה לצפייה במשימה זו"\);[\s\S]*?\}/, 'task card open path uses the shared task permission predicate');
 has(gs, /Calendar\.Events\.insert\(resource, calendarId, \{ sendUpdates: "all" \}\)/, 'calendar invitation sending remains intact');
 console.log('live regression static assertions passed');

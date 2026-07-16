@@ -961,7 +961,7 @@ function dashList(rows,type){
   if(!rows || !rows.length) return '<p>אין נתונים.</p>';
   let html = `<b>${rows.length}</b><ul>`;
   rows.slice(0,6).forEach(r=>{
-    if(type==='task') html += `<li><span class="linkish" onclick='openTask(${JSON.stringify(r)})'>${esc(r['כותרת'])}</span> <span class="muted">${esc(r['תאריך']||'')}</span></li>`;
+    if(type==='task') html += `<li><span class="linkish" onclick="openTaskCard('${esc(r['מזהה משימה'])}')">${esc(r['כותרת'])}</span> <span class="muted">${esc(r['תאריך']||'')}</span></li>`;
     else html += `<li><span class="linkish" onclick='openProjectCard("${esc(r['מזהה פרויקט'])}")'>${esc(r['שם פרויקט'])}</span> <span class="muted">${esc(r['עיר']||'')}</span></li>`;
   });
   return html+'</ul>';
