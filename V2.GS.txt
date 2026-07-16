@@ -4810,10 +4810,13 @@ function שמירת_פרויקט(data) {
   const responsibleOwner = data.owner || (old ? old["אחראי"] : "") || currentUser;
   BH_PR_assertResponsibleAllowed_(actor, data, old, responsibleOwner);
 
+  const hasProjectDescription = Object.prototype.hasOwnProperty.call(data, "projectDescription") || Object.prototype.hasOwnProperty.call(data, "description");
+  const projectDescription = Object.prototype.hasOwnProperty.call(data, "projectDescription") ? data.projectDescription : data.description;
+
   const row = {
     "מזהה פרויקט": data.id || makeId_("פר"),
     "שם פרויקט": data.name,
-    "תיאור הפרויקט": data.projectDescription || data.description || (old ? old["תיאור הפרויקט"] : "") || "",
+    "תיאור הפרויקט": hasProjectDescription ? (projectDescription || "") : (old ? old["תיאור הפרויקט"] : "") || "",
     "עיר": data.city || "",
     "תחום": data.type || "",
     "סטטוס": data.status || "ללא סיווג",
@@ -4879,10 +4882,13 @@ function שמירת_משימה(data) {
     throw new Error("בפגישה עם תאריך חובה להזין גם שעת סיום");
   }
 
+  const hasTaskDescription = Object.prototype.hasOwnProperty.call(data, "taskDescription") || Object.prototype.hasOwnProperty.call(data, "description");
+  const taskDescription = Object.prototype.hasOwnProperty.call(data, "taskDescription") ? data.taskDescription : data.description;
+
   const row = {
     "מזהה משימה": id,
     "כותרת": data.title,
-    "תיאור המשימה": data.taskDescription || data.description || (old ? old["תיאור המשימה"] : "") || "",
+    "תיאור המשימה": hasTaskDescription ? (taskDescription || "") : (old ? old["תיאור המשימה"] : "") || "",
     "סוג משימה": taskType,
     "עדיפות": data.priority || (old ? old["עדיפות"] : "") || "רגילה",
     "תאריך": dateValue,

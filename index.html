@@ -816,6 +816,22 @@ function projectNameById(id){
   const p=(DATA.projects||[]).find(x=>x['מזהה פרויקט']===id);
   return p ? p['שם פרויקט'] : id;
 }
+const PROJECT_DESCRIPTION_FIELD = 'תיאור הפרויקט';
+const TASK_DESCRIPTION_FIELD = 'תיאור המשימה';
+function projectById(id){ return (DATA.projects||[]).find(x=>String(x['מזהה פרויקט']||'')===String(id||'')); }
+function projectDescription(project){ return String((project||{})[PROJECT_DESCRIPTION_FIELD] || '').trim(); }
+function taskDescription(task){ return String((task||{})[TASK_DESCRIPTION_FIELD] || '').trim(); }
+function htmlTitleAttr(text){ const v=String(text||'').trim(); return v ? ` title="${esc(v)}"` : ''; }
+function projectDisplayNameHtml(project){ return `<span${htmlTitleAttr(projectDescription(project))}>${esc((project||{})['שם פרויקט']||'')}</span>`; }
+function taskDisplayTitle(task){
+  task = task || {};
+  const title = String(task['כותרת'] || '').trim();
+  const project = projectById(task['מזהה פרויקט']);
+  const projectName = project ? String(project['שם פרויקט'] || '').trim() : String(task['שם פרויקט'] || task.projectName || '').trim();
+  return projectName ? `${projectName} – ${title}` : title;
+}
+function taskDisplayTitleHtml(task){ return `<span${htmlTitleAttr(taskDescription(task))}>${esc(taskDisplayTitle(task)||'')}</span>`; }
+function taskCalendarTitleHtml(task){ return `${esc((task||{})['שעה']||'')} ${priorityMark((task||{})['עדיפות'])}${esc((task||{})['סוג משימה']||'משימה')} - ${esc(taskDisplayTitle(task))}`; }
 function activeUsersOptions(selected=''){
   return `<option value="">בחר אחראי</option>` + usersList().filter(u=>u['פעיל']!=='לא').map(u=>`<option value="${esc(u['שם'])}" ${u['שם']==selected?'selected':''}>${esc(u['שם'])}</option>`).join('');
 }
@@ -962,8 +978,8 @@ function dashList(rows,type){
   if(!rows || !rows.length) return '<p>אין נתונים.</p>';
   let html = `<b>${rows.length}</b><ul>`;
   rows.slice(0,6).forEach(r=>{
-    if(type==='task') html += `<li><span class="linkish" onclick="openTaskCard('${esc(r['מזהה משימה'])}')">${esc(r['כותרת'])}</span> <span class="muted">${esc(r['תאריך']||'')}</span></li>`;
-    else html += `<li><span class="linkish" onclick='openProjectCard("${esc(r['מזהה פרויקט'])}")'>${esc(r['שם פרויקט'])}</span> <span class="muted">${esc(r['עיר']||'')}</span></li>`;
+    if(type==='task') html += `<li><span class="linkish"${htmlTitleAttr(taskDescription(r))} onclick="openTaskCard('${esc(r['מזהה משימה'])}')">${esc(taskDisplayTitle(r))}</span> <span class="muted">${esc(r['תאריך']||'')}</span></li>`;
+    else html += `<li><span class="linkish"${htmlTitleAttr(projectDescription(r))} onclick='openProjectCard("${esc(r['מזהה פרויקט'])}")'>${esc(r['שם פרויקט'])}</span> <span class="muted">${esc(r['עיר']||'')}</span></li>`;
   });
   return html+'</ul>';
 }
@@ -980,6 +996,7 @@ function openProject(r={}){
   modalBox.innerHTML=`
     <h2>${r['מזהה פרויקט']?'עריכת פרויקט':'פרויקט חדש'}</h2>
     <label>שם פרויקט${BH_requiredMark('project','שם פרויקט')}</label><input id="pName" value="${esc(r['שם פרויקט'])}">
+    <label>תיאור הפרויקט</label><textarea id="pDescription">${esc(r[PROJECT_DESCRIPTION_FIELD]||'')}</textarea>
     <label>עיר${BH_requiredMark('project','עיר')}</label><select id="pCity"><option value="">בחר עיר</option>${opts('עיר',r['עיר'])}</select>
     <label>תחום${BH_requiredMark('project','תחום')}</label><select id="pType"><option value="">בחר תחום</option>${opts('תחום',r['תחום'])}</select>
     <label>סטטוס${BH_requiredMark('project','סטטוס')}</label><select id="pStatus"><option value="">בחר סטטוס</option>${opts('סטטוס פרויקט',r['סטטוס'])}</select>
@@ -996,7 +1013,7 @@ function openProject(r={}){
 function saveProject(id){
   google.script.run.withSuccessHandler(()=>{closeM();refreshCore();})
     .withFailureHandler(e=>alert(e.message))
-    .שמירת_פרויקט({id,name:pName.value,city:pCity.value,type:pType.value,status:pStatus.value,assignmentDomain:(typeof pAssignmentDomain !== 'undefined' ? pAssignmentDomain.value : ''),owner:pOwner.value,tags:pTags.value,drive:pDrive.value});
+    .שמירת_פרויקט({id,name:pName.value,projectDescription:(typeof pDescription!=='undefined'?pDescription.value:''),city:pCity.value,type:pType.value,status:pStatus.value,assignmentDomain:(typeof pAssignmentDomain !== 'undefined' ? pAssignmentDomain.value : ''),owner:pOwner.value,tags:pTags.value,drive:pDrive.value});
 }
 function delProject(id){ if(confirm('למחוק פרויקט ואת השיוכים שלו?')) google.script.run.withSuccessHandler(()=>{closeM();refreshCore();}).withFailureHandler(e=>alert(e.message)).מחיקת_פרויקט(id); }
 function openProjectCard(id){ google.script.run.withSuccessHandler(renderProjectCard).withFailureHandler(e=>alert(e.message)).כרטיס_פרויקט(id); }
@@ -1047,6 +1064,7 @@ function renderProjectCard(d){
   modalBox.className='box';
   modalBox.innerHTML=`
     <h2>${esc(p['שם פרויקט'])}</h2>
+    ${projectDescription(p) ? `<div class="card project-description">${esc(projectDescription(p))}</div>` : ''}
     <div class="toolbar">
       <button class="primary" onclick='openProject(${JSON.stringify(p)})'>ערוך</button>
       <button class="danger" onclick='delProject("${esc(p['מזהה פרויקט'])}")'>העבר לארכיון</button>
@@ -1076,7 +1094,7 @@ function renderProjectCard(d){
     </div>
     <h3 class="sectionTitle">משימות הפרויקט</h3>
     <button onclick='openTask({}, {"מזהה פרויקט":"${esc(p['מזהה פרויקט'])}","allowedContactIds":${JSON.stringify(d.allowedContactIds||[])}})'>+ משימה לפרויקט</button>
-    ${smallTable(d.tasks,['כותרת','תאריך','שעה','סטטוס'],['כותרת','תאריך','שעה','סטטוס'],t=>`<button onclick="openTaskCard('${esc(t['מזהה משימה'])}')">פתח</button>`)}
+    ${smallTable((d.tasks||[]).map(t=>Object.assign({}, t, {'כותרת':taskDisplayTitleHtml(t)})),['כותרת','תאריך','שעה','סטטוס'],['כותרת','תאריך','שעה','סטטוס'],t=>`<button onclick="openTaskCard('${esc(t['מזהה משימה'])}')">פתח</button>`)}
     <h3 class="sectionTitle">הערות</h3>
     <button class="primary" onclick="openProjectNote('${esc(p['מזהה פרויקט'])}')">+ הוסף הערה</button>
     <div id="projectNotesBox">טוען...</div>
@@ -1159,7 +1177,7 @@ function renderContactCard(d){
     <button class="primary" onclick="saveLink(linkProject.value,'${esc(c['מזהה איש קשר'])}',linkRole.value,linkPortal.value,()=>openContactCard('${esc(c['מזהה איש קשר'])}'))">הוסף שיוך</button>
     <h3 class="sectionTitle">משימות איש הקשר</h3>
     <button onclick='openTask({}, {"מזהה איש קשר":"${esc(c['מזהה איש קשר'])}"})'>+ משימה לאיש קשר</button>
-    ${smallTable(d.tasks,['כותרת','תאריך','שעה','סטטוס'],['כותרת','תאריך','שעה','סטטוס'],t=>`<button onclick="openTaskCard('${esc(t['מזהה משימה'])}')">פתח</button>`)}
+    ${smallTable((d.tasks||[]).map(t=>Object.assign({}, t, {'כותרת':taskDisplayTitleHtml(t)})),['כותרת','תאריך','שעה','סטטוס'],['כותרת','תאריך','שעה','סטטוס'],t=>`<button onclick="openTaskCard('${esc(t['מזהה משימה'])}')">פתח</button>`)}
   `;
   modal.classList.remove('hidden');
 }
@@ -1811,7 +1829,7 @@ function renderCalendarDashboard(){
     return `<div class="calendar-day ${sameDate(d,today)?'today':''}">
       <div class="calendar-day-head">${dayName(d)} · ${fmtDateDMY(d)}</div>
       <div class="calendar-hebrew">${hebrewDate(d)}</div>
-      ${tasks.map(t=>`<span class="calendar-event ${priorityClass(t)}" onclick="openTaskCard('${esc(t['מזהה משימה'])}')">${esc(t['שעה']||'')} ${priorityMark(t['עדיפות'])}${esc(t['סוג משימה']||'משימה')} - ${esc(t['כותרת']||'')}</span>`).join('')}
+      ${tasks.map(t=>`<span class="calendar-event ${priorityClass(t)}"${htmlTitleAttr(taskDescription(t))} onclick="openTaskCard('${esc(t['מזהה משימה'])}')">${taskCalendarTitleHtml(t)}</span>`).join('')}
     </div>`;
   }).join('') + `</div>`;
 }
@@ -2150,7 +2168,7 @@ function renderCalendarDashboard(){
     return `<div class="calendar-day ${sameDate(d,today)?'today':''}">
       <div class="calendar-day-head">${dayName(d)} · ${fmtDateISO(d)}</div>
       <div class="calendar-hebrew">${hebrewDate(d)}</div>
-      ${tasks.map(t=>`<span class="calendar-event ${priorityClass(t)}" onclick="openTaskCard('${esc(t['מזהה משימה'])}')">${esc(t['שעה']||'')} ${priorityMark(t['עדיפות'])}${esc(t['סוג משימה']||'משימה')} - ${esc(t['כותרת']||'')}</span>`).join('')}
+      ${tasks.map(t=>`<span class="calendar-event ${priorityClass(t)}"${htmlTitleAttr(taskDescription(t))} onclick="openTaskCard('${esc(t['מזהה משימה'])}')">${taskCalendarTitleHtml(t)}</span>`).join('')}
     </div>`;
   }).join('') + `</div>`;
 }
@@ -2677,7 +2695,7 @@ const readOnly = isArchived || !canWriteProject;
       </div>` : ''}
     <h3 class="sectionTitle">משימות הפרויקט</h3>
     ${!readOnly ? `<button onclick='openTask({}, {"מזהה פרויקט":"${esc(p['מזהה פרויקט'])}","allowedContactIds":${JSON.stringify(d.allowedContactIds||[])}})'>+ משימה לפרויקט</button>` : ''}
-    ${smallTable(d.tasks,['כותרת','תאריך','שעה','סטטוס'],['כותרת','תאריך','שעה','סטטוס'],t=>`<button onclick="openTaskCard('${esc(t['מזהה משימה'])}')">פתח</button>`)}
+    ${smallTable((d.tasks||[]).map(t=>Object.assign({}, t, {'כותרת':taskDisplayTitleHtml(t)})),['כותרת','תאריך','שעה','סטטוס'],['כותרת','תאריך','שעה','סטטוס'],t=>`<button onclick="openTaskCard('${esc(t['מזהה משימה'])}')">פתח</button>`)}
     <h3 class="sectionTitle">הערות</h3>
     ${!readOnly ? `<button class="primary" onclick="openProjectNote('${esc(p['מזהה פרויקט'])}')">+ הוסף הערה</button>` : ''}
     <div id="projectNotesBox">טוען...</div>
@@ -2723,7 +2741,7 @@ renderContactCard = function(d){
     ${smallTable(d.links,['name','city','status','role','portal'],['פרויקט','עיר','סטטוס','תפקיד','הרשאת צפייה'],l=>readOnly ? '' : linkActionsForContact(l,c['מזהה איש קשר']))}
     <h3 class="sectionTitle">משימות איש הקשר</h3>
     ${!readOnly ? `<button onclick='openTask({}, {"מזהה איש קשר":"${esc(c['מזהה איש קשר'])}"})'>+ משימה לאיש קשר</button>` : ''}
-    ${smallTable(d.tasks,['כותרת','תאריך','שעה','סטטוס'],['כותרת','תאריך','שעה','סטטוס'],t=>`<button onclick="openTaskCard('${esc(t['מזהה משימה'])}')">פתח</button>`)}
+    ${smallTable((d.tasks||[]).map(t=>Object.assign({}, t, {'כותרת':taskDisplayTitleHtml(t)})),['כותרת','תאריך','שעה','סטטוס'],['כותרת','תאריך','שעה','סטטוס'],t=>`<button onclick="openTaskCard('${esc(t['מזהה משימה'])}')">פתח</button>`)}
   `;
   modal.classList.remove('hidden');
 };
@@ -3535,6 +3553,9 @@ function refreshCore(after){
       <label>כותרת${BH_requiredMark('task','כותרת')}</label>
       <input id="tTitle" value="${esc(r['כותרת']||'')}">
 
+      <label>תיאור המשימה</label>
+      <textarea id="tDescription">${esc(r[TASK_DESCRIPTION_FIELD]||'')}</textarea>
+
       <label>סוג משימה${BH_requiredMark('task','סוג משימה')}</label>
       <select id="tType" onchange="updateTaskFields()">${opts('סוג משימה',r['סוג משימה']||'משימה')}</select>
 
@@ -3608,12 +3629,13 @@ function refreshCore(after){
     if(!canCreate() && !id) return alert('אין לך הרשאה להוספה');
 
     google.script.run
-      .withSuccessHandler(()=>{closeM();refreshCore();})
+      .withSuccessHandler(savedId=>{refreshCore(()=>openTaskCard(savedId||id));})
       .withFailureHandler(e=>alert(e.message))
       .שמירת_משימה({
         authToken:currentToken(),
         id,
         title:tTitle.value,
+        taskDescription:(typeof tDescription!=='undefined'?tDescription.value:''),
         taskType:tType.value,
         priority:tPriority.value,
         date:tDate.value,
@@ -3666,7 +3688,8 @@ function refreshCore(after){
 
     modalBox.className='box small';
     modalBox.innerHTML=`
-      <h2>${priorityMark(t['עדיפות'])}${esc(t['כותרת']||'משימה')}</h2>
+      <h2>${priorityMark(t['עדיפות'])}${esc(taskDisplayTitle(t)||'משימה')}</h2>
+      ${taskDescription(t) ? `<div class="card task-description">${esc(taskDescription(t))}</div>` : ''}
       ${archiveNotice}
 
       <div class="toolbar">
@@ -4179,9 +4202,9 @@ th{background:#f2f6fb!important;color:#17395f!important;font-weight:800!importan
         <div class="calendar-hebrew">${hebrewDate(d)}</div>
         ${tasks.map(t=>{
           const creator = window.calendarCreatorOfTask(t);
-          return `<span class="calendar-event ${priorityClass(t)}" onclick="openTaskCard('${esc(t['מזהה משימה'])}')">
+          return `<span class="calendar-event ${priorityClass(t)}"${htmlTitleAttr(taskDescription(t))} onclick="openTaskCard('${esc(t['מזהה משימה'])}')">
             <span class="calendar-creator-badge">${esc(creator)}</span>
-            ${esc(t['שעה']||'')} ${priorityMark(t['עדיפות'])}${esc(t['סוג משימה']||'משימה')} - ${esc(t['כותרת']||'')}
+            ${taskCalendarTitleHtml(t)}
           </span>`;
         }).join('')}
       </div>`;
@@ -4247,8 +4270,8 @@ th{background:#f2f6fb!important;color:#17395f!important;font-weight:800!importan
           <div class="calendar-day-head">${dayName(d)} · ${fmtDateDMY(d)}</div>
           <div class="calendar-hebrew">${hebrewDate(d)}</div>
           ${tasks.map(t=>`
-            <span class="calendar-event ${priorityClass(t)}" onclick="openTaskCard('${esc(t['מזהה משימה'])}')">
-              ${esc(t['שעה']||'')} ${priorityMark(t['עדיפות'])}${esc(t['סוג משימה']||'משימה')} - ${esc(t['כותרת']||'')}
+            <span class="calendar-event ${priorityClass(t)}"${htmlTitleAttr(taskDescription(t))} onclick="openTaskCard('${esc(t['מזהה משימה'])}')">
+              ${taskCalendarTitleHtml(t)}
             </span>
           `).join('')}
         </div>`;
@@ -4383,9 +4406,9 @@ th{background:#f2f6fb!important;color:#17395f!important;font-weight:800!importan
           <div class="calendar-day-head">${dayName(d)} · ${fmtDateDMY(d)}</div>
           <div class="calendar-hebrew">${hebrewDate(d)}</div>
           ${tasks.map(t=>`
-            <span class="calendar-event ${priorityClass(t)}" onclick="openTaskCard('${esc(t['מזהה משימה'])}')">
+            <span class="calendar-event ${priorityClass(t)}"${htmlTitleAttr(taskDescription(t))} onclick="openTaskCard('${esc(t['מזהה משימה'])}')">
               ${BH_creatorBadge(t)}
-              ${esc(t['שעה']||'')} ${priorityMark(t['עדיפות'])}${esc(t['סוג משימה']||'משימה')} - ${esc(t['כותרת']||'')}
+              ${taskCalendarTitleHtml(t)}
             </span>
           `).join('')}
         </div>`;
@@ -6077,12 +6100,13 @@ window.saveContactPermissionFromPicker = function(){
 
 window.saveProject = function(id){
   google.script.run
-    .withSuccessHandler(()=>{closeM();refreshCore();})
+    .withSuccessHandler(savedId=>{refreshCore(()=>openProjectCard(savedId||id));})
     .withFailureHandler(e=>alert(e.message))
     .שמירת_פרויקט({
       authToken: currentToken(),
       id,
       name:pName.value,
+      projectDescription:(typeof pDescription!=='undefined'?pDescription.value:''),
       city:pCity.value,
       type:pType.value,
       status:pStatus.value,
@@ -6176,8 +6200,8 @@ window.calendarTasksForDate = function(d){
       title: 'שם פרויקט',
       list: ['שם פרויקט','עיר','תחום','סטטוס'],
       card: ['עיר','תחום','סטטוס','אחראי'],
-      search: ['שם פרויקט','עיר','תחום','סטטוס','תגיות','אחראי'],
-      labels: {'שם פרויקט':'שם פרויקט','עיר':'עיר','תחום':'תחום','סטטוס':'סטטוס','אחראי':'אחראי','תגיות':'תגיות','תיקיית Drive':'תיקיית Drive','תחום שיוך':'תחום שיוך'}
+      search: ['שם פרויקט','תיאור הפרויקט','עיר','תחום','סטטוס','תגיות','אחראי'],
+      labels: {'שם פרויקט':'שם פרויקט','תיאור הפרויקט':'תיאור הפרויקט','עיר':'עיר','תחום':'תחום','סטטוס':'סטטוס','אחראי':'אחראי','תגיות':'תגיות','תיקיית Drive':'תיקיית Drive','תחום שיוך':'תחום שיוך'}
     },
     contact: {
       title: 'שם מלא',
@@ -6190,8 +6214,8 @@ window.calendarTasksForDate = function(d){
       title: 'כותרת',
       list: ['כותרת','משויך לפרויקט','סוג משימה','עדיפות','תאריך','שעה','סטטוס'],
       card: ['סוג משימה','עדיפות','סטטוס','תאריך','שעה','שעת סיום','משך פגישה','מיקום','כניסה ליומן','משויך לפרויקט','איש קשר','אחראי'],
-      search: ['כותרת','סוג משימה','עדיפות','תאריך','שעה','סטטוס','אחראי','הערות למשימה'],
-      labels: {'כותרת':'כותרת','משויך לפרויקט':'משויך לפרויקט','מזהה פרויקט':'פרויקט','איש קשר':'איש קשר','מזהה איש קשר':'איש קשר','סוג משימה':'סוג','עדיפות':'עדיפות','תאריך':'תאריך','שעה':'שעה','שעת סיום':'שעת סיום','משך פגישה':'משך פגישה','מיקום':'מיקום','כניסה ליומן':'יומן','סטטוס':'סטטוס','אחראי':'אחראי','הערות למשימה':'הערות למשימה'}
+      search: ['כותרת','תיאור המשימה','סוג משימה','עדיפות','תאריך','שעה','סטטוס','אחראי','הערות למשימה'],
+      labels: {'כותרת':'כותרת','תיאור המשימה':'תיאור המשימה','משויך לפרויקט':'משויך לפרויקט','מזהה פרויקט':'פרויקט','איש קשר':'איש קשר','מזהה איש קשר':'איש קשר','סוג משימה':'סוג','עדיפות':'עדיפות','תאריך':'תאריך','שעה':'שעה','שעת סיום':'שעת סיום','משך פגישה':'משך פגישה','מיקום':'מיקום','כניסה ליומן':'יומן','סטטוס':'סטטוס','אחראי':'אחראי','הערות למשימה':'הערות למשימה'}
     }
   };
   const TASK_VALUE_KEYS = {'מזהה פרויקט':'משויך לפרויקט','איש קשר':'שם איש קשר','מזהה איש קשר':'שם איש קשר'};
@@ -6235,7 +6259,8 @@ window.calendarTasksForDate = function(d){
       fieldsFor('project','search')
     );
     rows = sortRows(rows, projectSort?.value || 'dateDesc', 'שם פרויקט');
-    projectsTable.innerHTML = tableHtml(rows, cols('project','list'), r=>`openProjectCard('${esc(r['מזהה פרויקט'])}')`, r=>{
+    const displayRows = rows.map(r=>Object.assign({}, r, {'שם פרויקט':projectDisplayNameHtml(r)}));
+    projectsTable.innerHTML = tableHtml(displayRows, cols('project','list'), r=>`openProjectCard('${esc(r['מזהה פרויקט'])}')`, r=>{
       const id = esc(r['מזהה פרויקט']);
       return `<button onclick="openProjectCard('${id}')">ערוך</button> <button class="danger" onclick="delProject('${id}')">העבר לארכיון</button>`;
     });
@@ -6263,8 +6288,8 @@ window.calendarTasksForDate = function(d){
     rows = rows.filter(t=>{ const d = t['תאריך'] ? parseDateOnly(t['תאריך']) : null; if(f==='open') return t['סטטוס']!=='בוצע' && t['סטטוס']!=='בוטל'; if(f==='done') return t['סטטוס']==='בוצע'; if(f==='late') return d && d<today && t['סטטוס']!=='בוצע' && t['סטטוס']!=='בוטל'; if(f==='today') return d && d.getTime()===today.getTime() && t['סטטוס']!=='בוצע' && t['סטטוס']!=='בוטל'; if(f==='week') return d && d>today && d<=week && t['סטטוס']!=='בוצע' && t['סטטוס']!=='בוטל'; return true; });
     rows = rows.map(t=>Object.assign({}, t, {'משויך לפרויקט':projectsById[String(t['מזהה פרויקט']||'')]||'', 'שם איש קשר':contactNameById(t['מזהה איש קשר'])}));
     const q = window.taskSearch ? taskSearch.value || '' : ''; rows = filtered(rows, q, fieldsFor('task','search'));
-    rows = rows.map(t=>{ const statusValue = t['סטטוס'] || 'פתוח'; return Object.assign({}, t, {'כותרת':`<span class="task-title-note" title="${esc(t['הערות למשימה']||'')}">${esc(t['כותרת']||'')}</span>`, '_canonicalStatus':statusValue, 'סטטוס':`<span class="task-status task-status-${esc(statusValue)}">${esc(statusValue)}</span>`}); });
-    tasksTable.innerHTML = tableHtml(rows, cols('task','list'), r=>`openTaskCard('${esc(r['מזהה משימה'])}')`, r=>{ const id=esc(r['מזהה משימה']); const isDone=(r['_canonicalStatus']||r['סטטוס'])==='בוצע'; return `<button onclick="openTaskCard('${id}')">ערוך</button> ${isDone?`<button onclick="reactivateTask('${id}')">החזר לפעיל</button>`:`<button onclick="doneTask('${id}')">בוצע</button>`} <button class="danger" onclick="delTask('${id}')">העבר לארכיון</button>`; });
+    rows = rows.map(t=>{ const statusValue = t['סטטוס'] || 'פתוח'; return Object.assign({}, t, {'כותרת':taskDisplayTitleHtml(t), '_canonicalStatus':statusValue, 'סטטוס':`<span class="task-status task-status-${esc(statusValue)}">${esc(statusValue)}</span>`}); });
+    tasksTable.innerHTML = tableHtml(rows, cols('task','list'), r=>`openTaskCard('${esc(r['מזהה משימה'])}')`, r=>{ const id=esc(r['מזהה משימה']); const isDone=(r['_canonicalStatus']||r['סטטוס'])==='בוצע'; return `<button onclick="openTask((DATA.tasks||[]).find(t=>String(t['מזהה משימה'])==='${id}')||{})">ערוך</button> ${isDone?`<button onclick="reactivateTask('${id}')">החזר לפעיל</button>`:`<button onclick="doneTask('${id}')">בוצע</button>`} <button class="danger" onclick="delTask('${id}')">העבר לארכיון</button>`; });
   };
   const oldProjectCard = window.renderProjectCard, oldContactCard = window.renderContactCard, oldTaskCard = window.renderTaskCard;
   window.renderProjectCard = function(d){ oldProjectCard(d); const p=d.project||{}; const grid=modalBox.querySelector('.grid2'); if(grid) grid.innerHTML=cardGrid('project', p); };
@@ -6753,10 +6778,10 @@ window.calendarTasksForDate = function(d){
     if(!canCreate() && !id) return alert('אין לך הרשאה להוספה');
     const normalized = window.BH_normalizeCalendarParticipants(selectedCalendarGuests());
     google.script.run
-      .withSuccessHandler(()=>{closeM();refreshCore();})
+      .withSuccessHandler(savedId=>{refreshCore(()=>openTaskCard(savedId||id));})
       .withFailureHandler(e=>alert(e.message))
       .שמירת_משימה({
-        authToken:currentToken(), id, title:tTitle.value, taskType:tType.value, priority:tPriority.value,
+        authToken:currentToken(), id, title:tTitle.value, taskDescription:(typeof tDescription!=='undefined'?tDescription.value:''), taskType:tType.value, priority:tPriority.value,
         date:tDate.value, time:(typeof tTime!=='undefined'?tTime.value:''), endTime:(typeof tEndTime!=='undefined'?tEndTime.value:''),
         meetingDuration:(typeof tDuration!=='undefined'?tDuration.value:''), location:(typeof tLocation!=='undefined'?tLocation.value:''),
         addToCalendar:(typeof tCalendar!=='undefined'?tCalendar.value:'לא'), calendarGuests:normalized, 'משתתפי יומן':normalized,
@@ -6800,79 +6825,5 @@ window.calendarTasksForDate = function(d){
 </style>
 
 
-<script id="BH_DESCRIPTION_DISPLAY_PATCH">
-(function(){
-  const PROJECT_DESC = 'תיאור הפרויקט';
-  const TASK_DESC = 'תיאור המשימה';
-  function byId(id){ return (DATA.projects||[]).find(p=>String(p['מזהה פרויקט']||'')===String(id||'')); }
-  window.projectDescription = function(project){ return String((project||{})[PROJECT_DESC] || (project||{})['תיאור'] || '').trim(); };
-  window.taskDescription = function(task){ return String((task||{})[TASK_DESC] || '').trim(); };
-  window.taskDisplayTitle = function(task){
-    task = task || {};
-    const title = String(task['כותרת'] || '').trim();
-    const project = byId(task['מזהה פרויקט']);
-    const projectName = project ? String(project['שם פרויקט'] || '').trim() : String(task['שם פרויקט'] || task.projectName || '').trim();
-    return projectName ? `${projectName} – ${title}` : title;
-  };
-  function maybeTitle(text){ const v=String(text||'').trim(); return v ? ` title="${esc(v)}"` : ''; }
-  function projectNameHtml(p){ return `<span${maybeTitle(projectDescription(p))}>${esc((p||{})['שם פרויקט']||'')}</span>`; }
-  function taskTitleHtml(t){ return `<span${maybeTitle(taskDescription(t))}>${esc(taskDisplayTitle(t)||'')}</span>`; }
-  function enhanceTableRows(rows, type){
-    return (rows||[]).map(r=>{ const copy=Object.assign({}, r); if(type==='project') copy['שם פרויקט']=projectNameHtml(r); if(type==='task') copy['כותרת']=taskTitleHtml(r); return copy; });
-  }
-
-  const oldOpenProject = window.openProject;
-  window.openProject = function(r={}){ oldOpenProject(r); const name=document.getElementById('pName'); if(name && !document.getElementById('pDescription')) name.insertAdjacentHTML('afterend', `<label>${PROJECT_DESC}</label><textarea id="pDescription">${esc((r||{})[PROJECT_DESC]||'')}</textarea>`); };
-  const oldSaveProject = window.saveProject;
-  window.saveProject = function(id){
-    google.script.run.withSuccessHandler(()=>{closeM();refreshCore();}).withFailureHandler(e=>alert(e.message)).שמירת_פרויקט({authToken:currentToken(),id,name:pName.value,projectDescription:(window.pDescription?pDescription.value:''),city:pCity.value,type:pType.value,status:pStatus.value,assignmentDomain:(typeof pAssignmentDomain !== 'undefined' ? pAssignmentDomain.value : ''),owner:pOwner.value,tags:pTags.value,drive:pDrive.value});
-  };
-  const oldProjectCard = window.renderProjectCard;
-  window.renderProjectCard = function(d){ oldProjectCard(d); const h=modalBox.querySelector('h2'); const desc=projectDescription((d&&d.project)||{}); if(h && desc) h.insertAdjacentHTML('afterend', `<div class="card project-description">${esc(desc)}</div>`); };
-
-  const oldOpenTask = window.openTask;
-  window.openTask = function(r={}, preset={}){ oldOpenTask(r,preset); const title=document.getElementById('tTitle'); if(title && !document.getElementById('tDescription')) title.insertAdjacentHTML('afterend', `<label>${TASK_DESC}</label><textarea id="tDescription">${esc((r||{})[TASK_DESC]||'')}</textarea>`); };
-  const oldSaveTask = window.saveTask;
-  window.saveTask = function(id){
-    const payload = {authToken:currentToken(), id, title:tTitle.value, taskDescription:(window.tDescription?tDescription.value:''), taskType:tType.value, priority:(window.tPriority?tPriority.value:''), date:tDate.value, time:(typeof tTime!=='undefined'?tTime.value:''), endTime:(typeof tEndTime!=='undefined'?tEndTime.value:''), meetingDuration:(typeof tDuration!=='undefined'?tDuration.value:''), location:(typeof tLocation!=='undefined'?tLocation.value:''), addToCalendar:(typeof tCalendar!=='undefined'?tCalendar.value:'לא'), calendarGuests:(typeof selectedCalendarGuests==='function'?selectedCalendarGuests():''), status:tStatus.value, projectId:tProject.value, contactId:tContact.value, owner:tOwner.value, taskNotes:(window.tTaskNotes?tTaskNotes.value:'')};
-    google.script.run.withSuccessHandler(()=>{closeM();refreshCore();}).withFailureHandler(e=>alert(e.message)).שמירת_משימה(payload);
-  };
-  const oldTaskCard = window.renderTaskCard;
-  window.renderTaskCard = function(d){ oldTaskCard(d); const t=(d&&d.task)||{}; const h=modalBox.querySelector('h2'); if(h) h.innerHTML = `${priorityMark(t['עדיפות'])}${esc(taskDisplayTitle(t)||'משימה')}`; const desc=taskDescription(t); if(h && desc) h.insertAdjacentHTML('afterend', `<div class="card task-description">${esc(desc)}</div>`); };
-
-  const oldDashList = window.dashList;
-  window.dashList = function(rows,type){
-    if(!rows || !rows.length) return '<p>אין נתונים.</p>';
-    let html = `<b>${rows.length}</b><ul>`;
-    rows.slice(0,6).forEach(r=>{
-      if(type==='task') html += `<li><span class="linkish"${maybeTitle(taskDescription(r))} onclick="openTaskCard('${esc(r['מזהה משימה'])}')">${esc(taskDisplayTitle(r))}</span> <span class="muted">${esc(r['תאריך']||'')}</span></li>`;
-      else html += `<li><span class="linkish"${maybeTitle(projectDescription(r))} onclick='openProjectCard("${esc(r['מזהה פרויקט'])}")'>${esc(r['שם פרויקט'])}</span> <span class="muted">${esc(r['עיר']||'')}</span></li>`;
-    });
-    return html+'</ul>';
-  };
-
-  const oldTableProjects = window.tableProjects;
-  window.tableProjects = function(){ oldTableProjects(); const rows=filtered((DATA.projects||[]).filter(r=>String(r['בארכיון']||'')!=='כן'), projectSearch?.value, ['שם פרויקט','עיר','תחום','סטטוס','תגיות','אחראי',PROJECT_DESC]); projectsTable.innerHTML=tableHtml(enhanceTableRows(sortRows(rows, projectSort?.value||'dateDesc','שם פרויקט'),'project'), [{key:'שם פרויקט',label:'שם פרויקט'},{key:'עיר',label:'עיר'},{key:'תחום',label:'תחום'},{key:'סטטוס',label:'סטטוס'}], r=>`openProjectCard('${esc(r['מזהה פרויקט'])}')`, null); };
-  const oldTableTasks = window.tableTasks;
-  window.tableTasks = function(){
-    let rows=(DATA.tasks||[]).filter(r=>String(r['בארכיון']||'')!=='כן');
-    const selectedProject = window.taskProjectFilter ? taskProjectFilter.value : '';
-    if(selectedProject) rows = rows.filter(t=>String(t['מזהה פרויקט']||'')===String(selectedProject));
-    const f = window.taskFilter ? taskFilter.value || 'all' : 'all';
-    const today = new Date(); today.setHours(0,0,0,0); const week = new Date(today); week.setDate(week.getDate()+7);
-    rows = rows.filter(t=>{ const d = t['תאריך'] ? parseDateOnly(t['תאריך']) : null; if(f==='open') return t['סטטוס']!=='בוצע' && t['סטטוס']!=='בוטל'; if(f==='done') return t['סטטוס']==='בוצע'; if(f==='late') return d && d<today && t['סטטוס']!=='בוצע' && t['סטטוס']!=='בוטל'; if(f==='today') return d && d.getTime()===today.getTime() && t['סטטוס']!=='בוצע' && t['סטטוס']!=='בוטל'; if(f==='week') return d && d>today && d<=week && t['סטטוס']!=='בוצע' && t['סטטוס']!=='בוטל'; return true; });
-    const q=window.taskSearch?taskSearch.value:'';
-    rows=filtered(rows,q,['כותרת',TASK_DESC,'סוג משימה','סטטוס','אחראי']);
-    const displayRows=enhanceTableRows(rows,'task').map(t=>Object.assign({}, t, {'סטטוס':`<span class="task-status task-status-${esc(t['סטטוס']||'פתוח')}">${esc(t['סטטוס']||'פתוח')}</span>`}));
-    tasksTable.innerHTML=tableHtml(displayRows, [{key:'כותרת',label:'כותרת'},{key:'סוג משימה',label:'סוג'},{key:'עדיפות',label:'עדיפות'},{key:'תאריך',label:'תאריך'},{key:'שעה',label:'שעה'},{key:'סטטוס',label:'סטטוס'}], r=>`openTaskCard('${esc(r['מזהה משימה'])}')`, r=>{ const id=esc(r['מזהה משימה']); const original=rows.find(x=>String(x['מזהה משימה'])===String(r['מזהה משימה']))||{}; const isDone=(original['סטטוס']||'')==='בוצע'; return `<button onclick="openTaskCard('${id}')">ערוך</button> ${isDone?`<button onclick="reactivateTask('${id}')">החזר לפעיל</button>`:`<button onclick="doneTask('${id}')">בוצע</button>`} <button class="danger" onclick="delTask('${id}')">העבר לארכיון</button>`; });
-  };
-  const oldCalendar = window.renderCalendarDashboard;
-  window.renderCalendarDashboard = function(){
-    if(typeof calendarBox==='undefined') return; try{ updateCalendarViewButtons(); }catch(e){}
-    oldCalendar && oldCalendar();
-    calendarBox.querySelectorAll('.calendar-event').forEach(el=>{ const m=(el.getAttribute('onclick')||'').match(/openTaskCard\('([^']+)'\)/); const t=m && (DATA.tasks||[]).find(x=>String(x['מזהה משימה'])===m[1]); if(t){ el.innerHTML = `${esc(t['שעה']||'')} ${priorityMark(t['עדיפות'])}${esc(t['סוג משימה']||'משימה')} - ${esc(taskDisplayTitle(t))}`; const d=taskDescription(t); if(d) el.setAttribute('title', d); else el.removeAttribute('title'); }});
-  };
-})();
-</script>
 </body>
 </html>
