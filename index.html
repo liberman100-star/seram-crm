@@ -2784,6 +2784,15 @@ renderContactCard = function(d){
     idleWarningOpen = false;
   }
 
+  function scheduleIdleTimers(){
+    idleWarnTimer = setTimeout(warnIdle, idleWarningMs());
+    idleTimer = setTimeout(forceLogoutByIdle, idleLimitMs());
+  }
+
+  function continueWorkingFromWarning(){
+    resetIdleTimer();
+  }
+
   function performClientLogout(message){
     const token = (typeof currentToken === 'function') ? currentToken() : '';
     if(typeof clearToken === 'function') clearToken();
@@ -2811,6 +2820,7 @@ renderContactCard = function(d){
 
   function warnIdle(){
     if(!currentToken || !currentToken()) return;
+    // Opening the warning modal is not user activity; keep the logout timer running.
     idleWarningOpen = true;
     modalBox.className='box small';
     modalBox.innerHTML=`<h3>ניתוק עקב אי־פעילות</h3><p>המערכת תתנתק בעוד 5 דקות עקב חוסר פעילות. להמשיך לעבוד?</p><div class="toolbar"><button class="primary" onclick="BH_IDLE.continueWorking()">המשך עבודה</button><button onclick="BH_IDLE.logoutNow()">התנתק עכשיו</button></div>`;
@@ -2822,13 +2832,12 @@ renderContactCard = function(d){
     clearTimeout(idleTimer);
     clearTimeout(idleWarnTimer);
     if(!currentToken || !currentToken()) return;
-    idleWarnTimer = setTimeout(warnIdle, idleWarningMs());
-    idleTimer = setTimeout(forceLogoutByIdle, idleLimitMs());
+    scheduleIdleTimers();
   }
 
   window.BH_IDLE = {
     markUserActivity: resetIdleTimer,
-    continueWorking: resetIdleTimer,
+    continueWorking: continueWorkingFromWarning,
     logoutNow: idleLogoutNow,
     getLimitMinutes: idleLimitMinutes,
     forceLogoutByIdle: forceLogoutByIdle
