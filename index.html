@@ -723,10 +723,81 @@ function selectedAssignmentDomains(){
   if(typeof cAssignmentDomains === 'undefined') return '';
   return Array.from(cAssignmentDomains.selectedOptions).map(o=>o.value).filter(Boolean).join(', ');
 }
+function additionalAssignmentDomainValues(selected=''){
+  return String(selected || '')
+    .split(/[;,|\n]+/)
+    .map(x => x.trim())
+    .filter(v => v && v !== 'ללא')
+    .filter((v, i, a) => a.indexOf(v) === i);
+}
+function assignmentDomainChoices(exclude=[]){
+  const excluded = new Set((exclude || []).filter(Boolean));
+  const cat = categories().find(c=>c.name==='תחום שיוך');
+  const arr = cat ? (cat.values||[]) : [];
+  return arr
+    .map(x => String(x.value || '').trim())
+    .filter(v => v && v !== 'ללא' && !excluded.has(v))
+    .filter((v, i, a) => a.indexOf(v) === i);
+}
+function renderAdditionalAssignmentDomains(selected='', disabled=false){
+  const values = additionalAssignmentDomainValues(selected);
+  const rows = values.length
+    ? values.map(v => `<span class="tag" data-assignment-domain="${esc(v)}">${esc(v)} ${disabled ? '' : `<button type="button" onclick="removeAdditionalAssignmentDomain('${esc(v)}')">הסר</button>`}</span>`).join(' ')
+    : '<span class="muted">לא נבחרו תחומי שיוך נוספים</span>';
+  return `
+    <input id="cAdditionalAssignmentDomains" type="hidden" value="${esc(values.join(', '))}">
+    ${disabled ? '' : '<button type="button" id="addAssignmentDomainBtn" onclick="showAdditionalAssignmentDomainPicker()">הוסף תחום שיוך</button>'}
+    <div id="additionalAssignmentDomainPickerBox" class="hidden"></div>
+    <div id="additionalAssignmentDomainsList">${rows}</div>`;
+}
+function syncAdditionalAssignmentDomainsList(){
+  const input = document.getElementById('cAdditionalAssignmentDomains');
+  const list = document.getElementById('additionalAssignmentDomainsList');
+  if(!input || !list) return;
+  const disabled = !canEditAssignmentDomains();
+  const values = additionalAssignmentDomainValues(input.value).filter(v => v !== (window.cCentralAssignmentDomain ? cCentralAssignmentDomain.value : ''));
+  input.value = values.join(', ');
+  list.innerHTML = values.length
+    ? values.map(v => `<span class="tag" data-assignment-domain="${esc(v)}">${esc(v)} ${disabled ? '' : `<button type="button" onclick="removeAdditionalAssignmentDomain('${esc(v)}')">הסר</button>`}</span>`).join(' ')
+    : '<span class="muted">לא נבחרו תחומי שיוך נוספים</span>';
+}
+function showAdditionalAssignmentDomainPicker(){
+  const box = document.getElementById('additionalAssignmentDomainPickerBox');
+  const input = document.getElementById('cAdditionalAssignmentDomains');
+  if(!box || !input) return;
+  const current = additionalAssignmentDomainValues(input.value);
+  const central = window.cCentralAssignmentDomain ? cCentralAssignmentDomain.value : '';
+  const choices = assignmentDomainChoices(current.concat([central]));
+  if(!choices.length){ box.classList.remove('hidden'); box.innerHTML = '<p class="muted">אין תחומי שיוך זמינים להוספה</p>'; return; }
+  box.classList.remove('hidden');
+  box.innerHTML = `<select id="additionalAssignmentDomainPicker" onchange="addAdditionalAssignmentDomain(this.value)"><option value="">בחר תחום שיוך</option>${choices.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('')}</select>`;
+}
+function addAdditionalAssignmentDomain(value){
+  const input = document.getElementById('cAdditionalAssignmentDomains');
+  const box = document.getElementById('additionalAssignmentDomainPickerBox');
+  if(!input || !value || value === 'ללא') return;
+  const central = window.cCentralAssignmentDomain ? cCentralAssignmentDomain.value : '';
+  const values = additionalAssignmentDomainValues(input.value);
+  if(value !== central && values.indexOf(value) === -1) values.push(value);
+  input.value = values.join(', ');
+  if(box){ box.classList.add('hidden'); box.innerHTML = ''; }
+  syncAdditionalAssignmentDomainsList();
+}
+function removeAdditionalAssignmentDomain(value){
+  const input = document.getElementById('cAdditionalAssignmentDomains');
+  if(!input) return;
+  input.value = additionalAssignmentDomainValues(input.value).filter(v => v !== value).join(', ');
+  syncAdditionalAssignmentDomainsList();
+}
 function selectedAdditionalAssignmentDomains(){
-  if(typeof cAdditionalAssignmentDomains === 'undefined') return '';
+  const input = document.getElementById('cAdditionalAssignmentDomains');
+  if(!input) return '';
   const central = typeof cCentralAssignmentDomain !== 'undefined' ? cCentralAssignmentDomain.value : '';
-  return Array.from(cAdditionalAssignmentDomains.selectedOptions).map(o=>o.value).filter(v=>v && v !== 'ללא' && v !== central).join(', ');
+  return additionalAssignmentDomainValues(input.value).filter(v => v && v !== 'ללא' && v !== central).join(', ');
+}
+function normalizeContactProjectLinkValue(value){
+  const v = String(value || '').trim();
+  return v === 'הכל' ? '' : v;
 }
 function usersList(){ return ((DATA.realSettings||{}).users || []); }
 function permissionOptions(selected=''){
@@ -890,7 +961,7 @@ function dashList(rows,type){
   if(!rows || !rows.length) return '<p>אין נתונים.</p>';
   let html = `<b>${rows.length}</b><ul>`;
   rows.slice(0,6).forEach(r=>{
-    if(type==='task') html += `<li><span class="linkish" onclick='openTask(${JSON.stringify(r)})'>${esc(r['כותרת'])}</span> <span class="muted">${esc(r['תאריך']||'')}</span></li>`;
+    if(type==='task') html += `<li><span class="linkish" onclick="openTaskCard('${esc(r['מזהה משימה'])}')">${esc(r['כותרת'])}</span> <span class="muted">${esc(r['תאריך']||'')}</span></li>`;
     else html += `<li><span class="linkish" onclick='openProjectCard("${esc(r['מזהה פרויקט'])}")'>${esc(r['שם פרויקט'])}</span> <span class="muted">${esc(r['עיר']||'')}</span></li>`;
   });
   return html+'</ul>';
@@ -1042,7 +1113,7 @@ function openContact(r={}){
     <label>תגיות</label><input id="cTags" value="${esc(r['תגיות'])}">
     <label>אחראי</label><select id="cOwner">${activeUsersOptions(r['אחראי'])}</select>
     <label>הרשאת מערכת${BH_requiredMark('contact','הרשאת מערכת')}</label><select id="cPermission" onchange="toggleAssignmentDomainsField()">${permissionOptions(r['הרשאת מערכת']||'ללא הרשאה')}</select>
-    ${canManageAssignmentDomains()?`<div id="assignmentDomainsBox" class="${(r['הרשאת מערכת']||'ללא הרשאה')==='מנהל'?'':'hidden'}"><label>תחום שיוך מרכזי</label><select id="cCentralAssignmentDomain"><option value="">ללא</option>${assignmentDomainOptions(r['תחום שיוך מרכזי']||'').replace('<option value="ללא"','<option value="ללא"')}</select><label>תחומי שיוך נוספים</label><select id="cAdditionalAssignmentDomains" multiple size="5">${assignmentDomainsMulti(r['תחומי שיוך'])}</select><p class="muted">רלוונטי למנהל בלבד. תחום מרכזי אחד, ותחומים נוספים שאינם כוללים “ללא” או כפילות של המרכזי.</p></div>`:''}
+    ${canManageAssignmentDomains()?`<div id="assignmentDomainsBox" class="${(r['הרשאת מערכת']||'ללא הרשאה')==='מנהל'?'':'hidden'}"><label>תחום שיוך מרכזי</label><select id="cCentralAssignmentDomain" onchange="syncAdditionalAssignmentDomainsList()"><option value="">ללא</option>${assignmentDomainOptions(r['תחום שיוך מרכזי']||'').replace('<option value="ללא"','<option value="ללא"')}</select><label>תחומי שיוך נוספים</label>${renderAdditionalAssignmentDomains(r['תחומי שיוך'], !canEditAssignmentDomains())}<p class="muted">רלוונטי למנהל בלבד. תחום מרכזי אחד, ותחומים נוספים שאינם כוללים “ללא” או כפילות של המרכזי.</p></div>`:''}
     <button class="primary" onclick='saveContact("${esc(r['מזהה איש קשר']||'')}")'>שמור</button>
     <button onclick="closeM()">ביטול</button>`;
   modal.classList.remove('hidden');
@@ -5827,29 +5898,27 @@ window.openContact = function(r={}){
 
     <div id="assignmentDomainsBox" class="hidden">
       <label>תחום שיוך מרכזי</label>
-      <select id="cCentralAssignmentDomain" ${canEditAssignmentDomains() ? '' : 'disabled'}>
+      <select id="cCentralAssignmentDomain" onchange="syncAdditionalAssignmentDomainsList()" ${canEditAssignmentDomains() ? '' : 'disabled'}>
         ${assignmentDomainOptions(r['תחום שיוך מרכזי'] || '')}
       </select>
       <label>תחומי שיוך נוספים</label>
-      <select id="cAdditionalAssignmentDomains" multiple size="5" ${canEditAssignmentDomains() ? '' : 'disabled'}>
-        ${assignmentDomainsMulti(r['תחומי שיוך'])}
-      </select>
+      ${renderAdditionalAssignmentDomains(r['תחומי שיוך'], !canEditAssignmentDomains())}
       <p class="muted">רלוונטי למנהל בלבד. עריכה זמינה רק לבעל המערכת או מנהל ראשי.</p>
     </div>
 
     ${isEdit ? `
       <label>משויך לפרויקט</label>
       <select id="contactProjectLinkSelect">
-        <option value="">הכל</option>
+        <option value="">ללא</option>
         ${(DATA.projects || []).map(p =>
           `<option value="${esc(p['מזהה פרויקט'])}">${esc(p['שם פרויקט'])}</option>`
         ).join('')}
       </select>
 
       <button onclick="
-        if(contactProjectLinkSelect.value){
+        if(normalizeContactProjectLinkValue(contactProjectLinkSelect.value)){
           saveLink(
-            contactProjectLinkSelect.value,
+            normalizeContactProjectLinkValue(contactProjectLinkSelect.value),
             '${esc(r['מזהה איש קשר'])}',
             '',
             'כן',
@@ -5867,7 +5936,7 @@ window.openContact = function(r={}){
 
   modal.classList.remove('hidden');
   setTimeout(updateContactPermissionFields, 0);
-  setTimeout(updateContactAssignmentDomainsField, 0);
+  setTimeout(()=>{ updateContactAssignmentDomainsField(); syncAdditionalAssignmentDomainsList(); }, 0);
 };
 
 function updateContactAssignmentDomainsField(){

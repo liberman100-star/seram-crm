@@ -2534,6 +2534,20 @@ function משתמש_רשאי_לאיש_קשר_Build11_2_(user, contactId) {
   return readSheet_(SHEETS.LINKS).some(l => l["מזהה איש קשר"] === contactId && allowed.has(l["מזהה פרויקט"]));
 }
 
+function משימה_מותרת_לפתיחה_Build11_2_(user, task) {
+  task = task || {};
+  const role = String((user && user.role) || "").trim();
+  if (user && (user.isOwner === true || role === "מנהל ראשי")) return true;
+
+  const projectId = String(task["מזהה פרויקט"] || "").trim();
+  if (projectId && !משתמש_רשאי_לפרויקט_Build11_2_(user, projectId)) return false;
+
+  const contactId = String(task["מזהה איש קשר"] || "").trim();
+  if (!projectId && contactId && !משתמש_רשאי_לאיש_קשר_Build11_2_(user, contactId)) return false;
+
+  return true;
+}
+
 function סינון_נתונים_לפי_משתמש_Build7_(data, user) {
   const role = String((user && user.role) || "").trim();
   const isSuperAdmin = user && (user.isOwner === true || role === "מנהל ראשי");
@@ -2586,12 +2600,7 @@ function סינון_נתונים_לפי_משתמש_Build7_(data, user) {
       c["מזהה איש קשר"] === contactId
     );
 
-    out.tasks = (data.tasks || []).filter(t =>
-      allowedProjectIds.includes(t["מזהה פרויקט"]) ||
-      t["מזהה איש קשר"] === contactId ||
-      String(t["אחראי"] || "").trim() === userName ||
-      String(t["יוצר"] || "").trim() === userName
-    );
+    out.tasks = (data.tasks || []).filter(t => משימה_מותרת_לפתיחה_Build11_2_(user, t));
 
     out.notes = data.notes || [];
     out.canSeeSettings = false;
@@ -2811,11 +2820,7 @@ function קבלת_כרטיס_משימה_Build10(arg) {
 
   const isArchived = String(task["בארכיון"] || "") === "כן";
 
-  if (task["מזהה פרויקט"] && !משתמש_רשאי_לפרויקט_Build11_2_(user, task["מזהה פרויקט"])) {
-    throw new Error("אין הרשאה לצפייה במשימה זו");
-  }
-
-  if (!task["מזהה פרויקט"] && task["מזהה איש קשר"] && !משתמש_רשאי_לאיש_קשר_Build11_2_(user, task["מזהה איש קשר"])) {
+  if (!משימה_מותרת_לפתיחה_Build11_2_(user, task)) {
     throw new Error("אין הרשאה לצפייה במשימה זו");
   }
 
