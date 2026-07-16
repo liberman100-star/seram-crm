@@ -4522,9 +4522,21 @@ function BH_SELECTION_OPTION_CATEGORY_(category) {
   return aliases[category] || category;
 }
 
-function BH_SELECTION_ACTIVE_VALUES_(category) {
+function BH_SELECTION_CATEGORY_NAMES_(category) {
   const normalized = BH_SELECTION_OPTION_CATEGORY_(category);
-  const names = [String(category || "").trim(), normalized].filter(Boolean);
+  return [String(category || "").trim(), normalized]
+    .filter(Boolean)
+    .filter((name, idx, arr) => arr.indexOf(name) === idx);
+}
+
+function BH_SELECTION_VALUE_ROWS_(category) {
+  const names = BH_SELECTION_CATEGORY_NAMES_(category);
+  return readSheet_("הגדרות_ערכים")
+    .filter(r => names.indexOf(String(r["סוג ערך"] || "").trim()) !== -1);
+}
+
+function BH_SELECTION_LEGACY_ACTIVE_VALUES_(category) {
+  const names = BH_SELECTION_CATEGORY_NAMES_(category);
   return readSheet_(SHEETS.SETTINGS)
     .filter(r =>
       names.indexOf(String(r["סוג הגדרה"] || r["סוג ערך"] || "").trim()) !== -1 &&
@@ -4534,6 +4546,17 @@ function BH_SELECTION_ACTIVE_VALUES_(category) {
     .filter(Boolean);
 }
 
+function BH_SELECTION_ACTIVE_VALUES_(category) {
+  const valueRows = BH_SELECTION_VALUE_ROWS_(category);
+  if (valueRows.length) {
+    return valueRows
+      .filter(r => String(r["פעיל"] || "כן").trim() !== "לא")
+      .map(r => String(r["ערך"] || "").trim())
+      .filter(Boolean);
+  }
+  return BH_SELECTION_LEGACY_ACTIVE_VALUES_(category);
+}
+
 function BH_SELECTION_VALIDATE_(category, value, label, oldValue) {
   const submitted = String(value || "").trim();
   if (!submitted) return;
@@ -4541,19 +4564,9 @@ function BH_SELECTION_VALIDATE_(category, value, label, oldValue) {
   const previous = String(oldValue || "").trim();
   if (previous && submitted === previous) return;
 
-  let values = BH_SELECTION_ACTIVE_VALUES_(category);
-  if (!values.length) {
-    try {
-      const normalized = BH_SELECTION_OPTION_CATEGORY_(category);
-      const names = [String(category || "").trim(), normalized].filter(Boolean);
-      values = readSheet_("הגדרות_ערכים")
-        .filter(r => names.indexOf(String(r["סוג ערך"] || "").trim()) !== -1 && String(r["פעיל"] || "כן").trim() !== "לא")
-        .map(r => String(r["ערך"] || "").trim())
-        .filter(Boolean);
-    } catch(e) {}
-  }
+  const values = BH_SELECTION_ACTIVE_VALUES_(category);
   if (values.indexOf(submitted) === -1) {
-    throw new Error((label || category) + " חייב להיות מתוך אפשרויות הבחירה הפעילות בהגדרות");
+    throw new Error((label || category) + ': הערך "' + submitted + '" אינו נמצא באפשרויות הפעילות בקטגוריה "' + category + '" בהגדרות.');
   }
 }
 
