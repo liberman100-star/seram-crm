@@ -841,7 +841,9 @@ function assignmentDomainsOfRow(row){
 function rowAssignmentRole(row){ return String((row||{})['הרשאת מערכת'] || (row||{})['תפקיד'] || '').trim(); }
 function alwaysAllowedAssignmentUser(row){ const role=rowAssignmentRole(row); return role==='בעל מערכת' || role==='מנהל ראשי'; }
 function projectAssignmentDomain(projectId){ const p=(DATA.projects||[]).find(x=>String(x['מזהה פרויקט']||'')===String(projectId||''))||{}; return String(p['תחום שיוך']||'ללא').trim() || 'ללא'; }
-function assignmentUserAllowedForDomain(row, domain){ if(alwaysAllowedAssignmentUser(row)) return true; if(!domain || domain==='ללא') return true; return assignmentDomainsOfRow(row).includes(domain); }
+function hasConcreteAssignmentDomain(domain){ domain=String(domain||'').trim(); return !!domain && domain!=='ללא'; }
+// כלל קנוני לפרויקט ללא תחום שיוך: אין סינון תחום; נשארים רק כללי הרשאת המערכת הקיימים, פעילות וארכיון.
+function assignmentUserAllowedForDomain(row, domain){ if(alwaysAllowedAssignmentUser(row)) return true; if(!hasConcreteAssignmentDomain(domain)) return true; return assignmentDomainsOfRow(row).includes(domain); }
 function activeUsersOptions(selected='', domain=''){
   return `<option value="">בחר אחראי</option>` + usersList().filter(u=>u['פעיל']!=='לא' && assignmentUserAllowedForDomain(u, domain)).map(u=>`<option value="${esc(u['שם'])}" ${u['שם']==selected?'selected':''}>${esc(u['שם'])}</option>`).join('');
 }
@@ -1026,6 +1028,7 @@ function openProject(r={}){
     <button onclick="closeM()">ביטול</button>`;
   modal.classList.remove('hidden');
   if(typeof pOwner !== 'undefined') pOwner.dataset.storedOwner = r['אחראי'] || '';
+  if(typeof pAssignmentDomain !== 'undefined') pAssignmentDomain.addEventListener('change', ()=>refreshProjectResponsibleOptions(r['מזהה פרויקט'] || ''));
   loadProjectResponsibleOptions(r['מזהה פרויקט'] || '', r['אחראי'] || '', r['אחראי'] || '');
 }
 function saveProject(id){

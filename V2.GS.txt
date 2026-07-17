@@ -4431,13 +4431,18 @@ function BH_ASSIGNMENT_staffCandidate_(row, moduleName){
   if(!BH_ASSIGNMENT_isAlwaysAllowed_(row) && !BH22_הרשאת_מודול_פעילה_(BH_PR_userFromContact_(row), moduleName || "פרויקטים")) return false;
   return true;
 }
+function BH_ASSIGNMENT_hasConcreteDomain_(domain){
+  domain = String(domain || "").trim();
+  return !!domain && domain !== BH_AD_DEFAULT;
+}
+/* כלל קנוני לפרויקט ללא תחום שיוך: אין סינון תחום; מוחלים רק כללי הרשאת המערכת הקיימים, פעילות, ארכיון והרשאת מודול. */
 function BH_ASSIGNMENT_allowedUsersForDomain_(domain, actor, options){
   domain = String(domain || BH_AD_DEFAULT).trim() || BH_AD_DEFAULT;
   options = options || {};
   const rows = readSheet_(SHEETS.CONTACTS).filter(r => BH_ASSIGNMENT_staffCandidate_(r, options.moduleName));
   const allowed = rows.filter(r => {
     if(BH_ASSIGNMENT_isAlwaysAllowed_(r)) return true;
-    if(!domain || domain === BH_AD_DEFAULT) return true;
+    if(!BH_ASSIGNMENT_hasConcreteDomain_(domain)) return true;
     return BH_ASSIGNMENT_userDomains_(r).indexOf(domain) !== -1;
   });
   const seen = {};
