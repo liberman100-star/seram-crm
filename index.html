@@ -832,8 +832,20 @@ function taskDisplayTitle(task){
 }
 function taskDisplayTitleHtml(task){ return `<span${htmlTitleAttr(taskDescription(task))}>${esc(taskDisplayTitle(task)||'')}</span>`; }
 function taskCalendarTitleHtml(task){ return `${esc((task||{})['שעה']||'')} ${priorityMark((task||{})['עדיפות'])}${esc((task||{})['סוג משימה']||'משימה')} - ${esc(taskDisplayTitle(task))}`; }
-function activeUsersOptions(selected=''){
-  return `<option value="">בחר אחראי</option>` + usersList().filter(u=>u['פעיל']!=='לא').map(u=>`<option value="${esc(u['שם'])}" ${u['שם']==selected?'selected':''}>${esc(u['שם'])}</option>`).join('');
+function assignmentDomainsOfRow(row){
+  const vals=[];
+  String((row||{})['תחום שיוך מרכזי']||'').split(/[;,|\n]+/).forEach(v=>{v=v.trim(); if(v&&v!=='ללא') vals.push(v);});
+  String((row||{})['תחומי שיוך']||'').split(/[;,|\n]+/).forEach(v=>{v=v.trim(); if(v&&v!=='ללא') vals.push(v);});
+  return vals.filter((v,i,a)=>a.indexOf(v)===i);
+}
+function rowAssignmentRole(row){ return String((row||{})['הרשאת מערכת'] || (row||{})['תפקיד'] || '').trim(); }
+function alwaysAllowedAssignmentUser(row){ const role=rowAssignmentRole(row); return role==='בעל מערכת' || role==='מנהל ראשי'; }
+function projectAssignmentDomain(projectId){ const p=(DATA.projects||[]).find(x=>String(x['מזהה פרויקט']||'')===String(projectId||''))||{}; return String(p['תחום שיוך']||'ללא').trim() || 'ללא'; }
+function hasConcreteAssignmentDomain(domain){ domain=String(domain||'').trim(); return !!domain && domain!=='ללא'; }
+// כלל קנוני לפרויקט ללא תחום שיוך: אין סינון תחום; נשארים רק כללי הרשאת המערכת הקיימים, פעילות וארכיון.
+function assignmentUserAllowedForDomain(row, domain){ if(alwaysAllowedAssignmentUser(row)) return true; if(!hasConcreteAssignmentDomain(domain)) return true; return assignmentDomainsOfRow(row).includes(domain); }
+function activeUsersOptions(selected='', domain=''){
+  return `<option value="">בחר אחראי</option>` + usersList().filter(u=>u['פעיל']!=='לא' && assignmentUserAllowedForDomain(u, domain)).map(u=>`<option value="${esc(u['שם'])}" ${u['שם']==selected?'selected':''}>${esc(u['שם'])}</option>`).join('');
 }
 let projectResponsibleRequestSeq = 0;
 function projectResponsibleSelection(candidates, desired='', storedOwner='', projectId=''){
@@ -881,6 +893,14 @@ function refreshProjectResponsibleOptions(projectId){
   const selected = (typeof pOwner !== 'undefined' ? pOwner.value : '');
   const storedOwner = (typeof pOwner !== 'undefined' ? (pOwner.dataset.storedOwner || '') : '');
   loadProjectResponsibleOptions(projectId || '', selected || storedOwner || '', storedOwner || '');
+}
+function refreshTaskOwnerOptions(){
+  if(typeof tOwner === 'undefined' || typeof tProject === 'undefined') return;
+  const selected=tOwner.value;
+  const domain=projectAssignmentDomain(tProject.value);
+  tOwner.innerHTML = activeUsersOptions(selected, domain);
+  if(selected && tOwner.value !== selected) alert('האחראי הנוכחי אינו משויך לתחום השיוך של הפרויקט החדש. יש לבחור אחראי מתאים לפני שמירה.');
+  if(typeof refreshCalendarGuestOptions === 'function') refreshCalendarGuestOptions();
 }
 function filtered(rows, q, fields){
   q=(q||'').toLowerCase().trim();
@@ -1000,7 +1020,7 @@ function openProject(r={}){
     <label>עיר${BH_requiredMark('project','עיר')}</label><select id="pCity"><option value="">בחר עיר</option>${opts('עיר',r['עיר'])}</select>
     <label>תחום${BH_requiredMark('project','תחום')}</label><select id="pType"><option value="">בחר תחום</option>${opts('תחום',r['תחום'])}</select>
     <label>סטטוס${BH_requiredMark('project','סטטוס')}</label><select id="pStatus"><option value="">בחר סטטוס</option>${opts('סטטוס פרויקט',r['סטטוס'])}</select>
-    ${canManageAssignmentDomains()?`<label>תחום שיוך${BH_requiredMark('project','תחום שיוך')}</label><select id="pAssignmentDomain" onchange="refreshProjectResponsibleOptions('${esc(r['מזהה פרויקט']||'')}')">${assignmentDomainOptions(assignmentDomainValue(r))}</select>`:''}
+    ${canManageAssignmentDomains()?`<label>תחום שיוך${BH_requiredMark('project','תחום שיוך')}</label><select id="pAssignmentDomain">${assignmentDomainOptions(assignmentDomainValue(r))}</select>`:''}
     <label>אחראי${BH_requiredMark('project','אחראי')}</label><select id="pOwner"><option value="${esc(r['אחראי']||'')}">${esc(r['אחראי'] ? r['אחראי'] + ' (טוען...)' : 'טוען אחראים...')}</option></select>
     <label>תגיות${BH_requiredMark('project','תגיות')}</label><input id="pTags" value="${esc(r['תגיות'])}">
     <label>תיקיית Drive${BH_requiredMark('project','תיקיית Drive')}</label><input id="pDrive" value="${esc(r['תיקיית Drive'])}">
@@ -1008,6 +1028,7 @@ function openProject(r={}){
     <button onclick="closeM()">ביטול</button>`;
   modal.classList.remove('hidden');
   if(typeof pOwner !== 'undefined') pOwner.dataset.storedOwner = r['אחראי'] || '';
+  if(typeof pAssignmentDomain !== 'undefined') pAssignmentDomain.addEventListener('change', ()=>refreshProjectResponsibleOptions(r['מזהה פרויקט'] || ''));
   loadProjectResponsibleOptions(r['מזהה פרויקט'] || '', r['אחראי'] || '', r['אחראי'] || '');
 }
 function saveProject(id){
@@ -1284,9 +1305,9 @@ function openTask(r={}, preset={}){
       </select>
     </div>
     <label>סטטוס</label><select id="tStatus">${opts('סטטוס משימה',r['סטטוס']||'פתוח')}</select>
-    <label>פרויקט</label><select id="tProject">${projectOptions(r['מזהה פרויקט'])}</select>
+    <label>פרויקט</label><select id="tProject" onchange="refreshTaskOwnerOptions()">${projectOptions(r['מזהה פרויקט'])}</select>
     <label>איש קשר</label><select id="tContact">${contactOptions(r['מזהה איש קשר'], allowedIds)}</select>
-    <label>אחראי</label><select id="tOwner">${activeUsersOptions(r['אחראי'])}</select>
+    <label>אחראי</label><select id="tOwner">${activeUsersOptions(r['אחראי'], projectAssignmentDomain(r['מזהה פרויקט']))}</select>
     <p class="muted">אם הוזן תאריך — חובה להזין שעה. “שיחה” תופסת 30 דקות ביומן, “משימה” 15 דקות, ו“פגישה” דורשת שעת סיום.</p>
     <button class="primary" onclick='saveTask("${esc(r['מזהה משימה']||'')}")'>שמור</button>
     <button onclick="closeM()">ביטול</button>`;
@@ -6736,15 +6757,17 @@ window.calendarTasksForDate = function(d){
     function isArchived(row){ return String((row||{})['בארכיון']||'')==='כן' || String((row||{})['פעיל']||'כן')==='לא'; }
     function add(label,email){ email=String(email||'').trim(); const key=email.toLowerCase(); if(!validEmail(email)||seen[key]) return; seen[key]=true; out.push({label,email}); }
     const project=(DATA.projects||[]).find(p=>p['מזהה פרויקט']===r['מזהה פרויקט'])||{};
+    const projectDomain=String(project['תחום שיוך']||'ללא').trim() || 'ללא';
     const taskContact=(DATA.contacts||[]).find(c=>c['מזהה איש קשר']===r['מזהה איש קשר'])||{};
     if(!isArchived(taskContact)) add('איש קשר: '+(taskContact['שם מלא']||''), taskContact['אימייל']);
     const taskOwnerName=r['אחראי']||'';
     const projectOwnerName=project['אחראי']||'';
-    (DATA.contacts||[]).filter(c=>!isArchived(c)).forEach(c=>{
+    (DATA.contacts||[]).filter(c=>!isArchived(c)).filter(c=>assignmentUserAllowedForDomain(c, projectDomain)).forEach(c=>{
       if(taskOwnerName && c['שם מלא']===taskOwnerName) add('אחראי משימה: '+taskOwnerName, c['אימייל']);
       if(projectOwnerName && c['שם מלא']===projectOwnerName) add('אחראי פרויקט: '+projectOwnerName, c['אימייל']);
+      if(['בעל מערכת','מנהל ראשי','מנהל','משתמש'].includes(rowAssignmentRole(c))) add('איש צוות: '+(c['שם מלא']||''), c['אימייל']);
     });
-    (usersList()||[]).filter(u=>String(u['פעיל']||'כן')!=='לא').forEach(u=>{
+    (usersList()||[]).filter(u=>String(u['פעיל']||'כן')!=='לא' && assignmentUserAllowedForDomain(u, projectDomain)).forEach(u=>{
       if(taskOwnerName && u['שם']===taskOwnerName) add('אחראי משימה: '+taskOwnerName, u['מייל']);
       if(projectOwnerName && u['שם']===projectOwnerName) add('אחראי פרויקט: '+projectOwnerName, u['מייל']);
     });
