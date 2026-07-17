@@ -4263,7 +4263,20 @@ function BH_AD_userHasProjectDomain_(user, project){
   return BH_AD_managerDomains_(user).indexOf(domain) !== -1;
 }
 
-function BH_AD_assertProjectVisible_(user, projectId){
+function BH_AD_assertProjectVisible_(user, projectId, options){
+  options = options || {};
+  if(options.projects){
+    const role = String(user && user.role || "").trim();
+    if(user && (user.isOwner === true || role === "מנהל ראשי")) return;
+    const contactId = String(user && user.contactId || "").trim();
+    const userName = String(user && user.name || "").trim();
+    const project = options.projects.find(p => String(p["מזהה פרויקט"] || "") === String(projectId || ""));
+    if(!project) throw new Error("אין הרשאה לפרויקט זה");
+    if(String(project["יוצר"] || "").trim() === userName || String(project["אחראי"] || "").trim() === userName) return;
+    if(BH_AD_userHasProjectDomain_(user, project)) return;
+    if(options.links && options.links.some(l => String(l["מזהה איש קשר"] || "") === contactId && String(l["מזהה פרויקט"] || "") === String(projectId || "") && String(l["פעיל"] || "כן") !== "לא")) return;
+    throw new Error("אין הרשאה לפרויקט זה");
+  }
   if(!משתמש_רשאי_לפרויקט_Build11_2_(user, projectId)){
     throw new Error("אין הרשאה לפרויקט זה");
   }
@@ -4405,7 +4418,7 @@ function BH_PR_assertResponsibleAllowed_(actor, data, old, owner){
   const oldOwner = String(old && old["אחראי"] || "").trim();
   const domain = String(data && (data.assignmentDomain || data[BH_AD_CATEGORY]) || old && old[BH_AD_CATEGORY] || BH_AD_DEFAULT).trim() || BH_AD_DEFAULT;
   const unchangedDomainOldOwner = old && String(old[BH_AD_CATEGORY] || BH_AD_DEFAULT).trim() === domain ? oldOwner : "";
-  BH_ASSIGNMENT_assertNameAllowedForDomain_(owner, domain, actor, "האחראי שנבחר", unchangedDomainOldOwner);
+  BH_ASSIGNMENT_assertNameAllowedForDomain_(owner, domain, actor, "האחראי שנבחר", "פרויקטים", unchangedDomainOldOwner);
   return true;
 }
 
@@ -4439,7 +4452,7 @@ function BH_ASSIGNMENT_hasConcreteDomain_(domain){
 function BH_ASSIGNMENT_allowedUsersForDomain_(domain, actor, options){
   domain = String(domain || BH_AD_DEFAULT).trim() || BH_AD_DEFAULT;
   options = options || {};
-  const rows = readSheet_(SHEETS.CONTACTS).filter(r => BH_ASSIGNMENT_staffCandidate_(r, options.moduleName));
+  const rows = (options.contacts || readSheet_(SHEETS.CONTACTS)).filter(r => BH_ASSIGNMENT_staffCandidate_(r, options.moduleName));
   const allowed = rows.filter(r => {
     if(BH_ASSIGNMENT_isAlwaysAllowed_(r)) return true;
     if(!BH_ASSIGNMENT_hasConcreteDomain_(domain)) return true;
@@ -4448,28 +4461,30 @@ function BH_ASSIGNMENT_allowedUsersForDomain_(domain, actor, options){
   const seen = {};
   return allowed.filter(r => { const n = BH_PR_name_(r); if(seen[n]) return false; seen[n]=true; return true; });
 }
-function BH_ASSIGNMENT_assertNameAllowedForDomain_(name, domain, actor, label, oldName){
+function BH_ASSIGNMENT_assertNameAllowedForDomain_(name, domain, actor, label, moduleName, oldName, options){
   name = String(name || "").trim();
   if(!name) return true;
   if(oldName && name === String(oldName || "").trim()) return true;
-  const allowed = BH_ASSIGNMENT_allowedUsersForDomain_(domain, actor, {moduleName:"משימות"});
+  options = options || {};
+  const allowed = BH_ASSIGNMENT_allowedUsersForDomain_(domain, actor, Object.assign({}, options, {moduleName: moduleName || "משימות"}));
   if(!allowed.some(r => BH_PR_name_(r) === name)) throw new Error((label || "האחראי שנבחר") + " אינו משויך לתחום השיוך של הפרויקט.");
   return true;
 }
-function BH_ASSIGNMENT_projectDomainById_(projectId){
+function BH_ASSIGNMENT_projectDomainById_(projectId, projects){
   if(!projectId) return BH_AD_DEFAULT;
-  const p = readSheet_(SHEETS.PROJECTS).find(x => String(x["מזהה פרויקט"] || "") === String(projectId || ""));
+  const p = (projects || readSheet_(SHEETS.PROJECTS)).find(x => String(x["מזהה פרויקט"] || "") === String(projectId || ""));
   return BH_AD_projectDomain_(p || {});
 }
-function BH_ASSIGNMENT_assertCalendarParticipants_(participants, projectId, actor, oldParticipants){
+function BH_ASSIGNMENT_assertCalendarParticipants_(participants, projectId, actor, oldParticipants, options){
   const emails = נרמול_רשימת_מיילים_Build11_(participants || "").split(",").filter(Boolean).map(x=>x.toLowerCase());
   if(!emails.length || !projectId) return true;
+  options = options || {};
   const oldSet = {}; נרמול_רשימת_מיילים_Build11_(oldParticipants || "").split(",").filter(Boolean).forEach(e => oldSet[e.toLowerCase()] = true);
-  const domain = BH_ASSIGNMENT_projectDomainById_(projectId);
+  const domain = options.domain || BH_ASSIGNMENT_projectDomainById_(projectId, options.projects);
   const allowed = {};
-  BH_ASSIGNMENT_allowedUsersForDomain_(domain, actor, {moduleName:"משימות"}).forEach(r => { const e=String(r["אימייל"]||r.email||"").trim().toLowerCase(); if(e) allowed[e]=true; });
-  const contacts = readSheet_(SHEETS.CONTACTS);
-  readSheet_(SHEETS.LINKS).filter(l => String(l["מזהה פרויקט"]||"") === String(projectId) && String(l["פעיל"]||"כן") !== "לא").forEach(l => {
+  BH_ASSIGNMENT_allowedUsersForDomain_(domain, actor, {moduleName:"משימות", contacts: options.contacts}).forEach(r => { const e=String(r["אימייל"]||r.email||"").trim().toLowerCase(); if(e) allowed[e]=true; });
+  const contacts = options.contacts || readSheet_(SHEETS.CONTACTS);
+  (options.links || readSheet_(SHEETS.LINKS)).filter(l => String(l["מזהה פרויקט"]||"") === String(projectId) && String(l["פעיל"]||"כן") !== "לא").forEach(l => {
     const c = contacts.find(x => String(x["מזהה איש קשר"]||"") === String(l["מזהה איש קשר"]||""));
     if(c && !BH_PR_archived_(c)){ const e=String(c["אימייל"]||"").trim().toLowerCase(); if(e) allowed[e]=true; }
   });
@@ -4940,7 +4955,14 @@ function שמירת_משימה(data) {
 
   if (old) BH_AD_assertCreatorWrite_(actor, old, "משימה");
   const targetProjectId = String(data.projectId || (old ? old["מזהה פרויקט"] : "") || "").trim();
-  if (targetProjectId) BH_AD_assertProjectVisible_(actor, targetProjectId);
+  const taskSaveSheets = {};
+  function taskSaveRows_(sheetName){
+    if(!Object.prototype.hasOwnProperty.call(taskSaveSheets, sheetName)) taskSaveSheets[sheetName] = readSheet_(sheetName);
+    return taskSaveSheets[sheetName];
+  }
+  const taskProjects = targetProjectId ? taskSaveRows_(SHEETS.PROJECTS) : null;
+  const taskLinks = targetProjectId ? taskSaveRows_(SHEETS.LINKS) : null;
+  if (targetProjectId) BH_AD_assertProjectVisible_(actor, targetProjectId, {projects: taskProjects, links: taskLinks});
 
   let calendarId = old ? old["מזהה אירוע ביומן"] || "" : "";
 
@@ -4996,10 +5018,13 @@ function שמירת_משימה(data) {
   }
 
   if (row["מזהה פרויקט"]) {
-    const taskProjectDomain = BH_ASSIGNMENT_projectDomainById_(row["מזהה פרויקט"]);
+    const validationProjects = taskProjects || taskSaveRows_(SHEETS.PROJECTS);
+    const validationLinks = taskLinks || taskSaveRows_(SHEETS.LINKS);
+    const validationContacts = taskSaveRows_(SHEETS.CONTACTS);
+    const taskProjectDomain = BH_ASSIGNMENT_projectDomainById_(row["מזהה פרויקט"], validationProjects);
     const unchangedProjectOldOwner = old && String(old["מזהה פרויקט"] || "") === String(row["מזהה פרויקט"] || "") ? old["אחראי"] : "";
-    BH_ASSIGNMENT_assertNameAllowedForDomain_(row["אחראי"], taskProjectDomain, actor, "האחראי שנבחר", unchangedProjectOldOwner);
-    BH_ASSIGNMENT_assertCalendarParticipants_(row["משתתפי יומן"], row["מזהה פרויקט"], actor, old ? old["משתתפי יומן"] : "");
+    BH_ASSIGNMENT_assertNameAllowedForDomain_(row["אחראי"], taskProjectDomain, actor, "האחראי שנבחר", "משימות", unchangedProjectOldOwner, {contacts: validationContacts});
+    BH_ASSIGNMENT_assertCalendarParticipants_(row["משתתפי יומן"], row["מזהה פרויקט"], actor, old ? old["משתתפי יומן"] : "", {domain: taskProjectDomain, projects: validationProjects, contacts: validationContacts, links: validationLinks});
   }
 
   upsert_ללא_אימות_(SHEETS.TASKS, "מזהה משימה", id, row);

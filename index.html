@@ -1020,7 +1020,7 @@ function openProject(r={}){
     <label>עיר${BH_requiredMark('project','עיר')}</label><select id="pCity"><option value="">בחר עיר</option>${opts('עיר',r['עיר'])}</select>
     <label>תחום${BH_requiredMark('project','תחום')}</label><select id="pType"><option value="">בחר תחום</option>${opts('תחום',r['תחום'])}</select>
     <label>סטטוס${BH_requiredMark('project','סטטוס')}</label><select id="pStatus"><option value="">בחר סטטוס</option>${opts('סטטוס פרויקט',r['סטטוס'])}</select>
-    ${canManageAssignmentDomains()?`<label>תחום שיוך${BH_requiredMark('project','תחום שיוך')}</label><select id="pAssignmentDomain" onchange="refreshProjectResponsibleOptions('${esc(r['מזהה פרויקט']||'')}')">${assignmentDomainOptions(assignmentDomainValue(r))}</select>`:''}
+    ${canManageAssignmentDomains()?`<label>תחום שיוך${BH_requiredMark('project','תחום שיוך')}</label><select id="pAssignmentDomain">${assignmentDomainOptions(assignmentDomainValue(r))}</select>`:''}
     <label>אחראי${BH_requiredMark('project','אחראי')}</label><select id="pOwner"><option value="${esc(r['אחראי']||'')}">${esc(r['אחראי'] ? r['אחראי'] + ' (טוען...)' : 'טוען אחראים...')}</option></select>
     <label>תגיות${BH_requiredMark('project','תגיות')}</label><input id="pTags" value="${esc(r['תגיות'])}">
     <label>תיקיית Drive${BH_requiredMark('project','תיקיית Drive')}</label><input id="pDrive" value="${esc(r['תיקיית Drive'])}">
