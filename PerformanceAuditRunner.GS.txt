@@ -1,0 +1,143 @@
+/************************************************************
+ * PerformanceAuditRunner.GS.txt
+ * מריץ ידני למנגנון המדידה הקיים במערכת.
+ *
+ * אינו עוטף פונקציות ואינו יוצר profiler נוסף.
+ * הוא משתמש בפונקציה הקיימת:
+ * BH13_4_מדידת_ליבה_מול_פתיחה(token)
+ *
+ * הפעלה מתוך Apps Script:
+ * BH_PERF_RUN_EXISTING_AUDIT
+ ************************************************************/
+
+function BH_PERF_sessionValue_(row, names) {
+  row = row || {};
+  for (var i = 0; i < names.length; i++) {
+    var value = row[names[i]];
+    if (value !== undefined && value !== null && String(value).trim() !== "") {
+      return String(value).trim();
+    }
+  }
+  return "";
+}
+
+function BH_PERF_sessionDate_(row) {
+  var raw = BH_PERF_sessionValue_(row, [
+    "עודכן בתאריך",
+    "עדכון אחרון",
+    "נוצר בתאריך",
+    "תאריך יצירה",
+    "תאריך ושעה",
+    "createdAt",
+    "updatedAt"
+  ]);
+  var date = raw ? new Date(raw) : null;
+  return date && !isNaN(date.getTime()) ? date.getTime() : 0;
+}
+
+function BH_PERF_activeSessionTokenForCurrentUser_() {
+  var email = String(Session.getActiveUser().getEmail() || "").trim().toLowerCase();
+  if (!email) {
+    throw new Error("לא ניתן לזהות את כתובת המייל של המשתמש שמריץ את הבדיקה");
+  }
+
+  var rows = readSheet_("סשנים");
+  var candidates = rows.filter(function(row) {
+    var rowEmail = BH_PERF_sessionValue_(row, ["מייל", "אימייל", "email", "Email"]).toLowerCase();
+    var active = BH_PERF_sessionValue_(row, ["פעיל", "active", "Active"]);
+    return rowEmail === email && active !== "לא" && active.toLowerCase() !== "false";
+  });
+
+  candidates.sort(function(a, b) {
+    return BH_PERF_sessionDate_(b) - BH_PERF_sessionDate_(a);
+  });
+
+  for (var i = 0; i < candidates.length; i++) {
+    var token = BH_PERF_sessionValue_(candidates[i], [
+      "טוקן",
+      "Token",
+      "token",
+      "מזהה סשן",
+      "מפתח סשן",
+      "מזהה"
+    ]);
+    if (!token) continue;
+
+    try {
+      var user = קבלת_משתמש_מסשן_Build7_(token);
+      if (user && user.allowed === true && BH_coreAllowedAdmin_(user)) return token;
+    } catch (e) {}
+  }
+
+  throw new Error("לא נמצא סשן פעיל של מנהל ראשי עבור " + email + ". יש להיכנס תחילה למערכת בדפדפן.");
+}
+
+function BH_PERF_flattenReads_(reads) {
+  return Object.keys(reads || {}).map(function(name) {
+    return [name, Number(reads[name] || 0)];
+  }).sort(function(a, b) {
+    return b[1] - a[1];
+  });
+}
+
+function BH_PERF_writeExistingAudit_(report) {
+  var ss = getSS_();
+  var sheetName = "דו״ח ביצועים";
+  var sh = ss.getSheetByName(sheetName) || ss.insertSheet(sheetName);
+  sh.clear();
+
+  var rows = [
+    ["דו״ח ביצועים – מסלול הייצור הקיים", ""],
+    ["מועד", new Date()],
+    ["", ""],
+    ["מדד", "ליבה מלאה", "פתיחה מהירה"],
+    ["זמן כולל במילישניות", report.oldFullCore.totalMs, report.newFastShell.totalMs],
+    ["גודל payload בבתים", report.oldFullCore.payloadBytes, report.newFastShell.payloadBytes],
+    ["מספר קריאות פיזיות לגיליונות", Object.keys(report.oldFullCore.reads || {}).length, Object.keys(report.newFastShell.reads || {}).length],
+    ["", ""],
+    ["קריאות גיליונות – ליבה מלאה", "מספר קריאות"]
+  ];
+
+  BH_PERF_flattenReads_(report.oldFullCore.reads).forEach(function(row) {
+    rows.push(row);
+  });
+
+  rows.push(["", ""]);
+  rows.push(["קריאות גיליונות – פתיחה מהירה", "מספר קריאות"]);
+
+  BH_PERF_flattenReads_(report.newFastShell.reads).forEach(function(row) {
+    rows.push(row);
+  });
+
+  var width = rows.reduce(function(max, row) {
+    return Math.max(max, row.length);
+  }, 1);
+
+  rows.forEach(function(row) {
+    while (row.length < width) row.push("");
+  });
+
+  sh.getRange(1, 1, rows.length, width).setValues(rows);
+  sh.setFrozenRows(1);
+  sh.autoResizeColumns(1, width);
+  sh.getRange(1, 1, 1, 2).setFontWeight("bold").setFontSize(14);
+  return sh;
+}
+
+function BH_PERF_RUN_EXISTING_AUDIT() {
+  if (typeof BH13_4_מדידת_ליבה_מול_פתיחה !== "function") {
+    throw new Error("מנגנון המדידה הקיים BH13_4_מדידת_ליבה_מול_פתיחה לא נמצא");
+  }
+
+  var token = BH_PERF_activeSessionTokenForCurrentUser_();
+  var report = BH13_4_מדידת_ליבה_מול_פתיחה(token);
+  BH_PERF_writeExistingAudit_(report);
+
+  SpreadsheetApp.getActive().toast(
+    "המדידה הסתיימה. נוצר גיליון: דו״ח ביצועים",
+    "דו״ח ביצועים",
+    8
+  );
+
+  return report;
+}
