@@ -1,0 +1,234 @@
+/************************************************************
+ * PerformanceAudit.GS.txt
+ * כלי מדידת ביצועי שרת ידני וקבוע.
+ * אינו רץ אוטומטית ואינו משנה את לוגיקת המערכת.
+ *
+ * הפעלה לאחר העתקה ל-Apps Script:
+ * לבחור BH_PERF_AUDIT וללחוץ Run.
+ * התוצאה נכתבת לגיליון "דו״ח ביצועים".
+ ************************************************************/
+
+var BH_PERF_STATE_ = null;
+
+function BH_PERF_now_(){ return Date.now(); }
+function BH_PERF_round_(v){ return Math.round(Number(v || 0) * 100) / 100; }
+
+function BH_PERF_newState_(){
+  return {
+    startedAt: new Date().toISOString(),
+    functionStats: {},
+    sheetStats: {},
+    events: [],
+    errors: []
+  };
+}
+
+function BH_PERF_recordFunction_(name, ms, ok, error){
+  if(!BH_PERF_STATE_) return;
+  name = String(name || 'לא ידוע');
+  const r = BH_PERF_STATE_.functionStats[name] || {
+    name:name, calls:0, totalMs:0, minMs:null, maxMs:0, errors:0
+  };
+  r.calls++;
+  r.totalMs += ms;
+  r.minMs = r.minMs === null ? ms : Math.min(r.minMs, ms);
+  r.maxMs = Math.max(r.maxMs, ms);
+  if(!ok) r.errors++;
+  BH_PERF_STATE_.functionStats[name] = r;
+  BH_PERF_STATE_.events.push({type:'function', name:name, durationMs:BH_PERF_round_(ms), ok:ok === true, error:error || ''});
+}
+
+function BH_PERF_recordSheet_(name, ms, rows, columns, ok, error){
+  if(!BH_PERF_STATE_) return;
+  name = String(name || 'לא ידוע');
+  const r = BH_PERF_STATE_.sheetStats[name] || {
+    sheet:name, calls:0, totalMs:0, minMs:null, maxMs:0,
+    rowsReturned:0, columns:0, errors:0
+  };
+  r.calls++;
+  r.totalMs += ms;
+  r.minMs = r.minMs === null ? ms : Math.min(r.minMs, ms);
+  r.maxMs = Math.max(r.maxMs, ms);
+  r.rowsReturned += Number(rows || 0);
+  r.columns = Math.max(r.columns, Number(columns || 0));
+  if(!ok) r.errors++;
+  BH_PERF_STATE_.sheetStats[name] = r;
+  BH_PERF_STATE_.events.push({
+    type:'sheet', name:name, durationMs:BH_PERF_round_(ms),
+    rows:Number(rows || 0), columns:Number(columns || 0),
+    ok:ok === true, error:error || ''
+  });
+}
+
+function BH_PERF_wrapFunction_(name, restores){
+  const root = globalThis;
+  const original = root[name];
+  if(typeof original !== 'function' || original.__BH_PERF_WRAPPED__ === true) return;
+
+  const wrapped = function(){
+    const started = BH_PERF_now_();
+    try{
+      const result = original.apply(this, arguments);
+      BH_PERF_recordFunction_(name, BH_PERF_now_() - started, true, '');
+      return result;
+    }catch(error){
+      BH_PERF_recordFunction_(name, BH_PERF_now_() - started, false, error && error.message ? error.message : String(error));
+      throw error;
+    }
+  };
+  wrapped.__BH_PERF_WRAPPED__ = true;
+  root[name] = wrapped;
+  restores.push(function(){ root[name] = original; });
+}
+
+function BH_PERF_wrapReadSheet_(restores){
+  const root = globalThis;
+  const original = root.readSheet_;
+  if(typeof original !== 'function') throw new Error('לא נמצאה הפונקציה readSheet_');
+
+  root.readSheet_ = function(sheetName){
+    const started = BH_PERF_now_();
+    try{
+      const result = original.apply(this, arguments);
+      const rows = Array.isArray(result) ? result.length : 0;
+      const columns = rows && result[0] && typeof result[0] === 'object' ? Object.keys(result[0]).length : 0;
+      BH_PERF_recordSheet_(sheetName, BH_PERF_now_() - started, rows, columns, true, '');
+      return result;
+    }catch(error){
+      BH_PERF_recordSheet_(sheetName, BH_PERF_now_() - started, 0, 0, false, error && error.message ? error.message : String(error));
+      throw error;
+    }
+  };
+  restores.push(function(){ root.readSheet_ = original; });
+}
+
+function BH_PERF_buildReport_(totalMs, target, data){
+  const functions = Object.keys(BH_PERF_STATE_.functionStats).map(function(k){
+    const r = BH_PERF_STATE_.functionStats[k];
+    return {
+      name:r.name, calls:r.calls,
+      totalMs:BH_PERF_round_(r.totalMs),
+      avgMs:BH_PERF_round_(r.totalMs / Math.max(r.calls, 1)),
+      minMs:BH_PERF_round_(r.minMs), maxMs:BH_PERF_round_(r.maxMs), errors:r.errors
+    };
+  }).sort(function(a,b){ return b.totalMs - a.totalMs; });
+
+  const sheets = Object.keys(BH_PERF_STATE_.sheetStats).map(function(k){
+    const r = BH_PERF_STATE_.sheetStats[k];
+    return {
+      sheet:r.sheet, calls:r.calls,
+      totalMs:BH_PERF_round_(r.totalMs),
+      avgMs:BH_PERF_round_(r.totalMs / Math.max(r.calls, 1)),
+      minMs:BH_PERF_round_(r.minMs), maxMs:BH_PERF_round_(r.maxMs),
+      rowsReturned:r.rowsReturned, columns:r.columns, errors:r.errors
+    };
+  }).sort(function(a,b){ return b.totalMs - a.totalMs; });
+
+  let payloadChars = 0;
+  try{ payloadChars = JSON.stringify(data || {}).length; }catch(e){}
+
+  return {
+    startedAt:BH_PERF_STATE_.startedAt,
+    finishedAt:new Date().toISOString(),
+    target:target,
+    totalMs:BH_PERF_round_(totalMs),
+    payloadKb:BH_PERF_round_(payloadChars / 1024),
+    functions:functions,
+    sheets:sheets,
+    duplicateSheetReads:sheets.filter(function(r){ return r.calls > 1; }),
+    events:BH_PERF_STATE_.events,
+    errors:BH_PERF_STATE_.errors
+  };
+}
+
+function BH_PERF_writeReport_(report){
+  const ss = getSS_();
+  let sh = ss.getSheetByName('דו״ח ביצועים');
+  if(!sh) sh = ss.insertSheet('דו״ח ביצועים');
+  sh.clear();
+
+  const rows = [
+    ['דו״ח ביצועי שרת',''],
+    ['מועד התחלה',report.startedAt],
+    ['מועד סיום',report.finishedAt],
+    ['פונקציה שנמדדה',report.target],
+    ['זמן שרת כולל במילישניות',report.totalMs],
+    ['גודל DATA משוער ב-KB',report.payloadKb],
+    ['',''],
+    ['TOP 10 פונקציות איטיות',''],
+    ['פונקציה','קריאות','זמן כולל ms','ממוצע ms','מינימום ms','מקסימום ms','שגיאות']
+  ];
+
+  report.functions.slice(0,10).forEach(function(r){
+    rows.push([r.name,r.calls,r.totalMs,r.avgMs,r.minMs,r.maxMs,r.errors]);
+  });
+
+  rows.push(['','']);
+  rows.push(['קריאות גיליונות','']);
+  rows.push(['גיליון','קריאות','זמן כולל ms','ממוצע ms','מינימום ms','מקסימום ms','שורות שהוחזרו','עמודות','שגיאות']);
+  report.sheets.forEach(function(r){
+    rows.push([r.sheet,r.calls,r.totalMs,r.avgMs,r.minMs,r.maxMs,r.rowsReturned,r.columns,r.errors]);
+  });
+
+  rows.push(['','']);
+  rows.push(['קריאות כפולות לאותו גיליון','']);
+  rows.push(['גיליון','קריאות','זמן כולל ms']);
+  if(!report.duplicateSheetReads.length) rows.push(['לא נמצאו קריאות כפולות','','']);
+  report.duplicateSheetReads.forEach(function(r){ rows.push([r.sheet,r.calls,r.totalMs]); });
+
+  rows.push(['','']);
+  rows.push(['כל אירועי המדידה לפי סדר','']);
+  rows.push(['סוג','שם','זמן ms','שורות','עמודות','תקין','שגיאה']);
+  report.events.forEach(function(r){
+    rows.push([r.type,r.name,r.durationMs,r.rows || '',r.columns || '',r.ok === true ? 'כן' : 'לא',r.error || '']);
+  });
+
+  const width = rows.reduce(function(max,row){ return Math.max(max,row.length); },1);
+  rows.forEach(function(row){ while(row.length < width) row.push(''); });
+  sh.getRange(1,1,rows.length,width).setValues(rows);
+  sh.setFrozenRows(1);
+  sh.autoResizeColumns(1,width);
+  sh.getRange(1,1,1,2).setFontWeight('bold').setFontSize(14);
+}
+
+function BH_PERF_AUDIT(){
+  BH_PERF_STATE_ = BH_PERF_newState_();
+  const root = globalThis;
+  const restores = [];
+
+  BH_PERF_wrapReadSheet_(restores);
+  [
+    'getSS_',
+    'קבלת_נתוני_מערכת_מלאים_Build10_',
+    'קבלת_קטגוריות_לבחירה_Build4_4',
+    'קבלת_הגדרות_לממשק_Build4_3',
+    'קבלת_הרשאות_Build6',
+    'מיתוג_מערכת_Build7_',
+    'calcDashboard_',
+    'התקנת_תחום_שיוך_BuildAD',
+    'BH_ASSIGNMENT_allowedUsersForDomain_',
+    'BH14_העשרת_נתוני_יומן_',
+    'BH15_משימה_מותרת_ביומן_'
+  ].forEach(function(name){ BH_PERF_wrapFunction_(name, restores); });
+
+  const started = BH_PERF_now_();
+  let target = '';
+  try{
+    if(typeof root.קבלת_נתוני_מערכת_מלאים_Build10_ !== 'function'){
+      throw new Error('לא נמצאה הפונקציה קבלת_נתוני_מערכת_מלאים_Build10_');
+    }
+
+    target = 'קבלת_נתוני_מערכת_מלאים_Build10_';
+    const data = root.קבלת_נתוני_מערכת_מלאים_Build10_();
+    const report = BH_PERF_buildReport_(BH_PERF_now_() - started, target, data);
+    BH_PERF_writeReport_(report);
+    console.log(JSON.stringify(report,null,2));
+    SpreadsheetApp.getActive().toast('המדידה הסתיימה. נוצר גיליון: דו״ח ביצועים','דו״ח ביצועים',8);
+    return report;
+  }catch(error){
+    BH_PERF_STATE_.errors.push({stage:target || 'הפעלת המדידה', message:error && error.message ? error.message : String(error)});
+    throw error;
+  }finally{
+    for(let i=restores.length-1;i>=0;i--){ try{ restores[i](); }catch(e){} }
+  }
+}
