@@ -2210,7 +2210,7 @@ function refreshCalendarGuestOptions(){
   if(!box || typeof tProject==='undefined') return;
   const selected = selectedCalendarGuests().join(',');
   const r={'מזהה פרויקט':tProject.value,'מזהה איש קשר':tContact.value,'אחראי':tOwner.value,'משתתפי יומן':selected};
-  box.innerHTML = `<label>משתתפים ביומן</label>${calendarGuestsSelect(r)}<p class="muted">רק המסומנים יקבלו זימון Google Calendar. התזכורת מוגדרת 60 דקות לפני, בכפוף להגדרות היומן של כל משתתף.</p>`;
+  box.innerHTML = `<label>אנשי קשר בפגישה</label>${calendarGuestsSelect(r)}<p class="muted">רק המסומנים יקבלו זימון Google Calendar. התזכורת מוגדרת 60 דקות לפני, בכפוף להגדרות היומן של כל משתתף.</p>`;
 }
 function openTask(r={}, preset={}){
   r={...r,...preset};
@@ -3535,7 +3535,7 @@ function refreshCore(after){
       taskTimeBlock.classList.toggle('hidden', !hasDate);
       if(document.getElementById('taskEndTimeBlock')) taskEndTimeBlock.classList.toggle('hidden', !(hasDate && isMeeting));
       if(document.getElementById('meetingLocationBlock')) meetingLocationBlock.classList.toggle('hidden', !(hasDate && isMeeting));
-      if(document.getElementById('calendarGuestsBlock')) calendarGuestsBlock.classList.toggle('hidden', !(hasDate && tCalendar && tCalendar.value==='כן'));
+      if(document.getElementById('calendarGuestsBlock')) calendarGuestsBlock.classList.toggle('hidden', !(hasDate && isMeeting && tCalendar && tCalendar.value==='כן'));
       if(hasDate && isMeeting) updateMeetingEndByDuration(false);
     }catch(e){}
   };
@@ -3614,8 +3614,8 @@ function refreshCore(after){
           <option ${calendarValue==='כן'?'selected':''}>כן</option>
         </select>
 
-        <div id="calendarGuestsBlock" class="${hasDate && calendarValue==='כן' ? '' : 'hidden'}">
-          <label>משתתפים ביומן</label>${calendarGuestsSelect(r)}
+        <div id="calendarGuestsBlock" class="${hasDate && isMeeting && calendarValue==='כן' ? '' : 'hidden'}">
+          <label>אנשי קשר בפגישה</label>${calendarGuestsSelect(r)}
           <p class="muted">רק המסומנים יקבלו זימון Google Calendar. התזכורת מוגדרת 60 דקות לפני, בכפוף להגדרות היומן של כל משתתף.</p>
         </div>
       </div>
@@ -3649,6 +3649,7 @@ function refreshCore(after){
     if(!canEdit() && id) return alert('אין לך הרשאה לעריכה');
     if(!canCreate() && !id) return alert('אין לך הרשאה להוספה');
 
+    const normalized = window.BH_normalizeCalendarParticipants ? window.BH_normalizeCalendarParticipants(selectedCalendarGuests()) : selectedCalendarGuests();
     google.script.run
       .withSuccessHandler(savedId=>{refreshCore(()=>openTaskCard(savedId||id));})
       .withFailureHandler(e=>alert(e.message))
@@ -3665,7 +3666,8 @@ function refreshCore(after){
         meetingDuration:(typeof tDuration!=='undefined'?tDuration.value:''),
         location:(typeof tLocation!=='undefined'?tLocation.value:''),
         addToCalendar:(typeof tCalendar!=='undefined'?tCalendar.value:'לא'),
-        calendarGuests:selectedCalendarGuests(),
+        calendarGuests:normalized,
+        'משתתפי יומן':normalized,
         status:tStatus.value,
         projectId:tProject.value,
         contactId:tContact.value,
@@ -6753,16 +6755,20 @@ window.calendarTasksForDate = function(d){
   window.BH_normalizeCalendarParticipants = function(values){ return parseCalendarParticipants(Array.isArray(values)?values.join(','):values).join(','); };
 
   window.participantCandidatesForTask = function(r={}){
-    const out=[]; const seen={};
+    const out=[]; const seen={}; const warnings=[]; const warned={};
     function isArchived(row){ return String((row||{})['בארכיון']||'')==='כן' || String((row||{})['פעיל']||'כן')==='לא'; }
-    function add(label,email){ email=String(email||'').trim(); const key=email.toLowerCase(); if(!validEmail(email)||seen[key]) return; seen[key]=true; out.push({label,email}); }
-    const project=(DATA.projects||[]).find(p=>p['מזהה פרויקט']===r['מזהה פרויקט'])||{};
+    function warn(label){ label=String(label||'').trim(); if(label && !warned[label]){ warned[label]=true; warnings.push(label); } }
+    function add(label,email){ email=String(email||'').trim(); const key=email.toLowerCase(); if(!email){ warn(label); return; } if(!validEmail(email)||seen[key]) return; seen[key]=true; out.push({label,email}); }
+    const contacts=DATA.contacts || [];
+    const projects=DATA.projects || [];
+    const links=DATA.links || [];
+    const project=projects.find(p=>p['מזהה פרויקט']===r['מזהה פרויקט'])||{};
     const projectDomain=String(project['תחום שיוך']||'ללא').trim() || 'ללא';
-    const taskContact=(DATA.contacts||[]).find(c=>c['מזהה איש קשר']===r['מזהה איש קשר'])||{};
-    if(!isArchived(taskContact)) add('איש קשר: '+(taskContact['שם מלא']||''), taskContact['אימייל']);
+    const taskContact=contacts.find(c=>c['מזהה איש קשר']===r['מזהה איש קשר'])||{};
+    if(taskContact['מזהה איש קשר'] && !isArchived(taskContact)) add('איש קשר: '+(taskContact['שם מלא']||''), taskContact['אימייל']);
     const taskOwnerName=r['אחראי']||'';
     const projectOwnerName=project['אחראי']||'';
-    (DATA.contacts||[]).filter(c=>!isArchived(c)).filter(c=>assignmentUserAllowedForDomain(c, projectDomain)).forEach(c=>{
+    contacts.filter(c=>!isArchived(c)).filter(c=>assignmentUserAllowedForDomain(c, projectDomain)).forEach(c=>{
       if(taskOwnerName && c['שם מלא']===taskOwnerName) add('אחראי משימה: '+taskOwnerName, c['אימייל']);
       if(projectOwnerName && c['שם מלא']===projectOwnerName) add('אחראי פרויקט: '+projectOwnerName, c['אימייל']);
       if(['בעל מערכת','מנהל ראשי','מנהל','משתמש'].includes(rowAssignmentRole(c))) add('איש צוות: '+(c['שם מלא']||''), c['אימייל']);
@@ -6773,20 +6779,22 @@ window.calendarTasksForDate = function(d){
     });
     const projectId=r['מזהה פרויקט'];
     if(projectId){
-      (DATA.links||[]).filter(l=>l['מזהה פרויקט']===projectId && String(l['פעיל']||'כן')!=='לא').forEach(l=>{
-        const c=(DATA.contacts||[]).find(x=>x['מזהה איש קשר']===l['מזהה איש קשר']);
+      links.filter(l=>l['מזהה פרויקט']===projectId && String(l['פעיל']||'כן')!=='לא').forEach(l=>{
+        const c=contacts.find(x=>x['מזהה איש קשר']===l['מזהה איש קשר']);
         if(c && !isArchived(c)) add('משויך לפרויקט: '+(c['שם מלא']||''), c['אימייל']);
       });
     }
     parseCalendarParticipants(r['משתתפי יומן']||'').forEach(email=>add('משתתף חיצוני/קיים', email));
+    out.warnings=warnings;
     return out;
   };
 
   window.calendarGuestsSelect = function(r={}){
     const selected=parseCalendarParticipants(r['משתתפי יומן']||'').map(x=>x.toLowerCase());
     const arr=participantCandidatesForTask(r);
-    if(!arr.length) return '<p class="muted">אין משתתפים עם מייל</p>';
-    return `<div id="tCalendarGuestsBox" class="card" style="max-height:190px;overflow:auto">` + arr.map(p=>`
+    const warningHtml=(arr.warnings||[]).length ? `<p class="muted">שים לב: לאנשי הקשר הבאים אין כתובת אימייל ולכן לא ניתן לשלוח להם זימון: ${esc((arr.warnings||[]).join(', '))}</p>` : '';
+    if(!arr.length) return warningHtml + '<p class="muted">אין משתתפים עם מייל</p>';
+    return warningHtml + `<div id="tCalendarGuestsBox" class="card" style="max-height:190px;overflow:auto">` + arr.map(p=>`
       <label style="display:block;margin:4px 0"><input type="checkbox" name="calendarGuest" value="${esc(p.email)}" ${selected.includes(p.email.toLowerCase())?'checked':''} style="width:auto;margin-left:6px"> ${esc(p.label)} · ${esc(p.email)}</label>
     `).join('') + `</div>`;
   };
@@ -6795,22 +6803,6 @@ window.calendarTasksForDate = function(d){
     return parseCalendarParticipants(Array.from(document.querySelectorAll('input[name="calendarGuest"]:checked')).map(x=>x.value).join(','));
   };
 
-  const oldSaveTask = window.saveTask;
-  window.saveTask = function(id){
-    if(!canEdit() && id) return alert('אין לך הרשאה לעריכה');
-    if(!canCreate() && !id) return alert('אין לך הרשאה להוספה');
-    const normalized = window.BH_normalizeCalendarParticipants(selectedCalendarGuests());
-    google.script.run
-      .withSuccessHandler(savedId=>{refreshCore(()=>openTaskCard(savedId||id));})
-      .withFailureHandler(e=>alert(e.message))
-      .שמירת_משימה({
-        authToken:currentToken(), id, title:tTitle.value, taskDescription:(typeof tDescription!=='undefined'?tDescription.value:''), taskType:tType.value, priority:tPriority.value,
-        date:tDate.value, time:(typeof tTime!=='undefined'?tTime.value:''), endTime:(typeof tEndTime!=='undefined'?tEndTime.value:''),
-        meetingDuration:(typeof tDuration!=='undefined'?tDuration.value:''), location:(typeof tLocation!=='undefined'?tLocation.value:''),
-        addToCalendar:(typeof tCalendar!=='undefined'?tCalendar.value:'לא'), calendarGuests:normalized, 'משתתפי יומן':normalized,
-        status:tStatus.value, projectId:tProject.value, contactId:tContact.value, owner:tOwner.value, taskNotes:tTaskNotes.value
-      });
-  };
 })();
 </script>
 
