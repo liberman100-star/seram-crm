@@ -2091,9 +2091,9 @@ function openTask(r={}, preset={}){
       </div>
     </div>
     <label>סטטוס</label><select id="tStatus">${opts('סטטוס משימה',r['סטטוס']||'פתוח')}</select>
-    <label>פרויקט</label><select id="tProject" onchange="refreshCalendarGuestOptions()">${projectOptions(r['מזהה פרויקט'])}</select>
-    <label>איש קשר</label><select id="tContact" onchange="refreshCalendarGuestOptions()">${contactOptions(r['מזהה איש קשר'], allowedIds)}</select>
-    <label>אחראי</label><select id="tOwner" onchange="refreshCalendarGuestOptions()">${activeUsersOptions(r['אחראי'])}</select>
+    <label>פרויקט</label><select id="tProject">${projectOptions(r['מזהה פרויקט'])}</select>
+    <label>איש קשר</label><select id="tContact">${contactOptions(r['מזהה איש קשר'], allowedIds)}</select>
+    <label>אחראי</label><select id="tOwner">${activeUsersOptions(r['אחראי'])}</select>
     <label>הערות למשימה</label><textarea id="tTaskNotes" placeholder="הערות שיופיעו גם בתיאור האירוע ביומן, אם נכנס ליומן">${esc(r['הערות למשימה']||'')}</textarea>
     <p class="muted">אם הוזן תאריך — חובה להזין שעה. “שיחה” תופסת 30 דקות ביומן, “משימה” 15 דקות, ו“פגישה” דורשת שעת סיום.</p>
     <button class="primary" onclick='saveTask("${esc(r['מזהה משימה']||'')}")'>שמור</button>
@@ -2238,9 +2238,9 @@ function openTask(r={}, preset={}){
       </div>
     </div>
     <label>סטטוס</label><select id="tStatus">${opts('סטטוס משימה',r['סטטוס']||'פתוח')}</select>
-    <label>פרויקט</label><select id="tProject" onchange="refreshCalendarGuestOptions()">${projectOptions(r['מזהה פרויקט'])}</select>
-    <label>איש קשר</label><select id="tContact" onchange="refreshCalendarGuestOptions()">${contactOptions(r['מזהה איש קשר'], allowedIds)}</select>
-    <label>אחראי</label><select id="tOwner" onchange="refreshCalendarGuestOptions()">${activeUsersOptions(r['אחראי'])}</select>
+    <label>פרויקט</label><select id="tProject">${projectOptions(r['מזהה פרויקט'])}</select>
+    <label>איש קשר</label><select id="tContact">${contactOptions(r['מזהה איש קשר'], allowedIds)}</select>
+    <label>אחראי</label><select id="tOwner">${activeUsersOptions(r['אחראי'])}</select>
     <label>הערות למשימה</label><textarea id="tTaskNotes" placeholder="הערות שיופיעו גם בתיאור האירוע ביומן, אם נכנס ליומן">${esc(r['הערות למשימה']||'')}</textarea>
     <p class="muted">שמירה אינה שולחת זימון מחדש. אחרי שמירה, פתח את כרטיס המשימה ולחץ “שלח זימון/עדכון למשתתפים”.</p>
     <button class="primary" onclick='saveTask("${esc(r['מזהה משימה']||'')}")'>שמור</button>
@@ -3629,13 +3629,13 @@ function refreshCore(after){
       <select id="tStatus">${opts('סטטוס משימה',r['סטטוס']||'פתוח')}</select>
 
       <label>פרויקט${BH_requiredMark('task','מזהה פרויקט')}</label>
-      <select id="tProject" onchange="refreshCalendarGuestOptions()">${projectOptions(r['מזהה פרויקט']||'')}</select>
+      <select id="tProject">${projectOptions(r['מזהה פרויקט']||'')}</select>
 
       <label>איש קשר${BH_requiredMark('task','מזהה איש קשר')}</label>
-      <select id="tContact" onchange="refreshCalendarGuestOptions()">${contactOptions(r['מזהה איש קשר']||'', allowedIds)}</select>
+      <select id="tContact">${contactOptions(r['מזהה איש קשר']||'', allowedIds)}</select>
 
       <label>אחראי${BH_requiredMark('task','אחראי')}</label>
-      <select id="tOwner" onchange="refreshCalendarGuestOptions()">${activeUsersOptions(r['אחראי']||'')}</select>
+      <select id="tOwner">${activeUsersOptions(r['אחראי']||'')}</select>
 
       <label>הערות למשימה</label>
       <textarea id="tTaskNotes" placeholder="הערות שיופיעו גם בתיאור האירוע ביומן, אם נכנס ליומן">${esc(r['הערות למשימה']||'')}</textarea>
