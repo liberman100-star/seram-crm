@@ -2327,6 +2327,7 @@ function התקנת_Build11_לוח_שנה_ועדיפויות() {
   הבטח_עמודה_אם_חסרה_(SHEETS.TASKS, "הערות למשימה");
   הבטח_עמודה_אם_חסרה_(SHEETS.TASKS, "עדיפות");
   הבטח_עמודה_אם_חסרה_(SHEETS.TASKS, "משתתפי יומן");
+  הבטח_עמודה_אם_חסרה_(SHEETS.TASKS, "אנשי קשר בפגישה");
   הבטח_עמודה_אם_חסרה_(SHEETS.TASKS, "מזהה אירוע ביומן");
   try { הוספת_אפשרות_בחירה_בטוח_Build11_("עדיפות", "נמוכה", 1); } catch(e) { Logger.log(e); }
   try { הוספת_אפשרות_בחירה_בטוח_Build11_("עדיפות", "רגילה", 2); } catch(e) { Logger.log(e); }
@@ -2408,6 +2409,44 @@ function BH_calendarParticipantsFromData_(data, old) {
   if (BH_hasOwn_(data, "calendarGuests")) return נרמול_רשימת_מיילים_Build11_(data.calendarGuests);
   if (BH_hasOwn_(data, "participants")) return נרמול_רשימת_מיילים_Build11_(data.participants);
   return old ? נרמול_רשימת_מיילים_Build11_(old["משתתפי יומן"] || "") : "";
+}
+
+function BH_splitContactIds_(value) {
+  const seen = {};
+  const out = [];
+  String(value || "").split(/[;,|\n\r]+/).map(x => String(x || "").trim()).filter(Boolean).forEach(id => {
+    if (seen[id]) return;
+    seen[id] = true;
+    out.push(id);
+  });
+  return out;
+}
+
+function BH_meetingContactIdsFromData_(data, old) {
+  if (BH_hasOwn_(data, "אנשי קשר בפגישה")) return BH_splitContactIds_(data["אנשי קשר בפגישה"]).join(",");
+  if (BH_hasOwn_(data, "meetingContactIds")) return BH_splitContactIds_(data.meetingContactIds).join(",");
+  if (BH_hasOwn_(data, "meetingContacts")) return BH_splitContactIds_(data.meetingContacts).join(",");
+  return old ? BH_splitContactIds_(old["אנשי קשר בפגישה"] || "").join(",") : "";
+}
+
+function BH_meetingContactEmailsForTask_(task) {
+  const ids = BH_splitContactIds_(task && task["אנשי קשר בפגישה"]);
+  if (!ids.length) return [];
+  const wanted = {};
+  ids.forEach(id => wanted[String(id)] = true);
+  const seen = {};
+  const out = [];
+  readSheet_(SHEETS.CONTACTS).forEach(c => {
+    const id = String(c["מזהה איש קשר"] || "").trim();
+    if (!wanted[id]) return;
+    const email = String(c["אימייל"] || "").trim();
+    if (!BH_isValidEmail_(email)) return;
+    const key = email.toLowerCase();
+    if (seen[key]) return;
+    seen[key] = true;
+    out.push(email);
+  });
+  return out;
 }
 
 function הוספת_מוזמנים_לאירוע_Build11_(ev, guests) {
@@ -3375,8 +3414,17 @@ function buildTaskEndDateTime_(task, start) {
 }
 
 function BH_calendarEventResource_(task, start, end) {
-  const guests = נרמול_רשימת_מיילים_Build11_(task["משתתפי יומן"] || "")
-    .split(",").filter(Boolean).map(email => ({ email }));
+  const meetingIds = BH_splitContactIds_(task && task["אנשי קשר בפגישה"]);
+  const guestEmails = meetingIds.length
+    ? BH_meetingContactEmailsForTask_(task)
+    : נרמול_רשימת_מיילים_Build11_(task["משתתפי יומן"] || "").split(",").filter(Boolean);
+  const guestSeen = {};
+  const guests = guestEmails.map(email => String(email || "").trim()).filter(email => {
+    const key = email.toLowerCase();
+    if (!email || guestSeen[key]) return false;
+    guestSeen[key] = true;
+    return true;
+  }).map(email => ({ email }));
   const description = task["הערות למשימה"] || "נוצר / עודכן אוטומטית ממערכת CRM";
   const resource = {
     summary: בניית_כותרת_אירוע_יומן_(task),
@@ -4946,6 +4994,7 @@ function שמירת_משימה(data) {
   הוספת_עמודה_אם_חסרה_(SHEETS.TASKS, "משך פגישה");
   הוספת_עמודה_אם_חסרה_(SHEETS.TASKS, "מיקום");
   הוספת_עמודה_אם_חסרה_(SHEETS.TASKS, "משתתפי יומן");
+  הוספת_עמודה_אם_חסרה_(SHEETS.TASKS, "אנשי קשר בפגישה");
 
   const id = data.id || makeId_("מש");
 
@@ -5001,6 +5050,7 @@ function שמירת_משימה(data) {
     "משך פגישה": data.meetingDuration || (old ? old["משך פגישה"] : "") || "",
     "מיקום": data.location || (old ? old["מיקום"] : "") || "",
     "משתתפי יומן": BH_calendarParticipantsFromData_(data, old),
+    "אנשי קשר בפגישה": BH_meetingContactIdsFromData_(data, old),
     "כניסה ליומן": calendarFlag,
     "סטטוס": data.status || (old ? old["סטטוס"] : "") || "פתוח",
     "מזהה פרויקט": data.projectId || (old ? old["מזהה פרויקט"] : "") || "",
@@ -5030,18 +5080,8 @@ function שמירת_משימה(data) {
   upsert_ללא_אימות_(SHEETS.TASKS, "מזהה משימה", id, row);
   BH_ASSIGNMENT_logTaskDateChange_(old, row);
 
-  if (row["כניסה ליומן"] === "כן" && row["תאריך"] && row["שעה"]) {
-    try {
-      row["מזהה אירוע ביומן"] = syncCalendarEvent_(row);
-      upsert_ללא_אימות_(SHEETS.TASKS, "מזהה משימה", id, row);
-    } catch (e) {
-      throw new Error("המשימה נשמרה, אך סנכרון Google Calendar נכשל. ניתן לנסות שוב ללא יצירת אירוע כפול. " + (e && e.message ? e.message : e));
-    }
-  } else if (calendarId) {
-    מחיקת_אירוע_יומן_אם_קיים_(calendarId);
-    row["מזהה אירוע ביומן"] = "";
-    upsert_ללא_אימות_(SHEETS.TASKS, "מזהה משימה", id, row);
-  }
+  // Issue #40: saving a task must only persist CRM data.
+  // Calendar creation/update/deletion is intentionally limited to שליחת_זימון_יומן_למשימה_Build11.
 
   log_("שמירת משימה", row["כותרת"]);
 
@@ -5175,7 +5215,7 @@ function התקנת_עדכוני_מערכת_בטוחה() {
     [BH_AD_CATEGORY, "יוצר", "תיאור הפרויקט"].forEach(h => הבטח_עמודה_אם_חסרה_(SHEETS.PROJECTS, h));
     ["תחומי שיוך", BH_AD_CENTRAL, "הרשאת מערכת", "פעיל במערכת", "צפיית יומן", "יוצרי יומן מורשים", "יוצר", "גוון יוצר"].forEach(h => הבטח_עמודה_אם_חסרה_(SHEETS.CONTACTS, h));
     ["יוצר", "מורשה צפייה בפורטל", "תפקיד / כובע"].forEach(h => הבטח_עמודה_אם_חסרה_(SHEETS.LINKS, h));
-    ["שעת סיום", "כניסה ליומן", "הערות למשימה", "תיאור המשימה", "עדיפות", "משתתפי יומן", "מזהה אירוע ביומן", "יוצר", "יוצר אירוע", "יוצר אירוע מייל", "צפיית יומן", "יוצרי יומן מורשים", "משך פגישה", "מיקום פגישה"].forEach(h => הבטח_עמודה_אם_חסרה_(SHEETS.TASKS, h));
+    ["שעת סיום", "כניסה ליומן", "הערות למשימה", "תיאור המשימה", "עדיפות", "משתתפי יומן", "אנשי קשר בפגישה", "מזהה אירוע ביומן", "יוצר", "יוצר אירוע", "יוצר אירוע מייל", "צפיית יומן", "יוצרי יומן מורשים", "משך פגישה", "מיקום פגישה"].forEach(h => הבטח_עמודה_אם_חסרה_(SHEETS.TASKS, h));
     ["יוצר"].forEach(h => הבטח_עמודה_אם_חסרה_(SHEETS.TASK_NOTES, h));
     ["יצירה Timestamp", "תפוגה Timestamp"].forEach(h => הבטח_עמודה_אם_חסרה_(BUILD7_LOGIN_CODES_SHEET, h));
     [BH_CAD_SESSION_FIELD].forEach(h => הבטח_עמודה_אם_חסרה_(BUILD7_SESSIONS_SHEET, h));
