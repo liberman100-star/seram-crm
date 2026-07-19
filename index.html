@@ -6848,5 +6848,98 @@ window.calendarTasksForDate = function(d){
 </style>
 
 
+<script>
+/* Meeting task contacts invitees */
+(function(){
+  const FIELD='אנשי קשר בפגישה';
+  let selectedMeetingContactIds=[];
+  let meetingDialogTab='project';
+  let meetingDialogOriginalIds=[];
+
+  function splitIds(v){ return String(v||'').split(/[;,|\n\r]+/).map(x=>x.trim()).filter(Boolean).filter((v,i,a)=>a.indexOf(v)===i); }
+  function contactId(c){ return String((c||{})['מזהה איש קשר']||'').trim(); }
+  function contactName(c){ return String((c||{})['שם מלא']||'').trim() || contactId(c); }
+  function contactEmail(c){ return String((c||{})['אימייל']||'').trim(); }
+  function contactPhone(c){ return String((c||{})['טלפון']||'').trim(); }
+  function isArchivedContact(c){ return String((c||{})['בארכיון']||'')==='כן' || String((c||{})['פעיל']||'כן')==='לא'; }
+  function meetingContactsFromTask(r){ return splitIds(r[FIELD] || r.meetingContactIds || r.meetingContacts || ''); }
+  window.BH_meetingContactsFromTask = meetingContactsFromTask;
+  window.selectedMeetingContactIds = function(){ return selectedMeetingContactIds.slice(); };
+
+  function projectContactIdSet(){
+    const out={}; const pid=window.tProject ? String(tProject.value||'') : '';
+    if(!pid) return out;
+    (DATA.links||[]).filter(l=>String(l['מזהה פרויקט']||'')===pid && String(l['פעיל']||'כן')!=='לא').forEach(l=>{ out[String(l['מזהה איש קשר']||'').trim()]=true; });
+    return out;
+  }
+  function renderMeetingContactChips(){
+    const box=document.getElementById('meetingContactsChips'); if(!box) return;
+    const contacts=selectedMeetingContactIds.map(id=>(DATA.contacts||[]).find(c=>contactId(c)===String(id))).filter(Boolean);
+    if(!contacts.length){ box.innerHTML='<p class="muted">לא נבחרו אנשי קשר לפגישה</p>'; return; }
+    box.innerHTML=contacts.map(c=>`<span class="meeting-contact-chip">${esc(contactName(c))}${contactEmail(c)?` <small>${esc(contactEmail(c))}</small>`:' <small class="warn">ללא אימייל</small>'} <button type="button" onclick="removeMeetingContact('${esc(contactId(c))}')">×</button></span>`).join('');
+  }
+  window.removeMeetingContact=function(id){ selectedMeetingContactIds=selectedMeetingContactIds.filter(x=>String(x)!==String(id)); renderMeetingContactChips(); renderMeetingContactWarning(); };
+  function renderMeetingContactWarning(){
+    const el=document.getElementById('meetingContactsWarning'); if(!el) return;
+    const missing=selectedMeetingContactIds.map(id=>(DATA.contacts||[]).find(c=>contactId(c)===String(id))).filter(c=>c && !contactEmail(c));
+    el.innerHTML=missing.length ? `⚠️ לאנשי הקשר הבאים אין אימייל ולכן הם לא יתווספו כמוזמנים ביומן: ${missing.map(c=>esc(contactName(c))).join(', ')}` : '';
+  }
+  window.renderMeetingContactChips=renderMeetingContactChips;
+
+  function renderMeetingDialog(){
+    const q=String((document.getElementById('meetingContactSearch')||{}).value||'').trim().toLowerCase();
+    const projectSet=projectContactIdSet();
+    let rows=(DATA.contacts||[]).filter(c=>!isArchivedContact(c));
+    if(meetingDialogTab==='project') rows=rows.filter(c=>projectSet[contactId(c)]);
+    if(q) rows=rows.filter(c=>[contactName(c),contactPhone(c),contactEmail(c)].some(v=>String(v||'').toLowerCase().includes(q)));
+    const list=document.getElementById('meetingContactDialogList'); if(!list) return;
+    list.innerHTML = rows.length ? rows.map(c=>{
+      const id=contactId(c); const checked=selectedMeetingContactIds.includes(id);
+      return `<label class="meeting-contact-row"><input type="checkbox" value="${esc(id)}" ${checked?'checked':''} onchange="toggleMeetingContactFromDialog(this)"><span><b>${esc(contactName(c))}</b><br><small>${esc(contactPhone(c))}${contactPhone(c)&&contactEmail(c)?' · ':''}${esc(contactEmail(c)||'ללא אימייל')}</small></span></label>`;
+    }).join('') : '<p class="muted">לא נמצאו אנשי קשר</p>';
+  }
+  window.toggleMeetingContactFromDialog=function(cb){ const id=String(cb.value||''); if(cb.checked && !selectedMeetingContactIds.includes(id)) selectedMeetingContactIds.push(id); if(!cb.checked) selectedMeetingContactIds=selectedMeetingContactIds.filter(x=>x!==id); renderMeetingContactWarning(); };
+  window.setMeetingContactTab=function(tab){ meetingDialogTab=tab; document.querySelectorAll('[data-meeting-tab]').forEach(b=>b.classList.toggle('primary', b.getAttribute('data-meeting-tab')===tab)); renderMeetingDialog(); };
+  window.openMeetingContactsDialog=function(){
+    meetingDialogOriginalIds=selectedMeetingContactIds.slice();
+    const dlg=document.createElement('div'); dlg.id='meetingContactsDialog'; dlg.className='meeting-dialog-backdrop';
+    dlg.innerHTML=`<div class="meeting-dialog"><h3>הוסף אנשי קשר לפגישה</h3><div class="toolbar"><button data-meeting-tab="project" class="primary" onclick="setMeetingContactTab('project')">אנשי קשר המשויכים לפרויקט</button><button data-meeting-tab="all" onclick="setMeetingContactTab('all')">כל אנשי הקשר</button></div><input id="meetingContactSearch" placeholder="חיפוש לפי שם, טלפון או אימייל" oninput="renderMeetingDialog()"><div id="meetingContactDialogList" class="meeting-contact-list"></div><button class="primary" onclick="closeMeetingContactsDialog(true)">אישור</button><button onclick="closeMeetingContactsDialog(false)">ביטול</button></div>`;
+    document.body.appendChild(dlg); renderMeetingDialog();
+  };
+  window.closeMeetingContactsDialog=function(apply){ const dlg=document.getElementById('meetingContactsDialog'); if(dlg) dlg.remove(); if(!apply) selectedMeetingContactIds=meetingDialogOriginalIds.slice(); renderMeetingContactChips(); renderMeetingContactWarning(); };
+
+  const baseOpenTask=window.openTask;
+  window.openTask=function(r={}, preset={}){
+    selectedMeetingContactIds=meetingContactsFromTask(Object.assign({}, r, preset));
+    baseOpenTask(r,preset);
+    const owner=document.getElementById('tOwner');
+    if(owner && !document.getElementById('meetingContactsSection')){
+      const section=document.createElement('div'); section.id='meetingContactsSection'; section.className='card';
+      section.innerHTML=`<h3 class="sectionTitle">אנשי קשר בפגישה</h3><div id="meetingContactsChips"></div><button type="button" onclick="openMeetingContactsDialog()">➕ הוסף איש קשר</button><p id="meetingContactsWarning" class="muted warn"></p>`;
+      owner.parentNode.insertBefore(section, owner.nextSibling);
+    }
+    renderMeetingContactChips(); renderMeetingContactWarning();
+  };
+
+  const baseSaveTask=window.saveTask;
+  window.saveTask=function(id){
+    const missing=selectedMeetingContactIds.map(cid=>(DATA.contacts||[]).find(c=>contactId(c)===cid)).filter(c=>c && !contactEmail(c));
+    if(missing.length && (typeof tCalendar!=='undefined' && tCalendar.value==='כן')) alert('שים לב: לאנשי הקשר הבאים אין אימייל ולכן הם לא יתווספו כמוזמנים ביומן: '+missing.map(contactName).join(', '));
+    if(!canEdit() && id) return alert('אין לך הרשאה לעריכה');
+    if(!canCreate() && !id) return alert('אין לך הרשאה להוספה');
+    const normalized = window.BH_normalizeCalendarParticipants ? window.BH_normalizeCalendarParticipants(selectedCalendarGuests()) : selectedCalendarGuests();
+    google.script.run.withSuccessHandler(savedId=>{refreshCore(()=>openTaskCard(savedId||id));}).withFailureHandler(e=>alert(e.message)).שמירת_משימה({
+      authToken:currentToken(), id, title:tTitle.value, taskDescription:(typeof tDescription!=='undefined'?tDescription.value:''), taskType:tType.value, priority:tPriority.value,
+      date:tDate.value, time:(typeof tTime!=='undefined'?tTime.value:''), endTime:(typeof tEndTime!=='undefined'?tEndTime.value:''), meetingDuration:(typeof tDuration!=='undefined'?tDuration.value:''), location:(typeof tLocation!=='undefined'?tLocation.value:''),
+      addToCalendar:(typeof tCalendar!=='undefined'?tCalendar.value:'לא'), calendarGuests:normalized, 'משתתפי יומן':normalized, meetingContactIds:selectedMeetingContactIds.join(','), [FIELD]:selectedMeetingContactIds.join(','),
+      status:tStatus.value, projectId:tProject.value, contactId:tContact.value, owner:tOwner.value, taskNotes:tTaskNotes.value
+    });
+  };
+})();
+</script>
+<style>
+.meeting-contact-chip{display:inline-flex;gap:6px;align-items:center;margin:4px;padding:5px 10px;border-radius:999px;background:#e0f2fe;color:#075985}.meeting-contact-chip button{border:0;background:transparent;font-weight:800;cursor:pointer}.warn{color:#b45309}.meeting-dialog-backdrop{position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:9999;display:flex;align-items:center;justify-content:center}.meeting-dialog{background:#fff;max-width:720px;width:92%;max-height:85vh;overflow:auto;border-radius:14px;padding:18px;box-shadow:0 20px 60px rgba(0,0,0,.25)}.meeting-contact-list{max-height:420px;overflow:auto;margin:12px 0}.meeting-contact-row{display:flex;gap:10px;align-items:flex-start;padding:8px;border-bottom:1px solid #e5e7eb}.meeting-contact-row input{width:auto}
+</style>
+
 </body>
 </html>

@@ -2410,6 +2410,44 @@ function BH_calendarParticipantsFromData_(data, old) {
   return old ? נרמול_רשימת_מיילים_Build11_(old["משתתפי יומן"] || "") : "";
 }
 
+function BH_splitContactIds_(value) {
+  const seen = {};
+  const out = [];
+  String(value || "").split(/[;,|\n\r]+/).map(x => String(x || "").trim()).filter(Boolean).forEach(id => {
+    if (seen[id]) return;
+    seen[id] = true;
+    out.push(id);
+  });
+  return out;
+}
+
+function BH_meetingContactIdsFromData_(data, old) {
+  if (BH_hasOwn_(data, "אנשי קשר בפגישה")) return BH_splitContactIds_(data["אנשי קשר בפגישה"]).join(",");
+  if (BH_hasOwn_(data, "meetingContactIds")) return BH_splitContactIds_(data.meetingContactIds).join(",");
+  if (BH_hasOwn_(data, "meetingContacts")) return BH_splitContactIds_(data.meetingContacts).join(",");
+  return old ? BH_splitContactIds_(old["אנשי קשר בפגישה"] || "").join(",") : "";
+}
+
+function BH_meetingContactEmailsForTask_(task) {
+  const ids = BH_splitContactIds_(task && task["אנשי קשר בפגישה"]);
+  if (!ids.length) return [];
+  const wanted = {};
+  ids.forEach(id => wanted[String(id)] = true);
+  const seen = {};
+  const out = [];
+  readSheet_(SHEETS.CONTACTS).forEach(c => {
+    const id = String(c["מזהה איש קשר"] || "").trim();
+    if (!wanted[id]) return;
+    const email = String(c["אימייל"] || "").trim();
+    if (!BH_isValidEmail_(email)) return;
+    const key = email.toLowerCase();
+    if (seen[key]) return;
+    seen[key] = true;
+    out.push(email);
+  });
+  return out;
+}
+
 function הוספת_מוזמנים_לאירוע_Build11_(ev, guests) {
   if (!guests) return true;
   guests.split(",").forEach(email => {
@@ -3375,8 +3413,15 @@ function buildTaskEndDateTime_(task, start) {
 }
 
 function BH_calendarEventResource_(task, start, end) {
-  const guests = נרמול_רשימת_מיילים_Build11_(task["משתתפי יומן"] || "")
-    .split(",").filter(Boolean).map(email => ({ email }));
+  const guestEmails = נרמול_רשימת_מיילים_Build11_(task["משתתפי יומן"] || "").split(",").filter(Boolean)
+    .concat(BH_meetingContactEmailsForTask_(task));
+  const guestSeen = {};
+  const guests = guestEmails.map(email => String(email || "").trim()).filter(email => {
+    const key = email.toLowerCase();
+    if (!email || guestSeen[key]) return false;
+    guestSeen[key] = true;
+    return true;
+  }).map(email => ({ email }));
   const description = task["הערות למשימה"] || "נוצר / עודכן אוטומטית ממערכת CRM";
   const resource = {
     summary: בניית_כותרת_אירוע_יומן_(task),
@@ -4946,6 +4991,7 @@ function שמירת_משימה(data) {
   הוספת_עמודה_אם_חסרה_(SHEETS.TASKS, "משך פגישה");
   הוספת_עמודה_אם_חסרה_(SHEETS.TASKS, "מיקום");
   הוספת_עמודה_אם_חסרה_(SHEETS.TASKS, "משתתפי יומן");
+  הוספת_עמודה_אם_חסרה_(SHEETS.TASKS, "אנשי קשר בפגישה");
 
   const id = data.id || makeId_("מש");
 
@@ -5001,6 +5047,7 @@ function שמירת_משימה(data) {
     "משך פגישה": data.meetingDuration || (old ? old["משך פגישה"] : "") || "",
     "מיקום": data.location || (old ? old["מיקום"] : "") || "",
     "משתתפי יומן": BH_calendarParticipantsFromData_(data, old),
+    "אנשי קשר בפגישה": BH_meetingContactIdsFromData_(data, old),
     "כניסה ליומן": calendarFlag,
     "סטטוס": data.status || (old ? old["סטטוס"] : "") || "פתוח",
     "מזהה פרויקט": data.projectId || (old ? old["מזהה פרויקט"] : "") || "",
