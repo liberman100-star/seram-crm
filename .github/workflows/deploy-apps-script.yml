@@ -13,6 +13,9 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  APPS_SCRIPT_DEPLOYMENT_ID: AKfycbyfXuvUth9j7L5-rp0TKEc3CC2gffmgo44y_VDZHwMFObT4pxuNkNrL7Jf0HX5CSQQaCQ
+
 jobs:
   test-and-deploy:
     runs-on: ubuntu-latest
@@ -106,4 +109,11 @@ jobs:
         working-directory: .apps-script-deploy
         run: clasp push --force
 
-# rollback redeploy trigger
+      - name: Update production web app deployment
+        working-directory: .apps-script-deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          clasp create-deployment \
+            --deploymentId "${APPS_SCRIPT_DEPLOYMENT_ID}" \
+            --description "production ${GITHUB_SHA}"
