@@ -105,3 +105,5 @@ jobs:
       - name: Push code to Apps Script
         working-directory: .apps-script-deploy
         run: clasp push --force
+
+# rollback redeploy trigger
