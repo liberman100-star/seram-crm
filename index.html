@@ -3615,8 +3615,13 @@ function refreshCore(after){
         </select>
 
         <div id="calendarGuestsBlock" class="${hasDate && isMeeting && calendarValue==='כן' ? '' : 'hidden'}">
-          <label>אנשי קשר בפגישה</label>${calendarGuestsSelect(r)}
-          <p class="muted">רק המסומנים יקבלו זימון Google Calendar. התזכורת מוגדרת 60 דקות לפני, בכפוף להגדרות היומן של כל משתתף.</p>
+          <div id="meetingContactsSection" class="card">
+            <h3 class="sectionTitle">אנשי קשר בפגישה</h3>
+            <div id="meetingContactsChips"></div>
+            <button type="button" onclick="openMeetingContactsDialog()">➕ הוסף איש קשר</button>
+            <p id="meetingContactsWarning" class="muted warn"></p>
+            <p class="muted">רק אנשי הקשר שנבחרו כאן במפורש יקבלו זימון Google Calendar. איש הקשר הראשי אינו מצורף אוטומטית.</p>
+          </div>
         </div>
       </div>
 
@@ -3641,8 +3646,10 @@ function refreshCore(after){
       <button onclick="closeM()">ביטול</button>
     `;
 
+    if(window.BH_setMeetingContactsForTask) window.BH_setMeetingContactsForTask(r);
     modal.classList.remove('hidden');
     updateTaskFields();
+    if(window.renderMeetingContactChips) renderMeetingContactChips();
   };
 
   window.saveTask = function(id){
@@ -3668,6 +3675,8 @@ function refreshCore(after){
         addToCalendar:(typeof tCalendar!=='undefined'?tCalendar.value:'לא'),
         calendarGuests:normalized,
         'משתתפי יומן':normalized,
+        meetingContactIds:(window.selectedMeetingContactIds ? window.selectedMeetingContactIds().join(',') : ''),
+        'אנשי קשר בפגישה':(window.selectedMeetingContactIds ? window.selectedMeetingContactIds().join(',') : ''),
         status:tStatus.value,
         projectId:tProject.value,
         contactId:tContact.value,
@@ -6810,7 +6819,18 @@ window.calendarTasksForDate = function(d){
 <script>
 (function(){
   function crmEsc(s){ return (typeof esc==='function') ? esc(String(s||'')) : String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+  function splitMeetingIds(v){ return String(v||'').split(/[;,|\n\r]+/).map(x=>x.trim()).filter(Boolean).filter((x,i,a)=>a.indexOf(x)===i); }
   function storedParticipants(task){ return (typeof parseCalendarParticipants==='function' ? parseCalendarParticipants(task['משתתפי יומן'] || '') : String(task['משתתפי יומן']||'').split(/[;,|\n\r]+/).map(x=>x.trim()).filter(Boolean)); }
+  window.renderPersistedMeetingContacts = function(task){
+    const ids=splitMeetingIds((task||{})['אנשי קשר בפגישה'] || (task||{}).meetingContactIds || '');
+    if(!ids.length) return '<p class="muted">לא נבחרו אנשי קשר לפגישה</p>';
+    return '<ul class="calendar-participants-list">'+ids.map(id=>{
+      const c=(DATA.contacts||[]).find(x=>String(x['מזהה איש קשר']||'')===String(id));
+      if(!c) return `<li>${crmEsc(id)} <span class="muted">(איש קשר לא נמצא)</span></li>`;
+      const email=String(c['אימייל']||'').trim();
+      return `<li>${crmEsc(c['שם מלא']||id)}${email ? ' — '+crmEsc(email) : ' <span class="warn">⚠️ ללא אימייל</span>'}</li>`;
+    }).join('')+'</ul>';
+  };
   window.renderPersistedCalendarParticipants = function(task){
     const participants = storedParticipants(task || {});
     if(!participants.length) return '<p class="muted">אין משתתפים ביומן</p>';
@@ -6828,7 +6848,7 @@ window.calendarTasksForDate = function(d){
     if(notesTitle && !modalBox.querySelector('[data-calendar-participants-section]')){
       const section = document.createElement('div');
       section.setAttribute('data-calendar-participants-section','true');
-      section.innerHTML = `<h3 class="sectionTitle">משתתפים ביומן</h3><div class="card">${window.renderPersistedCalendarParticipants((d&&d.task)||{})}</div>`;
+      section.innerHTML = `<h3 class="sectionTitle">אנשי קשר בפגישה</h3><div class="card">${window.renderPersistedMeetingContacts((d&&d.task)||{})}</div><h3 class="sectionTitle">משתתפי יומן קיימים</h3><div class="card">${window.renderPersistedCalendarParticipants((d&&d.task)||{})}</div>`;
       notesTitle.parentNode.insertBefore(section, notesTitle);
     }
   };
@@ -6856,6 +6876,7 @@ window.calendarTasksForDate = function(d){
   function isArchivedContact(c){ return String((c||{})['בארכיון']||'')==='כן' || String((c||{})['פעיל']||'כן')==='לא'; }
   function meetingContactsFromTask(r){ return splitIds(r[FIELD] || r.meetingContactIds || r.meetingContacts || ''); }
   window.BH_meetingContactsFromTask = meetingContactsFromTask;
+  window.BH_setMeetingContactsForTask = function(r){ selectedMeetingContactIds=meetingContactsFromTask(r||{}); renderMeetingContactChips(); renderMeetingContactWarning(); };
   window.selectedMeetingContactIds = function(){ return selectedMeetingContactIds.slice(); };
 
   function projectContactIdSet(){
@@ -6900,33 +6921,7 @@ window.calendarTasksForDate = function(d){
   };
   window.closeMeetingContactsDialog=function(apply){ const dlg=document.getElementById('meetingContactsDialog'); if(dlg) dlg.remove(); if(!apply) selectedMeetingContactIds=meetingDialogOriginalIds.slice(); renderMeetingContactChips(); renderMeetingContactWarning(); };
 
-  const baseOpenTask=window.openTask;
-  window.openTask=function(r={}, preset={}){
-    selectedMeetingContactIds=meetingContactsFromTask(Object.assign({}, r, preset));
-    baseOpenTask(r,preset);
-    const owner=document.getElementById('tOwner');
-    if(owner && !document.getElementById('meetingContactsSection')){
-      const section=document.createElement('div'); section.id='meetingContactsSection'; section.className='card';
-      section.innerHTML=`<h3 class="sectionTitle">אנשי קשר בפגישה</h3><div id="meetingContactsChips"></div><button type="button" onclick="openMeetingContactsDialog()">➕ הוסף איש קשר</button><p id="meetingContactsWarning" class="muted warn"></p>`;
-      owner.parentNode.insertBefore(section, owner.nextSibling);
-    }
-    renderMeetingContactChips(); renderMeetingContactWarning();
-  };
-
-  const baseSaveTask=window.saveTask;
-  window.saveTask=function(id){
-    const missing=selectedMeetingContactIds.map(cid=>(DATA.contacts||[]).find(c=>contactId(c)===cid)).filter(c=>c && !contactEmail(c));
-    if(missing.length && (typeof tCalendar!=='undefined' && tCalendar.value==='כן')) alert('שים לב: לאנשי הקשר הבאים אין אימייל ולכן הם לא יתווספו כמוזמנים ביומן: '+missing.map(contactName).join(', '));
-    if(!canEdit() && id) return alert('אין לך הרשאה לעריכה');
-    if(!canCreate() && !id) return alert('אין לך הרשאה להוספה');
-    const normalized = window.BH_normalizeCalendarParticipants ? window.BH_normalizeCalendarParticipants(selectedCalendarGuests()) : selectedCalendarGuests();
-    google.script.run.withSuccessHandler(savedId=>{refreshCore(()=>openTaskCard(savedId||id));}).withFailureHandler(e=>alert(e.message)).שמירת_משימה({
-      authToken:currentToken(), id, title:tTitle.value, taskDescription:(typeof tDescription!=='undefined'?tDescription.value:''), taskType:tType.value, priority:tPriority.value,
-      date:tDate.value, time:(typeof tTime!=='undefined'?tTime.value:''), endTime:(typeof tEndTime!=='undefined'?tEndTime.value:''), meetingDuration:(typeof tDuration!=='undefined'?tDuration.value:''), location:(typeof tLocation!=='undefined'?tLocation.value:''),
-      addToCalendar:(typeof tCalendar!=='undefined'?tCalendar.value:'לא'), calendarGuests:normalized, 'משתתפי יומן':normalized, meetingContactIds:selectedMeetingContactIds.join(','), [FIELD]:selectedMeetingContactIds.join(','),
-      status:tStatus.value, projectId:tProject.value, contactId:tContact.value, owner:tOwner.value, taskNotes:tTaskNotes.value
-    });
-  };
+  // Meeting contact selection is integrated into the canonical openTask/saveTask above; no extra saveTask override.
 })();
 </script>
 <style>
