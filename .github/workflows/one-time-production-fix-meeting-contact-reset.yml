@@ -1,0 +1,44 @@
+name: One-time production fix meeting contact reset
+
+on:
+  push:
+    branches:
+      - production
+    paths:
+      - .github/workflows/one-time-production-fix-meeting-contact-reset.yml
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: production
+          fetch-depth: 0
+      - name: Remove destructive legacy refresh handlers
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('index.html')
+          s = p.read_text(encoding='utf-8')
+          replacements = {
+              '<select id="tProject" onchange="refreshCalendarGuestOptions()">': '<select id="tProject">',
+              '<select id="tContact" onchange="refreshCalendarGuestOptions()">': '<select id="tContact">',
+              '<select id="tOwner" onchange="refreshCalendarGuestOptions()">': '<select id="tOwner">',
+          }
+          for old, new in replacements.items():
+              if old not in s:
+                  raise SystemExit(f'Missing expected text: {old}')
+              s = s.replace(old, new)
+          p.write_text(s, encoding='utf-8')
+          PY
+      - name: Commit hotfix
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html
+          git commit -m "Fix contact change clearing meeting participants"
+          git push origin production
