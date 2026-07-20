@@ -3,7 +3,7 @@ name: One-time full refresh navigation
 on:
   push:
     branches:
-      - performance-system-wide
+      - production
     paths:
       - .github/workflows/one-time-full-refresh-navigation.yml
 
@@ -16,7 +16,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: performance-system-wide
+          ref: production
           fetch-depth: 0
       - name: Wire logo dashboard and login to full refresh
         run: |
@@ -82,4 +82,4 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add index.html
           git commit -m "Refresh system on logo dashboard and login"
-          git push origin performance-system-wide
+          git push origin production
