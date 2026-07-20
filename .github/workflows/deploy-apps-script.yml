@@ -73,7 +73,7 @@ jobs:
           replacements = {
               '<div id="brandArea" onclick="goDashboard()">': '<div id="brandArea" onclick="BH_fullRefreshDashboard()">',
               '<div id="sideBrand" onclick="goDashboard()">': '<div id="sideBrand" onclick="BH_fullRefreshDashboard()">',
-              '<button id="btn_dashboard" class="active" onclick="tab(\'dashboard\',this)">דשבורד</button>': '<button id="btn_dashboard" class="active" onclick="BH_fullRefreshDashboard(this)">דשבורד</button>',
+              '<button id="btn_dashboard" class="active" onclick="tab(\'dashboard\',this)">דשבורד</button>': '<button id="btn_dashboard" class="active" onclick="BH_fullRefreshDashboard()">דשבורד</button>',
           }
 
           for old, new in replacements.items():
@@ -85,31 +85,10 @@ jobs:
           (function(){
             let refreshRunning = false;
 
-            window.BH_fullRefreshDashboard = function(button){
+            window.BH_fullRefreshDashboard = function(){
               if(refreshRunning) return;
               refreshRunning = true;
-              const dashboardButton = button || document.getElementById('btn_dashboard');
-
-              const finish = function(){
-                try {
-                  if(typeof closeM === 'function') closeM();
-                  if(typeof tab === 'function') tab('dashboard', dashboardButton);
-                  else if(typeof goDashboard === 'function') goDashboard();
-                } finally {
-                  refreshRunning = false;
-                }
-              };
-
-              if(typeof refreshCore === 'function'){
-                try {
-                  refreshCore(finish);
-                } catch(error){
-                  refreshRunning = false;
-                  throw error;
-                }
-              } else {
-                finish();
-              }
+              window.location.reload();
             };
 
             function installLoginRefresh(){
@@ -123,7 +102,7 @@ jobs:
                 const visible = !screen.classList.contains('hidden');
                 if(wasVisible && !visible){
                   setTimeout(function(){
-                    window.BH_fullRefreshDashboard();
+                    window.location.reload();
                   }, 0);
                 }
                 wasVisible = visible;
@@ -151,8 +130,8 @@ jobs:
 
           required = [
               'onclick="BH_fullRefreshDashboard()"',
-              'onclick="BH_fullRefreshDashboard(this)"',
               'BH_FULL_REFRESH_NAVIGATION',
+              'window.location.reload()',
           ]
           missing = [token for token in required if token not in html]
           if missing:
