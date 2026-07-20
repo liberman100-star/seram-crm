@@ -24,34 +24,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-
-          path = Path('index.html')
-          html = path.read_text(encoding='utf-8')
-
-          old = "function hardRefresh(){ window.location.reload(); }"
-          new = """const CRM_WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbyfXuvUth9j7L5-rp0TKEc3CC2gffmgo44y_VDZHwMFObT4pxuNkNrL7Jf0HX5CSQQaCQ/exec';
-function hardRefresh(){
-  const link = document.createElement('a');
-  link.href = CRM_WEB_APP_URL + '?refresh=' + Date.now();
-  link.target = '_top';
-  link.rel = 'noopener';
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-}"""
-
-          if old not in html:
-              raise SystemExit('Expected hardRefresh source was not found')
-
-          html = html.replace(old, new, 1)
-
-          if "link.target = '_top'" not in html or 'CRM_WEB_APP_URL' not in html:
-              raise SystemExit('Top-level navigation verification failed')
-
-          path.write_text(html, encoding='utf-8')
-          PY
+          python3 -c 'from pathlib import Path; p=Path("index.html"); s=p.read_text(encoding="utf-8"); old="function hardRefresh(){ window.location.reload(); }"; new="const CRM_WEB_APP_URL = \"https://script.google.com/macros/s/AKfycbyfXuvUth9j7L5-rp0TKEc3CC2gffmgo44y_VDZHwMFObT4pxuNkNrL7Jf0HX5CSQQaCQ/exec\";\nfunction hardRefresh(){\n  window.open(CRM_WEB_APP_URL + \"?refresh=\" + Date.now(), \"_top\");\n}"; assert old in s, "Expected hardRefresh source was not found"; p.write_text(s.replace(old,new,1),encoding="utf-8")'
+          grep -F 'window.open(CRM_WEB_APP_URL + "?refresh=" + Date.now(), "_top")' index.html
 
       - name: Commit repaired source
         shell: bash
