@@ -1,4 +1,4 @@
-name: One-time fix Apps Script top navigation
+name: One-time replace browser refresh with in-app reload
 
 on:
   push:
@@ -20,12 +20,46 @@ jobs:
         with:
           ref: production
 
-      - name: Replace iframe reload with top-level web app navigation
+      - name: Replace iframe navigation with safe application reload
         shell: bash
         run: |
           set -euo pipefail
-          python3 -c 'from pathlib import Path; p=Path("index.html"); s=p.read_text(encoding="utf-8"); old="function hardRefresh(){ window.location.reload(); }"; new="const CRM_WEB_APP_URL = \"https://script.google.com/macros/s/AKfycbyfXuvUth9j7L5-rp0TKEc3CC2gffmgo44y_VDZHwMFObT4pxuNkNrL7Jf0HX5CSQQaCQ/exec\";\nfunction hardRefresh(){\n  window.open(CRM_WEB_APP_URL + \"?refresh=\" + Date.now(), \"_top\");\n}"; assert old in s, "Expected hardRefresh source was not found"; p.write_text(s.replace(old,new,1),encoding="utf-8")'
-          grep -F 'window.open(CRM_WEB_APP_URL + "?refresh=" + Date.now(), "_top")' index.html
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path('index.html')
+          html = path.read_text(encoding='utf-8')
+
+          replacement = """function hardRefresh(){
+  try{
+    if(typeof load === 'function'){
+      load();
+      return;
+    }
+  }catch(e){}
+  try{
+    if(typeof refreshCore === 'function'){
+      refreshCore();
+    }
+  }catch(e){}
+}
+function goDashboard(){ hardRefresh(); }"""
+
+          pattern = re.compile(
+              r"(?:const CRM_WEB_APP_URL\s*=\s*[^;]+;\s*)?function hardRefresh\(\)\s*\{.*?\}\s*function goDashboard\(\)\s*\{.*?\}",
+              re.S,
+          )
+
+          html, count = pattern.subn(replacement, html, count=1)
+          if count != 1:
+              raise SystemExit(f'Expected one hardRefresh/goDashboard block, replaced {count}')
+
+          if 'window.location.reload()' in replacement or "target = '_top'" in replacement:
+              raise SystemExit('Unsafe browser navigation remains in replacement')
+
+          path.write_text(html, encoding='utf-8')
+          PY
 
       - name: Commit repaired source
         shell: bash
@@ -34,5 +68,9 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add index.html
-          git commit -m "Navigate top-level Apps Script web app on refresh"
+          if git diff --cached --quiet; then
+            echo "Source already uses safe in-app reload"
+            exit 0
+          fi
+          git commit -m "Use in-app reload instead of iframe navigation"
           git push origin HEAD:production
