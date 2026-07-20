@@ -1,0 +1,85 @@
+name: One-time full refresh navigation
+
+on:
+  push:
+    branches:
+      - production
+    paths:
+      - .github/workflows/one-time-full-refresh-navigation.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: production
+          fetch-depth: 0
+      - name: Wire logo dashboard and login to full refresh
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('index.html')
+          s = p.read_text(encoding='utf-8')
+          s = s.replace('<div id="brandArea" onclick="goDashboard()">', '<div id="brandArea" onclick="BH_fullRefreshDashboard()">')
+          s = s.replace('<div id="sideBrand" onclick="goDashboard()">', '<div id="sideBrand" onclick="BH_fullRefreshDashboard()">')
+          s = s.replace('<button id="btn_dashboard" class="active" onclick="tab(\'dashboard\',this)">דשבורד</button>', '<button id="btn_dashboard" class="active" onclick="BH_fullRefreshDashboard(this)">דשבורד</button>')
+          marker = '</body>'
+          patch = r'''
+<script id="BH_FULL_REFRESH_NAVIGATION">
+(function(){
+  let refreshRunning = false;
+  window.BH_fullRefreshDashboard = function(button){
+    if(refreshRunning) return;
+    refreshRunning = true;
+    const dashboardButton = button || document.getElementById('btn_dashboard');
+    const finish = function(){
+      try {
+        if(typeof closeM === 'function') closeM();
+        if(typeof tab === 'function') tab('dashboard', dashboardButton);
+        else if(typeof goDashboard === 'function') goDashboard();
+      } finally {
+        refreshRunning = false;
+      }
+    };
+    if(typeof refreshCore === 'function'){
+      try { refreshCore(finish); }
+      catch(e){ refreshRunning = false; throw e; }
+    } else finish();
+  };
+
+  function installLoginRefresh(){
+    const screen = document.getElementById('loginScreen');
+    if(!screen || screen.dataset.fullRefreshObserver === '1') return;
+    screen.dataset.fullRefreshObserver = '1';
+    let wasVisible = !screen.classList.contains('hidden');
+    const observer = new MutationObserver(function(){
+      const visible = !screen.classList.contains('hidden');
+      if(wasVisible && !visible){
+        setTimeout(function(){ window.BH_fullRefreshDashboard(); }, 0);
+      }
+      wasVisible = visible;
+    });
+    observer.observe(screen, {attributes:true, attributeFilter:['class']});
+  }
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', installLoginRefresh);
+  else installLoginRefresh();
+})();
+</script>
+'''
+          if 'BH_FULL_REFRESH_NAVIGATION' not in s:
+              if marker not in s:
+                  raise SystemExit('Missing </body> marker')
+              s = s.replace(marker, patch + marker, 1)
+          p.write_text(s, encoding='utf-8')
+          PY
+      - name: Commit refresh behavior
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html
+          git commit -m "Refresh system on logo dashboard and login"
+          git push origin production
