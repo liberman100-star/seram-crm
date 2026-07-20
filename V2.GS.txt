@@ -1489,7 +1489,7 @@ function קבלת_משתמש_נוכחי_Build6_1() {
 
 /***** Build 7.0 – כניסה פנימית עם קוד למייל + Session עד התנתקות *****/
 
-const BUILD7_OWNER_EMAIL = "smrtcrm4u@gmail.com";
+const BUILD7_DEFAULT_OWNER_EMAIL = "smrtcrm4u@gmail.com";
 const BUILD7_LOGIN_CODES_SHEET = "קודי כניסה";
 const BUILD7_SESSIONS_SHEET = "סשנים";
 
@@ -1535,6 +1535,7 @@ function התקנת_Build7_כניסה_פנימית() {
   ensureColumnTextFormat_(SHEETS.CONTACTS, "טלפון");
 
   try { התקנת_Build6_3_הרשאות_דרך_שיוכים(); } catch (e) { Logger.log(e); }
+  BUILD7_ensureOwnerEmailSetting_();
 
   log_("Build7", "כניסה פנימית הותקנה");
   return true;
@@ -1544,7 +1545,52 @@ function נרמול_מייל_Build7_(email) {
   return String(email || "").toLowerCase().trim();
 }
 
+function BUILD7_getOwnerEmail_() {
+  const configured = נרמול_מייל_Build7_(getSettingValue_("מערכת", "מייל בעל מערכת"));
+  return configured || נרמול_מייל_Build7_(BUILD7_DEFAULT_OWNER_EMAIL);
+}
 
+function BUILD7_isOwnerEmail_(email) {
+  const normalizedEmail = נרמול_מייל_Build7_(email);
+  return !!normalizedEmail && normalizedEmail === BUILD7_getOwnerEmail_();
+}
+
+function BUILD7_getOwnerName_() {
+  const ownerEmail = BUILD7_getOwnerEmail_();
+
+  try {
+    const contact = readSheet_(SHEETS.CONTACTS).find(c =>
+      נרמול_מייל_Build7_(c["אימייל"]) === ownerEmail
+    );
+    if (contact && String(contact["שם מלא"] || "").trim()) {
+      return String(contact["שם מלא"]).trim();
+    }
+  } catch (e) {
+    Logger.log(e);
+  }
+
+  return String(getSettingValue_("מערכת", "שם בעל מערכת") || "אברהם").trim() || "אברהם";
+}
+
+function BUILD7_ensureOwnerEmailSetting_() {
+  if (getSettingValue_("מערכת", "מייל בעל מערכת")) return true;
+
+  const value = "מייל בעל מערכת=" + BUILD7_getOwnerEmail_();
+  const exists = readSheet_(SHEETS.SETTINGS).some(r =>
+    String(r["סוג הגדרה"] || "").trim() === "מערכת" &&
+    String(r["ערך"] || "").trim() === value
+  );
+
+  if (!exists) {
+    appendObject_(SHEETS.SETTINGS, {
+      "סוג הגדרה": "מערכת",
+      "ערך": value,
+      "פעיל": "כן"
+    });
+  }
+
+  return true;
+}
 
 function יצירת_קוד_6_ספרות_Build7_() {
   return String(Math.floor(100000 + Math.random() * 900000));
@@ -1556,11 +1602,11 @@ function איתור_מורשה_לפי_מייל_Build7_(email) {
     return { allowed: false, reason: "יש להזין כתובת מייל", email };
   }
 
-  if (email === BUILD7_OWNER_EMAIL) {
+  if (BUILD7_isOwnerEmail_(email)) {
     return {
       allowed: true,
       email,
-      name: "אברהם",
+      name: BUILD7_getOwnerName_(),
       role: "מנהל ראשי",
       contactId: "",
       isOwner: true

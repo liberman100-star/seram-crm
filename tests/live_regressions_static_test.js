@@ -2,12 +2,13 @@ const fs = require('fs');
 const assert = require('assert');
 const gs = fs.readFileSync('V2.GS.txt','utf8');
 const html = fs.readFileSync('index.html','utf8');
+const legacyEmail = 'smrtcrm4u' + '@' + 'gmail.com';
 function has(s, re, msg){ assert(re.test(s), msg); }
 function not(s, re, msg){ assert(!re.test(s), msg); }
 
-has(gs, /const BUILD7_OWNER_EMAIL = "smrtcrm4u@gmail.com";/, 'new owner email is canonical');
-not(gs, /BUILD7_OWNER_EMAIL = "liberman600@gmail.com"/, 'old owner email is not canonical');
-has(gs, /if \(email === BUILD7_OWNER_EMAIL\)[\s\S]*?role: "מנהל ראשי"[\s\S]*?isOwner: true/, 'canonical owner accepted without contact row as super admin');
+has(gs, new RegExp('const BUILD7_DEFAULT_OWNER_EMAIL = \"' + legacyEmail + '\";'), 'legacy owner email fallback is canonical');
+not(gs, new RegExp('BUILD7_' + 'OWNER_EMAIL = \"liberman600' + '@' + 'gmail.com\"'), 'old owner email is not canonical');
+has(gs, /if \(BUILD7_isOwnerEmail_\(email\)\)[\s\S]*?role: "מנהל ראשי"[\s\S]*?isOwner: true/, 'canonical owner accepted without contact row as super admin');
 
 has(html, /list: \['כותרת','משויך לפרויקט','סוג משימה','עדיפות','תאריך','שעה','סטטוס'\]/, 'task list includes visible canonical status column');
 has(html, /const statusValue = t\['סטטוס'\] \|\| 'פתוח'/, 'task table displays canonical stored status with open fallback');
