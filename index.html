@@ -465,7 +465,10 @@ nav button::first-letter{font-size:22px!important}
 let DATA = {};
 let SETTINGS_TAB = 'categories';
 
-function hardRefresh(){ window.location.reload(); }
+const CRM_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbyfXuvUth9j7L5-rp0TKEc3CC2gffmgo44y_VDZHwMFObT4pxuNkNrL7Jf0HX5CSQQaCQ/exec";
+function hardRefresh(){
+  window.open(CRM_WEB_APP_URL + "?refresh=" + Date.now(), "_top");
+}
 function goDashboard(){ hardRefresh(); }
 function tab(id,b){
   if(window.BH_IDLE && typeof window.BH_IDLE.markUserActivity === 'function') window.BH_IDLE.markUserActivity();
