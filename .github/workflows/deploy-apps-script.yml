@@ -11,7 +11,7 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: write
+  contents: read
 
 env:
   APPS_SCRIPT_DEPLOYMENT_ID: AKfycbyfXuvUth9j7L5-rp0TKEc3CC2gffmgo44y_VDZHwMFObT4pxuNkNrL7Jf0HX5CSQQaCQ
@@ -23,8 +23,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          ref: production
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -42,7 +40,7 @@ jobs:
             done
           fi
 
-      - name: Apply permanent refresh fix to source
+      - name: Apply refresh behavior to deployed source
         shell: bash
         run: |
           set -euo pipefail
@@ -82,7 +80,7 @@ function BH_fullRefreshDashboard(){
           ]
           missing = [token for token in required if token not in html]
           if missing:
-              raise SystemExit(f'Permanent refresh source verification failed: {missing}')
+              raise SystemExit(f'Refresh source verification failed: {missing}')
 
           path.write_text(html, encoding='utf-8')
           PY
@@ -164,17 +162,3 @@ function BH_fullRefreshDashboard(){
           clasp create-deployment \
             --deploymentId "${APPS_SCRIPT_DEPLOYMENT_ID}" \
             --description "production ${GITHUB_SHA}"
-
-      - name: Commit permanent source fix
-        shell: bash
-        run: |
-          set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add index.html
-          if git diff --cached --quiet; then
-            echo "Source already contains permanent refresh fix"
-            exit 0
-          fi
-          git commit -m "Apply permanent dashboard refresh behavior"
-          git push origin HEAD:production
