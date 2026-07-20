@@ -135,7 +135,7 @@ table{overflow:hidden;border-collapse:separate!important;border-spacing:0!import
 
 
 /* Build 12.1 – UI polish */
-#brandArea{cursor:default!important;pointer-events:none}
+#brandArea{cursor:pointer!important;pointer-events:auto}
 #systemNameText{display:none!important}
 #systemLogoImg{display:none!important}
 #sideBrand{display:flex;align-items:center;justify-content:flex-start;gap:10px;padding:4px 10px 18px;border-bottom:1px solid var(--border);margin-bottom:12px;cursor:pointer}
@@ -170,8 +170,8 @@ header{
   display:flex!important;
   align-items:center!important;
   justify-content:flex-start!important;
-  pointer-events:none!important;
-  cursor:default!important;
+  pointer-events:auto!important;
+  cursor:pointer!important;
 }
 #brandArea #systemLogoImg{display:none!important}
 #systemNameText{
@@ -335,7 +335,7 @@ nav button::first-letter{font-size:22px!important}
     <span id="sideLogoFallback">בית חכם</span>
   </div>
 
-  <button id="btn_dashboard" class="active" onclick="tab('dashboard',this)">דשבורד</button>
+  <button id="btn_dashboard" class="active" onclick="goDashboard()">דשבורד</button>
   <button id="btn_projects" onclick="tab('projects',this)">פרויקטים</button>
   <button id="btn_contacts" onclick="tab('contacts',this)">אנשי קשר</button>
   <button id="btn_tasks" onclick="tab('tasks',this)">משימות</button>
@@ -465,7 +465,8 @@ nav button::first-letter{font-size:22px!important}
 let DATA = {};
 let SETTINGS_TAB = 'categories';
 
-function goDashboard(){ tab('dashboard', document.getElementById('btn_dashboard')); }
+function hardRefresh(){ window.location.reload(); }
+function goDashboard(){ hardRefresh(); }
 function tab(id,b){
   if(window.BH_IDLE && typeof window.BH_IDLE.markUserActivity === 'function') window.BH_IDLE.markUserActivity();
   document.querySelectorAll('main section').forEach(s=>s.classList.add('hidden'));
@@ -528,8 +529,7 @@ function verifyLoginCode(){
       }catch(e){}
 
       loginMessage.textContent = '';
-      hideLogin();
-      refreshCore();
+      hardRefresh();
     })
     .withFailureHandler(e=> loginMessage.textContent = e.message)
     .אימות_קוד_כניסה_Build7(email, code);
@@ -2452,7 +2452,7 @@ function secureTab(id,b){
   if(id==='settings' && !canSeeSettings()) { alert('אין לך הרשאה להגדרות'); const x=firstVisibleTab(); return tab(x[0],x[1]); }
   return tab(id,b);
 }
-btn_dashboard.onclick=function(){secureTab('dashboard',this)};
+btn_dashboard.onclick=function(){goDashboard();};
 btn_settings.onclick=function(){secureTab('settings',this)};
 
 function applySecurityUI(){
@@ -3350,7 +3350,7 @@ function refreshCore(after){
 <!-- FINAL PATCH – Stable UI + full-load repair + calendar buttons -->
 <style>
   #systemNameText{display:inline-block!important;color:#fff!important;font-size:25px!important;font-weight:900!important;letter-spacing:-.4px!important}
-  #brandArea{pointer-events:none!important;cursor:default!important}
+  #brandArea{pointer-events:auto!important;cursor:pointer!important}
   #sideBrand{cursor:pointer!important}
   #sideLogoImg{max-height:68px!important;max-width:210px!important;object-fit:contain!important}
   #userArea{min-width:270px!important;display:flex!important;align-items:center!important;justify-content:space-between!important;gap:14px!important;padding:8px 12px!important;border-radius:22px!important}
@@ -3863,7 +3863,7 @@ function refreshCore(after){
         try{ if(res.user) localStorage.setItem('CRM_USER_INFO', JSON.stringify(res.user)); }catch(e){}
         if(typeof setToken==='function') setToken(res.token); else localStorage.setItem('CRM_SESSION_TOKEN',res.token);
         loginMessage.textContent='';
-        if(typeof load==='function') load();
+        if(typeof hardRefresh==='function') hardRefresh(); else window.location.reload();
       })
       .withFailureHandler(function(e){ loginMessage.textContent=e.message; })
       .אימות_קוד_כניסה_Build7(email,code);
