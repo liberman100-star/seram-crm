@@ -64,6 +64,103 @@ jobs:
           cp index.html .apps-script-deploy/Index.html
           cp PerformanceAuditRunner.GS.txt .apps-script-deploy/PerformanceAudit.js
 
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('.apps-script-deploy/Index.html')
+          html = path.read_text(encoding='utf-8')
+
+          replacements = {
+              '<div id="brandArea" onclick="goDashboard()">': '<div id="brandArea" onclick="BH_fullRefreshDashboard()">',
+              '<div id="sideBrand" onclick="goDashboard()">': '<div id="sideBrand" onclick="BH_fullRefreshDashboard()">',
+              '<button id="btn_dashboard" class="active" onclick="tab(\'dashboard\',this)">דשבורד</button>': '<button id="btn_dashboard" class="active" onclick="BH_fullRefreshDashboard(this)">דשבורד</button>',
+          }
+
+          for old, new in replacements.items():
+              html = html.replace(old, new)
+
+          marker = '</body>'
+          patch = r'''
+          <script id="BH_FULL_REFRESH_NAVIGATION">
+          (function(){
+            let refreshRunning = false;
+
+            window.BH_fullRefreshDashboard = function(button){
+              if(refreshRunning) return;
+              refreshRunning = true;
+              const dashboardButton = button || document.getElementById('btn_dashboard');
+
+              const finish = function(){
+                try {
+                  if(typeof closeM === 'function') closeM();
+                  if(typeof tab === 'function') tab('dashboard', dashboardButton);
+                  else if(typeof goDashboard === 'function') goDashboard();
+                } finally {
+                  refreshRunning = false;
+                }
+              };
+
+              if(typeof refreshCore === 'function'){
+                try {
+                  refreshCore(finish);
+                } catch(error){
+                  refreshRunning = false;
+                  throw error;
+                }
+              } else {
+                finish();
+              }
+            };
+
+            function installLoginRefresh(){
+              const screen = document.getElementById('loginScreen');
+              if(!screen || screen.dataset.fullRefreshObserver === '1') return;
+
+              screen.dataset.fullRefreshObserver = '1';
+              let wasVisible = !screen.classList.contains('hidden');
+
+              const observer = new MutationObserver(function(){
+                const visible = !screen.classList.contains('hidden');
+                if(wasVisible && !visible){
+                  setTimeout(function(){
+                    window.BH_fullRefreshDashboard();
+                  }, 0);
+                }
+                wasVisible = visible;
+              });
+
+              observer.observe(screen, {
+                attributes: true,
+                attributeFilter: ['class']
+              });
+            }
+
+            if(document.readyState === 'loading'){
+              document.addEventListener('DOMContentLoaded', installLoginRefresh);
+            } else {
+              installLoginRefresh();
+            }
+          })();
+          </script>
+          '''
+
+          if 'BH_FULL_REFRESH_NAVIGATION' not in html:
+              if marker not in html:
+                  raise SystemExit('Missing </body> marker in Index.html')
+              html = html.replace(marker, patch + marker, 1)
+
+          required = [
+              'onclick="BH_fullRefreshDashboard()"',
+              'onclick="BH_fullRefreshDashboard(this)"',
+              'BH_FULL_REFRESH_NAVIGATION',
+          ]
+          missing = [token for token in required if token not in html]
+          if missing:
+              raise SystemExit(f'Full refresh patch verification failed: {missing}')
+
+          path.write_text(html, encoding='utf-8')
+          PY
+
           cat > .apps-script-deploy/appsscript.json <<'JSON'
           {
             "timeZone": "Asia/Jerusalem",
