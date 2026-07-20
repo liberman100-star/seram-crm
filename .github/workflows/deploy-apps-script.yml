@@ -40,51 +40,6 @@ jobs:
             done
           fi
 
-      - name: Apply refresh behavior to deployed source
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-
-          path = Path('index.html')
-          html = path.read_text(encoding='utf-8')
-
-          replacements = {
-              '<div id="brandArea" onclick="goDashboard()">': '<div id="brandArea" onclick="BH_fullRefreshDashboard()">',
-              '<div id="sideBrand" onclick="goDashboard()">': '<div id="sideBrand" onclick="BH_fullRefreshDashboard()">',
-              '<button id="btn_dashboard" class="active" onclick="tab(\'dashboard\',this)">דשבורד</button>': '<button id="btn_dashboard" class="active" onclick="BH_fullRefreshDashboard()">דשבורד</button>',
-              "function goDashboard(){ tab('dashboard', document.getElementById('btn_dashboard')); }": "function goDashboard(){ BH_fullRefreshDashboard(); }",
-              "      hideLogin();\n      refreshCore();": "      hideLogin();\n      window.location.reload();",
-          }
-
-          for old, new in replacements.items():
-              html = html.replace(old, new)
-
-          anchor = "let SETTINGS_TAB = 'categories';"
-          function_code = """
-
-function BH_fullRefreshDashboard(){
-  window.location.reload();
-}
-"""
-          if 'function BH_fullRefreshDashboard()' not in html:
-              if anchor not in html:
-                  raise SystemExit('Missing JavaScript anchor in index.html')
-              html = html.replace(anchor, anchor + function_code, 1)
-
-          required = [
-              'onclick="BH_fullRefreshDashboard()"',
-              'function BH_fullRefreshDashboard()',
-              'window.location.reload();',
-          ]
-          missing = [token for token in required if token not in html]
-          if missing:
-              raise SystemExit(f'Refresh source verification failed: {missing}')
-
-          path.write_text(html, encoding='utf-8')
-          PY
-
       - name: Install clasp
         run: npm install --global @google/clasp
 
