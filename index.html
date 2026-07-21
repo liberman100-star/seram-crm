@@ -673,7 +673,7 @@ function render(d){
   if(typeof renderModernKpis === 'function') renderModernKpis();
   if(typeof updateCalendarViewButtons === 'function') updateCalendarViewButtons();
   if(typeof applySecurityUI === 'function') applySecurityUI();
-  if(typeof resetIdleTimer === 'function') resetIdleTimer();
+  if(window.BH_IDLE && typeof window.BH_IDLE.startSession === 'function') window.BH_IDLE.startSession();
 
   if(typeof canSeeDashboard === 'function' && !canSeeDashboard()){
     const dashboardEl = document.getElementById('dashboard');
@@ -1035,11 +1035,11 @@ function openProject(r={}){
   loadProjectResponsibleOptions(r['מזהה פרויקט'] || '', r['אחראי'] || '', r['אחראי'] || '');
 }
 function saveProject(id){
-  google.script.run.withSuccessHandler(()=>{closeM();refreshCore();})
+  google.script.run.withSuccessHandler(()=>{closeM();BH_refreshProjects();})
     .withFailureHandler(e=>alert(e.message))
     .שמירת_פרויקט({id,name:pName.value,projectDescription:(typeof pDescription!=='undefined'?pDescription.value:''),city:pCity.value,type:pType.value,status:pStatus.value,assignmentDomain:(typeof pAssignmentDomain !== 'undefined' ? pAssignmentDomain.value : ''),owner:pOwner.value,tags:pTags.value,drive:pDrive.value});
 }
-function delProject(id){ if(confirm('למחוק פרויקט ואת השיוכים שלו?')) google.script.run.withSuccessHandler(()=>{closeM();refreshCore();}).withFailureHandler(e=>alert(e.message)).מחיקת_פרויקט(id); }
+function delProject(id){ if(confirm('למחוק פרויקט ואת השיוכים שלו?')) google.script.run.withSuccessHandler(()=>{closeM();BH_refreshProjects();}).withFailureHandler(e=>alert(e.message)).מחיקת_פרויקט(id); }
 function openProjectCard(id){ google.script.run.withSuccessHandler(renderProjectCard).withFailureHandler(e=>alert(e.message)).כרטיס_פרויקט(id); }
 
 function canSeeTimelineButton(){ return typeof canSeeTimeline === 'function' ? canSeeTimeline() : true; }
@@ -1163,11 +1163,11 @@ function openContact(r={}){
 }
 function toggleAssignmentDomainsField(){ const box=document.getElementById("assignmentDomainsBox"); if(box) box.classList.toggle("hidden", cPermission.value!=="מנהל" || !canManageAssignmentDomains()); }
 function saveContact(id){
-  google.script.run.withSuccessHandler(()=>{closeM();refreshCore();})
+  google.script.run.withSuccessHandler(()=>{closeM();BH_refreshContacts();})
     .withFailureHandler(e=>alert(e.message))
     .שמירת_איש_קשר({id,name:cName.value,phone:cPhone.value,email:cEmail.value,address:cAddress.value,source:cSource.value,contactType:cType.value,status:cStatus.value,tags:cTags.value,owner:cOwner.value,systemPermission:cPermission.value,assignmentCentralDomain:(typeof cCentralAssignmentDomain !== 'undefined' ? cCentralAssignmentDomain.value : ''),assignmentAdditionalDomains:selectedAdditionalAssignmentDomains(),assignmentDomains:selectedAdditionalAssignmentDomains()});
 }
-function delContact(id){ if(confirm('למחוק איש קשר ואת השיוכים שלו?')) google.script.run.withSuccessHandler(()=>{closeM();refreshCore();}).withFailureHandler(e=>alert(e.message)).מחיקת_איש_קשר(id); }
+function delContact(id){ if(confirm('למחוק איש קשר ואת השיוכים שלו?')) google.script.run.withSuccessHandler(()=>{closeM();BH_refreshContacts();}).withFailureHandler(e=>alert(e.message)).מחיקת_איש_קשר(id); }
 function openContactCard(id){ google.script.run.withSuccessHandler(renderContactCard).withFailureHandler(e=>alert(e.message)).כרטיס_איש_קשר(id); }
 function renderContactCard(d){
   const c=d.contact;
@@ -1281,7 +1281,7 @@ function saveTaskNote(taskId){
 }
 
 function reactivateTask(id){
-  google.script.run.withSuccessHandler(()=>{load();closeM();}).withFailureHandler(e=>alert(e.message)).החזרת_משימה_לפעילה(id);
+  google.script.run.withSuccessHandler(()=>{BH_refreshTasks(()=>closeM());}).withFailureHandler(e=>alert(e.message)).החזרת_משימה_לפעילה(id);
 }
 
 function openTask(r={}, preset={}){
@@ -1338,7 +1338,7 @@ function saveTask(id){
   if(hasDate && !tTime.value){ alert('כאשר מזינים תאריך, חובה להזין שעה'); return; }
   if(hasDate && isMeeting && !tEndTime.value){ alert('בפגישה חובה להזין שעת סיום'); return; }
 
-  google.script.run.withSuccessHandler(()=>{closeM();refreshCore();})
+  google.script.run.withSuccessHandler(()=>{closeM();BH_refreshTasks();})
     .withFailureHandler(e=>alert(e.message))
     .שמירת_משימה({
       id,
@@ -1354,13 +1354,13 @@ function saveTask(id){
       owner:tOwner.value
     });
 }
-function doneTask(id){ google.script.run.withSuccessHandler(()=>refreshCore()).withFailureHandler(e=>alert(e.message)).סימון_משימה_בוצעה(id); }
-function delTask(id){ if(confirm('למחוק משימה?')) google.script.run.withSuccessHandler(()=>refreshCore()).withFailureHandler(e=>alert(e.message)).מחיקת_משימה(id); }
+function doneTask(id){ google.script.run.withSuccessHandler(()=>BH_refreshTasks(BH_afterTaskMutation(id))).withFailureHandler(e=>alert(e.message)).סימון_משימה_בוצעה(id); }
+function delTask(id){ if(confirm('למחוק משימה?')) google.script.run.withSuccessHandler(()=>BH_refreshTasks()).withFailureHandler(e=>alert(e.message)).מחיקת_משימה(id); }
 
 /* Links */
 function saveLink(projectId,contactId,role,portal,cb){
   google.script.run
-    .withSuccessHandler(()=>{refreshCore(cb);})
+    .withSuccessHandler(()=>BH_refreshModules(['projects','contacts','tasks'], cb, {dashboard:true, calendar:true}))
     .withFailureHandler(e=>alert(e.message))
     .שמירת_שיוך({projectId,contactId,role,portal:portal||'לא'});
 }
@@ -1388,7 +1388,7 @@ function saveEditedLinkPermission(linkId, returnId, mode){
   const link = (DATA.links||[]).find(l => l['מזהה שיוך'] === linkId);
   if(!link){ alert('השיוך לא נמצא'); return; }
   google.script.run
-    .withSuccessHandler(()=>{load(); mode==='project'?openProjectCard(returnId):openContactCard(returnId);})
+    .withSuccessHandler(()=>{BH_refreshModules(['projects','contacts','tasks'], ()=>{mode==='project'?openProjectCard(returnId):openContactCard(returnId);}, {dashboard:true, calendar:true});})
     .withFailureHandler(e=>alert(e.message))
     .שמירת_שיוך({
       id: linkId,
@@ -1400,7 +1400,7 @@ function saveEditedLinkPermission(linkId, returnId, mode){
 }
 function deleteLink(id,cb){
   if(!confirm('להסיר שיוך?'))return;
-  google.script.run.withSuccessHandler(()=>{refreshCore(cb);}).withFailureHandler(e=>alert(e.message)).מחיקת_שיוך(id);
+  google.script.run.withSuccessHandler(()=>BH_refreshModules(['projects','contacts','tasks'], cb, {dashboard:true, calendar:true})).withFailureHandler(e=>alert(e.message)).מחיקת_שיוך(id);
 }
 
 /* Notes + Timeline */
@@ -1527,12 +1527,12 @@ function openCategoryOnly(name='', order=''){
   modal.classList.remove('hidden');
 }
 function saveCategoryOnly(){
-  google.script.run.withSuccessHandler(()=>{closeM();refreshCore();}).withFailureHandler(e=>alert(e.message))
+  google.script.run.withSuccessHandler(()=>{closeM();BH_refreshSettings();}).withFailureHandler(e=>alert(e.message))
     .שמירת_קטגוריה_Build6_1({authToken:currentToken(),oldName:catOldName.value, category:catType.value, categoryOrder:catOrder.value, firstItem:(typeof catValue==='undefined'?'':catValue.value), order:(typeof catValueOrder==='undefined'?1:catValueOrder.value)});
 }
 function deleteCategory(name){
   if(!confirm('למחוק את הקטגוריה וכל האפשרויות שבתוכה?')) return;
-  google.script.run.withSuccessHandler(()=>refreshCore()).withFailureHandler(e=>alert(e.message)).מחיקת_קטגוריה_Build6_1({authToken:currentToken(),category:name});
+  google.script.run.withSuccessHandler(()=>BH_refreshSettings()).withFailureHandler(e=>alert(e.message)).מחיקת_קטגוריה_Build6_1({authToken:currentToken(),category:name});
 }
 function nextOptionOrder(category){ const cat=categories().find(c=>c.name===category); return cat ? (cat.values||[]).reduce((m,v)=>Math.max(m, Number(v.order||0)),0)+1 : 1; }
 function openCategoryValue(r={}){
@@ -1549,11 +1549,11 @@ function openCategoryValue(r={}){
 }
 function saveCategoryValue(id=''){
   const cat = categories().find(c=>c.name===optCategory.value);
-  google.script.run.withSuccessHandler(()=>{closeM();refreshCore();}).withFailureHandler(e=>alert(e.message))
+  google.script.run.withSuccessHandler(()=>{closeM();BH_refreshSettings();}).withFailureHandler(e=>alert(e.message))
     .שמירת_פריט_קטגוריה_Build4_5({authToken:currentToken(),id,category:optCategory.value,categoryOrder:cat?cat.categoryOrder:'',item:optItem.value,order:optOrder.value,active:optActive.value});
 }
-function toggleCategoryValue(id){ google.script.run.withSuccessHandler(()=>refreshCore()).withFailureHandler(e=>alert(e.message)).החלפת_מצב_אפשרות_בחירה_Build6_1({authToken:currentToken(),id}); }
-function deleteCategoryValue(id){ if(!confirm('למחוק אפשרות בחירה?')) return; google.script.run.withSuccessHandler(()=>refreshCore()).withFailureHandler(e=>alert(e.message)).מחיקת_אפשרות_בחירה_Build6_1({authToken:currentToken(),id}); }
+function toggleCategoryValue(id){ google.script.run.withSuccessHandler(()=>BH_refreshSettings()).withFailureHandler(e=>alert(e.message)).החלפת_מצב_אפשרות_בחירה_Build6_1({authToken:currentToken(),id}); }
+function deleteCategoryValue(id){ if(!confirm('למחוק אפשרות בחירה?')) return; google.script.run.withSuccessHandler(()=>BH_refreshSettings()).withFailureHandler(e=>alert(e.message)).מחיקת_אפשרות_בחירה_Build6_1({authToken:currentToken(),id}); }
 
 function renderSystemFieldsSettings(){
   const fields = (DATA.fields || []).filter(f=>canManageAssignmentDomains() || !(String(f['ישות']||'').trim()==='פרויקט' && String(f['שם שדה']||'').trim()==='תחום שיוך')).slice().sort((a,b)=>String(a['ישות']).localeCompare(String(b['ישות']),'he') || Number(a['סדר תצוגה']||999)-Number(b['סדר תצוגה']||999));
@@ -1586,11 +1586,11 @@ function openSystemField(r={}){
   modal.classList.remove('hidden');
 }
 function saveSystemField(id=''){
-  google.script.run.withSuccessHandler(()=>{closeM();refreshCore();}).withFailureHandler(e=>alert(e.message))
+  google.script.run.withSuccessHandler(()=>{closeM();BH_refreshSettings();}).withFailureHandler(e=>alert(e.message))
     .שמירת_שדה_הגדרה_Build4_4({authToken:currentToken(),id,entity:sfEntity.value,name:sfName.value,fieldType:sfType.value,settingType:sfSetting.value,required:sfRequired.value,active:sfActive.value,showList:sfList.value,showCard:sfCard.value,searchable:sfSearch.value,filterable:sfFilter.value,order:sfOrder.value});
 }
-function toggleSystemField(id){ google.script.run.withSuccessHandler(()=>refreshCore()).withFailureHandler(e=>alert(e.message)).החלפת_מצב_שדה_מערכת_Build6_1({authToken:currentToken(),id}); }
-function deleteSystemField(id){ if(!confirm('למחוק שדה מערכת?')) return; google.script.run.withSuccessHandler(()=>refreshCore()).withFailureHandler(e=>alert(e.message)).מחיקת_שדה_מערכת_Build6_1({authToken:currentToken(),id}); }
+function toggleSystemField(id){ google.script.run.withSuccessHandler(()=>BH_refreshSettings()).withFailureHandler(e=>alert(e.message)).החלפת_מצב_שדה_מערכת_Build6_1({authToken:currentToken(),id}); }
+function deleteSystemField(id){ if(!confirm('למחוק שדה מערכת?')) return; google.script.run.withSuccessHandler(()=>BH_refreshSettings()).withFailureHandler(e=>alert(e.message)).מחיקת_שדה_מערכת_Build6_1({authToken:currentToken(),id}); }
 
 function renderUsersSettings(){
   const rows = contactsWithPermission();
@@ -1648,7 +1648,7 @@ function renderBrandingSettings(){
     <button class="primary" onclick="saveBranding()">שמור מיתוג</button></div>`;
 }
 function saveBranding(){
-  google.script.run.withSuccessHandler(()=>{load();alert('המיתוג נשמר')}).withFailureHandler(e=>alert(e.message))
+  google.script.run.withSuccessHandler(()=>{BH_refreshSettings(()=>{ if(window.BH_IDLE&&BH_IDLE.startSession) BH_IDLE.startSession(); alert('המיתוג נשמר'); });}).withFailureHandler(e=>alert(e.message))
     .שמירת_מיתוג_Build4_3({systemName:brandName.value,primaryColor:brandPrimary.value,secondaryColor:brandSecondary.value,logo:brandLogoUrl.value,logoHeight:brandLogoHeight.value,logoPosition:brandLogoPosition.value,idleLogoutMinutes:brandIdleLogoutMinutes.value});
 }
 function renderCalendarsSettings(){
@@ -1669,7 +1669,7 @@ function openCalendar(r={}){
   modal.classList.remove('hidden');
 }
 function saveCalendar(id=''){
-  google.script.run.withSuccessHandler(()=>{closeM();refreshCore();}).withFailureHandler(e=>alert(e.message))
+  google.script.run.withSuccessHandler(()=>{closeM();BH_refreshSettings();}).withFailureHandler(e=>alert(e.message))
     .שמירת_יומן_Build4_3({id,name:calName.value,calendarId:calId.value,active:calActive.value});
 }
 function renderPermissionsSettings(){
@@ -1694,7 +1694,7 @@ function openUserProjectLink(){
   modal.classList.remove('hidden');
 }
 function saveUserProjectLink(){
-  google.script.run.withSuccessHandler(()=>{closeM();refreshCore();}).withFailureHandler(e=>alert(e.message))
+  google.script.run.withSuccessHandler(()=>{closeM();BH_refreshSettings();}).withFailureHandler(e=>alert(e.message))
     .שיוך_משתמש_לפרויקט_Build6({userId:permUserId.value,projectId:permProjectId.value,role:permProjectRole.value,active:'כן'});
 }
 
@@ -1746,7 +1746,7 @@ function roleOptions(selected){
   return arr.map(x=>`<option ${x===selected?'selected':''}>${x}</option>`).join('');
 }
 function saveRolePermission(){
-  google.script.run.withSuccessHandler(()=>{closeM();refreshCore();}).withFailureHandler(e=>alert(e.message))
+  google.script.run.withSuccessHandler(()=>{closeM();BH_refreshSettings();}).withFailureHandler(e=>alert(e.message))
     .שמירת_הרשאות_תפקיד_Build8({role:roleName.value,dashboard:roleDashboard.value,projects:roleProjects.value,contacts:roleContacts.value,tasks:roleTasks.value,notes:roleNotes.value,settings:roleSettings.value,users:roleUsers.value,permissions:rolePerms.value,deletePermission:roleDelete.value});
 }
 function openUserPermissionCard(r={}){
@@ -1766,7 +1766,7 @@ function openUserPermissionCard(r={}){
   modal.classList.remove('hidden');
 }
 function saveUserPermission(id=''){
-  google.script.run.withSuccessHandler(()=>{closeM();refreshCore();}).withFailureHandler(e=>alert(e.message))
+  google.script.run.withSuccessHandler(()=>{closeM();BH_refreshSettings();}).withFailureHandler(e=>alert(e.message))
     .שמירת_הרשאה_פרטנית_לאיש_קשר_Build8({id:id,contactId:upContact.value,useRolePermissions:upUseRole.value,projects:upProjects.value,contacts:upContacts.value,tasks:upTasks.value,settings:upSettings.value,onlyAssigned:upOnly.value,active:upActive.value});
 }
 function renderBackupSettings(){
@@ -2005,7 +2005,7 @@ function restoreArchive(type,id){
 
   google.script.run
     .withSuccessHandler(()=>{
-      refreshCore(()=>renderArchive(type));
+      BH_refreshArchive(type);
     })
     .withFailureHandler(e=>alert(e.message))
     .שחזור_מארכיון({
@@ -2020,7 +2020,7 @@ function deleteForeverArchive(type,id){
 
   google.script.run
     .withSuccessHandler(()=>{
-      refreshCore(()=>renderArchive(type));
+      BH_refreshArchive(type);
     })
     .withFailureHandler(e=>alert(e.message))
     .מחיקה_לצמיתות_מהארכיון({
@@ -2123,7 +2123,7 @@ function saveTask(id){
   const hasDate = !!tDate.value; const isMeeting = tType.value === 'פגישה';
   if(hasDate && !tTime.value){ alert('כאשר מזינים תאריך, חובה להזין שעה'); return; }
   if(hasDate && isMeeting && !tEndTime.value){ alert('בפגישה חובה להזין שעת סיום'); return; }
-  google.script.run.withSuccessHandler(()=>{closeM();refreshCore();})
+  google.script.run.withSuccessHandler(()=>{closeM();BH_refreshTasks();})
     .withFailureHandler(e=>alert(e.message))
     .שמירת_משימה({id,title:tTitle.value,taskType:tType.value,priority:tPriority.value,date:tDate.value,time:hasDate?tTime.value:'',endTime:(hasDate&&isMeeting)?tEndTime.value:'',addToCalendar:hasDate?tCalendar.value:'לא',calendarGuests:selectedCalendarGuests(),taskNotes:tTaskNotes.value,status:tStatus.value,projectId:tProject.value,contactId:tContact.value,owner:tOwner.value});
 }
@@ -2323,7 +2323,7 @@ function renderTaskCard(d){
 }
 
 function sendCalendarInvite(id){
-  google.script.run.withSuccessHandler(res=>{ alert((res&&res.message)||'הזימון נשלח/עודכן'); refreshCore(()=>openTaskCard(id)); }).withFailureHandler(e=>alert(e.message)).שליחת_זימון_יומן_למשימה_Build11(id);
+  google.script.run.withSuccessHandler(res=>{ alert((res&&res.message)||'הזימון נשלח/עודכן'); BH_refreshTasks(()=>openTaskCard(id)); }).withFailureHandler(e=>alert(e.message)).שליחת_זימון_יומן_למשימה_Build11(id);
 }
 
 function tableTasks(){
@@ -2547,29 +2547,29 @@ openTaskCard = function(id){ google.script.run.withSuccessHandler(renderTaskCard
 saveProject = function(id){
   if(!canEdit() && id) return alert('אין לך הרשאה לעריכה');
   if(!canCreate() && !id) return alert('אין לך הרשאה להוספה');
-  google.script.run.withSuccessHandler(()=>{closeM();refreshCore();}).withFailureHandler(e=>alert(e.message))
+  google.script.run.withSuccessHandler(()=>{closeM();BH_refreshProjects();}).withFailureHandler(e=>alert(e.message))
     .שמירת_פרויקט({authToken:currentToken(),id,name:pName.value,city:pCity.value,type:pType.value,status:pStatus.value,assignmentDomain:(typeof pAssignmentDomain !== 'undefined' ? pAssignmentDomain.value : ''),owner:pOwner.value,tags:pTags.value,drive:pDrive.value});
 }
 saveContact = function(id){
   if(!canEdit() && id) return alert('אין לך הרשאה לעריכה');
   if(!canCreate() && !id) return alert('אין לך הרשאה להוספה');
-  google.script.run.withSuccessHandler(()=>{closeM();refreshCore();}).withFailureHandler(e=>alert(e.message))
+  google.script.run.withSuccessHandler(()=>{closeM();BH_refreshContacts();}).withFailureHandler(e=>alert(e.message))
     .שמירת_איש_קשר({authToken:currentToken(),id,name:cName.value,phone:cPhone.value,email:cEmail.value,address:cAddress.value,source:cSource.value,contactType:cType.value,status:cStatus.value,tags:cTags.value,owner:cOwner.value,systemPermission:cPermission.value,assignmentCentralDomain:(typeof cCentralAssignmentDomain !== 'undefined' ? cCentralAssignmentDomain.value : ''),assignmentAdditionalDomains:selectedAdditionalAssignmentDomains(),assignmentDomains:selectedAdditionalAssignmentDomains()});
 }
 saveTask = function(id){
   if(!canEdit() && id) return alert('אין לך הרשאה לעריכה');
   if(!canCreate() && !id) return alert('אין לך הרשאה להוספה');
-  google.script.run.withSuccessHandler(()=>{closeM();refreshCore();}).withFailureHandler(e=>alert(e.message))
+  google.script.run.withSuccessHandler(()=>{closeM();BH_refreshTasks();}).withFailureHandler(e=>alert(e.message))
     .שמירת_משימה({authToken:currentToken(),id,title:tTitle.value,taskType:tType.value,priority:tPriority.value,date:tDate.value,time:(typeof tTime!=='undefined'?tTime.value:''),endTime:(typeof tEndTime!=='undefined'?tEndTime.value:''),addToCalendar:(typeof tCalendar!=='undefined'?tCalendar.value:'לא'),calendarGuests:selectedCalendarGuests(),status:tStatus.value,projectId:tProject.value,contactId:tContact.value,owner:tOwner.value,taskNotes:tTaskNotes.value});
 }
 saveLink = function(projectId,contactId,role,portal,cb){
   if(!canEdit()) return alert('אין לך הרשאה לעריכת שיוכים');
-  google.script.run.withSuccessHandler(()=>{refreshCore(cb);}).withFailureHandler(e=>alert(e.message)).שמירת_שיוך({authToken:currentToken(),projectId,contactId,role,portal});
+  google.script.run.withSuccessHandler(()=>BH_refreshModules(['projects','contacts','tasks'], cb, {dashboard:true, calendar:true})).withFailureHandler(e=>alert(e.message)).שמירת_שיוך({authToken:currentToken(),projectId,contactId,role,portal});
 }
 deleteLink = function(id,cb){
   if(confirm('להסיר שיוך?')){
     google.script.run
-      .withSuccessHandler(()=>{refreshCore(cb);})
+      .withSuccessHandler(()=>BH_refreshModules(['projects','contacts','tasks'], cb, {dashboard:true, calendar:true}))
       .withFailureHandler(e=>alert(e.message))
       .מחיקת_שיוך({id,authToken:currentToken()});
   }
@@ -2577,26 +2577,26 @@ deleteLink = function(id,cb){
 
 delProject = function(id){
   if(confirm('האם אתה בטוח שברצונך להעביר את הפרויקט לארכיון?')){
-    google.script.run.withSuccessHandler(()=>{closeM();refreshCore();}).withFailureHandler(e=>alert(e.message)).מחיקת_פרויקט({id,authToken:currentToken()});
+    google.script.run.withSuccessHandler(()=>{closeM();BH_refreshProjects();}).withFailureHandler(e=>alert(e.message)).מחיקת_פרויקט({id,authToken:currentToken()});
   }
 }
 
 delContact = function(id){
   if(confirm('האם אתה בטוח שברצונך להעביר את איש הקשר לארכיון?')){
-    google.script.run.withSuccessHandler(()=>{closeM();refreshCore();}).withFailureHandler(e=>alert(e.message)).מחיקת_איש_קשר({id,authToken:currentToken()});
+    google.script.run.withSuccessHandler(()=>{closeM();BH_refreshContacts();}).withFailureHandler(e=>alert(e.message)).מחיקת_איש_קשר({id,authToken:currentToken()});
   }
 }
 
 delTask = function(id){
   if(confirm('האם אתה בטוח שברצונך להעביר את המשימה לארכיון?')){
-    google.script.run.withSuccessHandler(()=>refreshCore()).withFailureHandler(e=>alert(e.message)).מחיקת_משימה({id,authToken:currentToken()});
+    google.script.run.withSuccessHandler(()=>BH_refreshTasks()).withFailureHandler(e=>alert(e.message)).מחיקת_משימה({id,authToken:currentToken()});
   }
 }
 
 doneTask = function(id){
   if(!canEdit()) return alert('אין לך הרשאה לעריכה');
   google.script.run
-    .withSuccessHandler(()=>refreshCore())
+    .withSuccessHandler(()=>BH_refreshTasks(BH_afterTaskMutation(id)))
     .withFailureHandler(e=>alert(e.message))
     .סימון_משימה_בוצעה({id,authToken:currentToken()});
 }
@@ -2604,7 +2604,7 @@ doneTask = function(id){
 reactivateTask = function(id){
   if(!canEdit()) return alert('אין לך הרשאה לעריכה');
   google.script.run
-    .withSuccessHandler(()=>{refreshCore(()=>openTaskCard(id));})
+    .withSuccessHandler(()=>{BH_refreshTasks(()=>openTaskCard(id));})
     .withFailureHandler(e=>alert(e.message))
     .החזרת_משימה_לפעילה({id,authToken:currentToken()});
 }
@@ -2612,7 +2612,7 @@ reactivateTask = function(id){
 sendCalendarInvite = function(id){
   if(!canEdit()) return alert('אין לך הרשאה לשליחת זימון');
   google.script.run
-    .withSuccessHandler(res=>{ alert((res&&res.message)||'הזימון נשלח/עודכן'); refreshCore(()=>openTaskCard(id)); })
+    .withSuccessHandler(res=>{ alert((res&&res.message)||'הזימון נשלח/עודכן'); BH_refreshTasks(()=>openTaskCard(id)); })
     .withFailureHandler(e=>alert(e.message))
     .שליחת_זימון_יומן_למשימה_Build11({id,authToken:currentToken()});
 }
@@ -2622,7 +2622,7 @@ sendCalendarInvite = function(id){
  ***********************/
 saveRolePermission = function(){
   google.script.run
-    .withSuccessHandler(()=>{ closeM(); load(); })
+    .withSuccessHandler(()=>{ closeM(); load(false); })
     .withFailureHandler(e=>alert(e.message))
     .שמירת_הרשאות_תפקיד_Build8({
       authToken: currentToken(),
@@ -2641,7 +2641,7 @@ saveRolePermission = function(){
 
 saveUserPermission = function(id=''){
   google.script.run
-    .withSuccessHandler(()=>{ closeM(); load(); })
+    .withSuccessHandler(()=>{ closeM(); load(false); })
     .withFailureHandler(e=>alert(e.message))
     .שמירת_הרשאה_פרטנית_לאיש_קשר_Build8({
       authToken: currentToken(),
@@ -2827,6 +2827,8 @@ renderContactCard = function(d){
   }
 
   function scheduleIdleTimers(){
+    clearTimeout(idleTimer);
+    clearTimeout(idleWarnTimer);
     idleWarnTimer = setTimeout(warnIdle, idleWarningMs());
     idleTimer = setTimeout(forceLogoutByIdle, idleLimitMs());
   }
@@ -2879,6 +2881,8 @@ renderContactCard = function(d){
 
   window.BH_IDLE = {
     markUserActivity: resetIdleTimer,
+    startSession: resetIdleTimer,
+    getActiveTimerCount: function(){ return (idleTimer ? 1 : 0) + (idleWarnTimer ? 1 : 0); },
     continueWorking: continueWorkingFromWarning,
     logoutNow: idleLogoutNow,
     getLimitMinutes: idleLimitMinutes,
@@ -3130,7 +3134,8 @@ function load(forceDashboard=true, after){
       markLoadedModulesFromFullCore_Build13_2(d);
 
       hideLogin();
-      render(DATA);
+      renderShell_Build13_2(d);
+      if(window.BH_IDLE && typeof window.BH_IDLE.startSession === 'function') window.BH_IDLE.startSession();
 
       if(forceDashboard){
         const btn = document.getElementById('btn_dashboard');
@@ -3155,7 +3160,7 @@ function load(forceDashboard=true, after){
       window.__BH_CORE_LOAD_WAITERS__ = [];
       showLogin('שגיאה בטעינה: ' + e.message);
     })
-    .קבלת_נתוני_ליבה_Build13(token);
+    .קבלת_נתוני_פתיחה_Build13_2(token);
 }
 
 function firstAllowedTab_Build13_2(){
@@ -3240,17 +3245,7 @@ function loadModule_Build13_2(module, after){
       }
 
       mergeData_Build13_2(d);
-      renderShell_Build13_2(d);
-
-      tableProjects();
-      tableContacts();
-      tableTasks();
-
-      if(DATA.canSeeSettings){
-        renderSettings();
-      }
-
-      renderDashboard();
+      renderModule_Build13_2(module);
 
       __BH_LOADED_MODULES__[module] = true;
       const moduleWaiters = window.__BH_MODULE_WAITERS__[module] || [];
@@ -3348,6 +3343,39 @@ function refreshCore(after){
     })
     .קבלת_נתוני_ליבה_Build13(token);
 }
+</script>
+
+<script id="BH_TARGETED_REFRESH_HELPERS">
+function BH_currentVisibleModule(){
+  const active = document.querySelector('nav button.active');
+  if(active && active.id && active.id.indexOf('btn_') === 0) return active.id.slice(4);
+  const visible = Array.from(document.querySelectorAll('main section')).find(s=>!s.classList.contains('hidden'));
+  return visible ? visible.id : 'dashboard';
+}
+function BH_refreshModules(modules, after, opts){
+  opts = opts || {};
+  modules = Array.from(new Set((modules || []).filter(Boolean)));
+  if(!modules.length){ if(typeof after === 'function') after(); return; }
+  let pending = modules.length;
+  function done(){
+    pending--;
+    if(pending > 0) return;
+    if(opts.dashboard && typeof renderDashboard === 'function') renderDashboard();
+    if(opts.calendar && typeof renderCalendarDashboard === 'function') renderCalendarDashboard();
+    if(typeof after === 'function') after();
+  }
+  modules.forEach(function(module){
+    if(window.__BH_LOADED_MODULES__) window.__BH_LOADED_MODULES__[module] = false;
+    loadModule_Build13_2(module, done);
+  });
+}
+function BH_refreshProjects(after){ BH_refreshModules(['projects'], after, {dashboard:true}); }
+function BH_refreshContacts(after){ BH_refreshModules(['contacts'], after, {dashboard:true}); }
+function BH_refreshTasks(after){ BH_refreshModules(['tasks'], after, {dashboard:true, calendar:true}); }
+function BH_refreshSettings(after){ BH_refreshModules(['settings'], after); }
+function BH_refreshArchive(type, after){ BH_refreshModules(['archive'], function(){ if(typeof renderArchive === 'function') renderArchive(type || 'projects'); if(typeof after === 'function') after(); }, {dashboard:true, calendar:true}); }
+function BH_isTaskCardOpen(id){ return !!(window.__BH_OPEN_TASK_CARD_ID__ && String(window.__BH_OPEN_TASK_CARD_ID__) === String(id || '') && typeof modal !== 'undefined' && !modal.classList.contains('hidden')); }
+function BH_afterTaskMutation(id){ return function(){ if(BH_isTaskCardOpen(id)) openTaskCard(id); }; }
 </script>
 
 <!-- FINAL PATCH – Stable UI + full-load repair + calendar buttons -->
@@ -3661,7 +3689,7 @@ function refreshCore(after){
 
     const normalized = window.BH_normalizeCalendarParticipants ? window.BH_normalizeCalendarParticipants(selectedCalendarGuests()) : selectedCalendarGuests();
     google.script.run
-      .withSuccessHandler(savedId=>{refreshCore(()=>openTaskCard(savedId||id));})
+      .withSuccessHandler(savedId=>{BH_refreshTasks(()=>openTaskCard(savedId||id));})
       .withFailureHandler(e=>alert(e.message))
       .שמירת_משימה({
         authToken:currentToken(),
@@ -3691,6 +3719,7 @@ function refreshCore(after){
   window.renderTaskCard = function(d){
     const t = d.task || {};
     const id = esc(t['מזהה משימה'] || '');
+    window.__BH_OPEN_TASK_CARD_ID__ = id;
     const isDone = t['סטטוס'] === 'בוצע';
     const isArchived = String(t['בארכיון'] || '') === 'כן';
     const readOnly = isArchived || d.readOnly === true;
@@ -5694,7 +5723,7 @@ window.saveContactPermissionFromPicker = function(){
   google.script.run
     .withSuccessHandler(()=>{
       closeM();
-      refreshCore();
+      BH_refreshSettings();
     })
     .withFailureHandler(e=>alert(e.message))
     .שמירת_איש_קשר({
@@ -5932,7 +5961,7 @@ window.sendContactInvitation = function(contactId){
   google.script.run
     .withSuccessHandler(()=>{
       alert('ההזמנה נשלחה בהצלחה');
-      refreshCore(()=>{
+      BH_refreshContacts(()=>{
         delete __contactInvitationSending[contactId];
         openContactCardById(contactId);
       });
@@ -6097,10 +6126,10 @@ window.saveContact = function(id){
     .withSuccessHandler((savedId)=>{
       if(id){
         closeM();
-        refreshCore();
+        BH_refreshContacts();
         return;
       }
-      refreshCore(()=>openContactCardById(savedId));
+      BH_refreshContacts(()=>openContactCardById(savedId));
     })
     .withFailureHandler(e=>alert(e.message))
     .שמירת_איש_קשר(contactPayload);
@@ -6113,7 +6142,7 @@ window.saveContactPermissionFromPicker = function(){
   google.script.run
     .withSuccessHandler(()=>{
       closeM();
-      refreshCore();
+      BH_refreshSettings();
     })
     .withFailureHandler(e=>alert(e.message))
     .שמירת_איש_קשר({
@@ -6135,7 +6164,7 @@ window.saveContactPermissionFromPicker = function(){
 
 window.saveProject = function(id){
   google.script.run
-    .withSuccessHandler(savedId=>{refreshCore(()=>openProjectCard(savedId||id));})
+    .withSuccessHandler(savedId=>{BH_refreshProjects(()=>openProjectCard(savedId||id));})
     .withFailureHandler(e=>alert(e.message))
     .שמירת_פרויקט({
       authToken: currentToken(),
@@ -6544,7 +6573,7 @@ window.calendarTasksForDate = function(d){
   window.saveDomainBranding = function(){
     google.script.run.withSuccessHandler((res)=>{
         closeM();
-        load(false);
+        BH_refreshSettings();
         const duplicates=(res&&res.duplicateIds&&res.duplicateIds.length)?('\nנמצאו כפילויות היסטוריות שלא נמחקו: '+res.duplicateIds.join(', ')):'';
         alert('מיתוג תחום השיוך נשמר'+duplicates);
       }).withFailureHandler(e=>alert(e.message)).שמירת_מיתוג_תחום_שיוך({
@@ -6556,11 +6585,11 @@ window.calendarTasksForDate = function(d){
 
   window.archiveDomainBranding = function(id){
     if(!confirm('להעביר את מיתוג תחום השיוך לארכיון?')) return;
-    google.script.run.withSuccessHandler(()=>load(false)).withFailureHandler(e=>alert(e.message)).העברת_מיתוג_תחום_שיוך_לארכיון({authToken:currentToken(),id});
+    google.script.run.withSuccessHandler(()=>BH_refreshSettings()).withFailureHandler(e=>alert(e.message)).העברת_מיתוג_תחום_שיוך_לארכיון({authToken:currentToken(),id});
   };
 
   window.restoreDomainBranding = function(id){
-    google.script.run.withSuccessHandler(()=>load(false)).withFailureHandler(e=>alert(e.message)).שחזור_מיתוג_תחום_שיוך({authToken:currentToken(),id});
+    google.script.run.withSuccessHandler(()=>BH_refreshSettings()).withFailureHandler(e=>alert(e.message)).שחזור_מיתוג_תחום_שיוך({authToken:currentToken(),id});
   };
 })();
 </script>
@@ -6593,7 +6622,7 @@ window.calendarTasksForDate = function(d){
       .withSuccessHandler(function(res){
         if(!res || !res.ok){ alert((res && res.message) || 'לא ניתן לשמור את תחום השיוך'); return; }
         closeM();
-        refreshCore(function(){
+        load(false, function(){
           const btn = document.getElementById('btn_dashboard');
           if(btn) tab('dashboard', btn);
         });
@@ -6738,14 +6767,14 @@ window.calendarTasksForDate = function(d){
     };
     if(window.suCentralAssignmentDomain) payload.assignmentCentralDomain = suCentralAssignmentDomain.value;
     if(window.suAdditionalAssignmentDomains) payload.assignmentAdditionalDomains = selectedSystemUserAdditionalDomains();
-    google.script.run.withSuccessHandler(()=>{closeM();refreshCore();}).withFailureHandler(e=>alert(e.message))
+    google.script.run.withSuccessHandler(()=>{closeM();BH_refreshSettings();}).withFailureHandler(e=>alert(e.message))
       .שמירת_משתמש_מערכת(payload);
   };
 
   window.toggleSystemUserAccess = function(id, nextActive){
     const row = (DATA.contacts || []).find(c => String(c['מזהה איש קשר'] || '') === String(id || ''));
     if(!row) return alert('המשתמש לא נמצא');
-    google.script.run.withSuccessHandler(()=>refreshCore()).withFailureHandler(e=>alert(e.message))
+    google.script.run.withSuccessHandler(()=>BH_refreshSettings()).withFailureHandler(e=>alert(e.message))
       .שמירת_משתמש_מערכת({authToken: currentToken(), id, systemPermission: row['הרשאת מערכת'], systemActive: nextActive});
   };
 })();
@@ -6930,6 +6959,8 @@ window.calendarTasksForDate = function(d){
 <style>
 .meeting-contact-chip{display:inline-flex;gap:6px;align-items:center;margin:4px;padding:5px 10px;border-radius:999px;background:#e0f2fe;color:#075985}.meeting-contact-chip button{border:0;background:transparent;font-weight:800;cursor:pointer}.warn{color:#b45309}.meeting-dialog-backdrop{position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:9999;display:flex;align-items:center;justify-content:center}.meeting-dialog{background:#fff;max-width:720px;width:92%;max-height:85vh;overflow:auto;border-radius:14px;padding:18px;box-shadow:0 20px 60px rgba(0,0,0,.25)}.meeting-contact-list{max-height:420px;overflow:auto;margin:12px 0}.meeting-contact-row{display:flex;gap:10px;align-items:flex-start;padding:8px;border-bottom:1px solid #e5e7eb}.meeting-contact-row input{width:auto}
 </style>
+
+
 
 </body>
 </html>
