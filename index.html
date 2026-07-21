@@ -463,6 +463,7 @@ nav button::first-letter{font-size:22px!important}
 
 <script>
 let DATA = {};
+const CRM_WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbyfXuvUth9j7L5-rp0TKEc3CC2gffmgo44y_VDZHwMFObT4pxuNkNrL7Jf0HX5CSQQaCQ/exec';
 let SETTINGS_TAB = 'categories';
 
 function goDashboard(){ tab('dashboard', document.getElementById('btn_dashboard')); }
@@ -529,7 +530,7 @@ function verifyLoginCode(){
 
       loginMessage.textContent = '';
       hideLogin();
-      refreshCore();
+      window.location.replace(CRM_WEB_APP_URL + "?refresh=" + Date.now());
     })
     .withFailureHandler(e=> loginMessage.textContent = e.message)
     .אימות_קוד_כניסה_Build7(email, code);
