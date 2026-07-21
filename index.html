@@ -478,6 +478,7 @@ function closeM(){ modal.classList.add('hidden'); }
 
 
 function showLogin(msg=''){
+  if(window.BH_IDLE && typeof window.BH_IDLE.stop === 'function') window.BH_IDLE.stop();
   loginScreen.classList.remove('hidden');
   userArea.classList.add('hidden');
 
@@ -542,6 +543,7 @@ function backToEmailLogin(){
   loginMessage.textContent='';
 }
 function logout(){
+  if(window.BH_IDLE && typeof window.BH_IDLE.stop === 'function') window.BH_IDLE.stop();
   const token = currentToken();
 
   clearToken();
@@ -1645,7 +1647,7 @@ function renderBrandingSettings(){
     <button class="primary" onclick="saveBranding()">שמור מיתוג</button></div>`;
 }
 function saveBranding(){
-  google.script.run.withSuccessHandler(()=>{load();alert('המיתוג נשמר')}).withFailureHandler(e=>alert(e.message))
+  google.script.run.withSuccessHandler(()=>{refreshCore(()=>{ if(window.BH_IDLE && typeof window.BH_IDLE.restart === 'function') window.BH_IDLE.restart(); alert('המיתוג נשמר'); });}).withFailureHandler(e=>alert(e.message))
     .שמירת_מיתוג_Build4_3({systemName:brandName.value,primaryColor:brandPrimary.value,secondaryColor:brandSecondary.value,logo:brandLogoUrl.value,logoHeight:brandLogoHeight.value,logoPosition:brandLogoPosition.value,idleLogoutMinutes:brandIdleLogoutMinutes.value});
 }
 function renderCalendarsSettings(){
@@ -2828,6 +2830,20 @@ renderContactCard = function(d){
     idleTimer = setTimeout(forceLogoutByIdle, idleLimitMs());
   }
 
+  function stopIdleTimers(){
+    closeIdleWarning();
+    clearTimeout(idleTimer);
+    clearTimeout(idleWarnTimer);
+    idleTimer = null;
+    idleWarnTimer = null;
+  }
+
+  function startIdleTimers(){
+    stopIdleTimers();
+    if(!currentToken || !currentToken()) return;
+    scheduleIdleTimers();
+  }
+
   function continueWorkingFromWarning(){
     resetIdleTimer();
   }
@@ -2867,15 +2883,14 @@ renderContactCard = function(d){
   }
 
   function resetIdleTimer(){
-    closeIdleWarning();
-    clearTimeout(idleTimer);
-    clearTimeout(idleWarnTimer);
-    if(!currentToken || !currentToken()) return;
-    scheduleIdleTimers();
+    startIdleTimers();
   }
 
   window.BH_IDLE = {
     markUserActivity: resetIdleTimer,
+    start: startIdleTimers,
+    restart: startIdleTimers,
+    stop: stopIdleTimers,
     continueWorking: continueWorkingFromWarning,
     logoutNow: idleLogoutNow,
     getLimitMinutes: idleLimitMinutes,
@@ -3128,6 +3143,7 @@ function load(forceDashboard=true, after){
 
       hideLogin();
       render(DATA);
+      if(window.BH_IDLE && typeof window.BH_IDLE.start === 'function') window.BH_IDLE.start();
 
       if(forceDashboard){
         const btn = document.getElementById('btn_dashboard');
@@ -3330,6 +3346,8 @@ function refreshCore(after){
       if(typeof updateCalendarViewButtons === 'function'){
         updateCalendarViewButtons();
       }
+
+      if(window.BH_IDLE && typeof window.BH_IDLE.restart === 'function') window.BH_IDLE.restart();
 
       const waiters = (primaryAfter ? [primaryAfter] : []).concat(window.__BH_CORE_REFRESH_WAITERS__ || []);
       window.__BH_CORE_REFRESH_WAITERS__ = [];
