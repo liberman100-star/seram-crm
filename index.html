@@ -532,7 +532,7 @@ function verifyLoginCode(){
       }catch(e){}
 
       loginMessage.textContent = '';
-      hardRefresh();
+      window.location.replace(CRM_WEB_APP_URL + "?refresh=" + Date.now());
     })
     .withFailureHandler(e=> loginMessage.textContent = e.message)
     .אימות_קוד_כניסה_Build7(email, code);
