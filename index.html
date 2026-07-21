@@ -532,7 +532,7 @@ function verifyLoginCode(){
       }catch(e){}
 
       loginMessage.textContent = '';
-      hardRefresh();
+      window.location.replace(CRM_WEB_APP_URL + "?refresh=" + Date.now());
     })
     .withFailureHandler(e=> loginMessage.textContent = e.message)
     .אימות_קוד_כניסה_Build7(email, code);
@@ -3155,7 +3155,7 @@ function load(forceDashboard=true, after){
       window.__BH_CORE_LOAD_WAITERS__ = [];
       showLogin('שגיאה בטעינה: ' + e.message);
     })
-    .קבלת_נתוני_ליבה_Build13(token);
+    .קבלת_נתוני_פתיחה_Build13_2(token);
 }
 
 function firstAllowedTab_Build13_2(){
@@ -3241,16 +3241,7 @@ function loadModule_Build13_2(module, after){
 
       mergeData_Build13_2(d);
       renderShell_Build13_2(d);
-
-      tableProjects();
-      tableContacts();
-      tableTasks();
-
-      if(DATA.canSeeSettings){
-        renderSettings();
-      }
-
-      renderDashboard();
+      renderModule_Build13_2(module);
 
       __BH_LOADED_MODULES__[module] = true;
       const moduleWaiters = window.__BH_MODULE_WAITERS__[module] || [];
@@ -6930,6 +6921,81 @@ window.calendarTasksForDate = function(d){
 <style>
 .meeting-contact-chip{display:inline-flex;gap:6px;align-items:center;margin:4px;padding:5px 10px;border-radius:999px;background:#e0f2fe;color:#075985}.meeting-contact-chip button{border:0;background:transparent;font-weight:800;cursor:pointer}.warn{color:#b45309}.meeting-dialog-backdrop{position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:9999;display:flex;align-items:center;justify-content:center}.meeting-dialog{background:#fff;max-width:720px;width:92%;max-height:85vh;overflow:auto;border-radius:14px;padding:18px;box-shadow:0 20px 60px rgba(0,0,0,.25)}.meeting-contact-list{max-height:420px;overflow:auto;margin:12px 0}.meeting-contact-row{display:flex;gap:10px;align-items:flex-start;padding:8px;border-bottom:1px solid #e5e7eb}.meeting-contact-row input{width:auto}
 </style>
+
+
+<script id="BH_SYSTEM_WIDE_TARGETED_REFRESH">
+(function(){
+  function currentVisibleModule(){
+    const active = document.querySelector('nav button.active');
+    if(active && active.id && active.id.indexOf('btn_') === 0) return active.id.slice(4);
+    const visible = Array.from(document.querySelectorAll('main section')).find(s=>!s.classList.contains('hidden'));
+    return visible ? visible.id : 'dashboard';
+  }
+  function markUnloaded(modules){
+    modules.forEach(m=>{ if(window.__BH_LOADED_MODULES__) window.__BH_LOADED_MODULES__[m] = false; });
+  }
+  function renderLoaded(modules){
+    modules.forEach(m=>{ if(window.__BH_LOADED_MODULES__ && window.__BH_LOADED_MODULES__[m] && typeof renderModule_Build13_2 === 'function') renderModule_Build13_2(m); });
+  }
+  function refreshModules(modules, after, opts){
+    opts = opts || {};
+    modules = Array.from(new Set((modules || []).filter(Boolean)));
+    if(!modules.length){ if(typeof after === 'function') after(); return; }
+    markUnloaded(modules);
+    let pending = modules.length;
+    function done(){
+      pending--;
+      if(pending > 0) return;
+      if(opts.dashboard && typeof renderDashboard === 'function') renderDashboard();
+      if(opts.calendar && typeof renderCalendarDashboard === 'function') renderCalendarDashboard();
+      if(typeof after === 'function') after();
+      renderLoaded(modules.filter(m=>m === currentVisibleModule()));
+    }
+    modules.forEach(m=>loadModule_Build13_2(m, done));
+  }
+  window.BH_refreshModules = refreshModules;
+  window.BH_refreshCurrentModule = function(after, opts){ refreshModules([currentVisibleModule()], after, opts); };
+  window.BH_refreshProjects = function(after){ refreshModules(['projects'], after, {dashboard:true}); };
+  window.BH_refreshContacts = function(after){ refreshModules(['contacts'], after, {dashboard:true}); };
+  window.BH_refreshTasks = function(after){ refreshModules(['tasks'], after, {dashboard:true, calendar:true}); };
+  window.BH_refreshSettings = function(after){ refreshModules(['settings'], after); };
+  window.BH_refreshArchive = function(type, after){ refreshModules(['archive'], function(){ if(typeof renderArchive === 'function') renderArchive(type || 'projects'); if(typeof after === 'function') after(); }, {dashboard:true, calendar:true}); };
+
+  if(typeof window.saveProject === 'function') window.saveProject = function(id){
+    google.script.run
+      .withSuccessHandler(savedId=>{ closeM(); BH_refreshProjects(()=>openProjectCard(savedId||id)); })
+      .withFailureHandler(e=>alert(e.message))
+      .שמירת_פרויקט({authToken:currentToken(),id,name:pName.value,projectDescription:(typeof pDescription!=='undefined'?pDescription.value:''),city:pCity.value,type:pType.value,status:pStatus.value,assignmentDomain:(typeof pAssignmentDomain!=='undefined'?pAssignmentDomain.value:''),owner:pOwner.value,tags:pTags.value,drive:pDrive.value});
+  };
+
+  if(typeof window.saveContact === 'function') window.saveContact = function(id){
+    const payload={authToken:currentToken(),id,name:cName.value,phone:cPhone.value,email:cEmail.value,address:cAddress.value,source:cSource.value,contactType:cType.value,status:cStatus.value,tags:cTags.value,manager:(window.cManager?cManager.value:''),owner:(window.cOwner?cOwner.value:''),systemPermission:cPermission.value,creatorColor:(window.cCreatorColor?cCreatorColor.value:'')};
+    if(window.cCentralAssignmentDomain && !cCentralAssignmentDomain.disabled && cPermission.value === 'מנהל'){ payload.assignmentCentralDomain=cCentralAssignmentDomain.value; payload.assignmentAdditionalDomains=selectedAdditionalAssignmentDomains(); payload.assignmentDomains=selectedAdditionalAssignmentDomains(); }
+    google.script.run.withSuccessHandler(savedId=>{ closeM(); BH_refreshContacts(()=>openContactCardById(savedId||id)); }).withFailureHandler(e=>alert(e.message)).שמירת_איש_קשר(payload);
+  };
+
+  if(typeof window.saveTask === 'function') window.saveTask = function(id){
+    if(!canEdit() && id) return alert('אין לך הרשאה לעריכה');
+    if(!canCreate() && !id) return alert('אין לך הרשאה להוספה');
+    const normalized = window.BH_normalizeCalendarParticipants ? window.BH_normalizeCalendarParticipants(selectedCalendarGuests()) : selectedCalendarGuests();
+    google.script.run.withSuccessHandler(savedId=>{ closeM(); BH_refreshTasks(()=>openTaskCard(savedId||id)); }).withFailureHandler(e=>alert(e.message)).שמירת_משימה({authToken:currentToken(),id,title:tTitle.value,taskDescription:(typeof tDescription!=='undefined'?tDescription.value:''),projectId:tProject.value,contactId:tContact.value,type:tType.value,status:tStatus.value,priority:tPriority.value,date:tDate.value,time:tTime.value,owner:tOwner.value,calendar:tCalendar.value,calendarParticipants:normalized,meetingContactIds:window.selectedMeetingContactIds?selectedMeetingContactIds.join(','):''});
+  };
+
+  window.delProject = function(id){ if(confirm('למחוק פרויקט ואת השיוכים שלו?')) google.script.run.withSuccessHandler(()=>{closeM();BH_refreshProjects();}).withFailureHandler(e=>alert(e.message)).מחיקת_פרויקט({id,authToken:currentToken()}); };
+  window.delContact = function(id){ if(confirm('למחוק איש קשר ואת השיוכים שלו?')) google.script.run.withSuccessHandler(()=>{closeM();BH_refreshContacts();}).withFailureHandler(e=>alert(e.message)).מחיקת_איש_קשר({id,authToken:currentToken()}); };
+  window.delTask = function(id){ if(confirm('האם אתה בטוח שברצונך להעביר את המשימה לארכיון?')) google.script.run.withSuccessHandler(()=>BH_refreshTasks()).withFailureHandler(e=>alert(e.message)).מחיקת_משימה({id,authToken:currentToken()}); };
+  window.doneTask = function(id){ if(!canEdit()) return alert('אין לך הרשאה לעריכה'); google.script.run.withSuccessHandler(()=>BH_refreshTasks()).withFailureHandler(e=>alert(e.message)).סימון_משימה_בוצעה({id,authToken:currentToken()}); };
+  window.reactivateTask = function(id){ if(!canEdit()) return alert('אין לך הרשאה לעריכה'); google.script.run.withSuccessHandler(()=>BH_refreshTasks(()=>openTaskCard(id))).withFailureHandler(e=>alert(e.message)).החזרת_משימה_לפעילה({id,authToken:currentToken()}); };
+  window.sendCalendarInvite = function(id){ if(!canEdit()) return alert('אין לך הרשאה לשליחת זימון'); google.script.run.withSuccessHandler(res=>{ alert((res&&res.message)||'הזימון נשלח/עודכן'); BH_refreshTasks(()=>openTaskCard(id)); }).withFailureHandler(e=>alert(e.message)).שליחת_זימון_יומן_למשימה_Build11({id,authToken:currentToken()}); };
+  window.saveLink = function(projectId,contactId,role,portal,cb){ if(!canEdit()) return alert('אין לך הרשאה לעריכת שיוכים'); google.script.run.withSuccessHandler(()=>BH_refreshModules(['projects','contacts','tasks'], cb, {dashboard:true, calendar:true})).withFailureHandler(e=>alert(e.message)).שמירת_שיוך({authToken:currentToken(),projectId,contactId,role,portal}); };
+  window.deleteLink = function(id,cb){ if(confirm('להסיר שיוך?')) google.script.run.withSuccessHandler(()=>BH_refreshModules(['projects','contacts','tasks'], cb, {dashboard:true, calendar:true})).withFailureHandler(e=>alert(e.message)).מחיקת_שיוך({id,authToken:currentToken()}); };
+  window.restoreArchive = function(type,id){ if(!confirm('לשחזר מהארכיון?')) return; const map={projects:'שחזור_פרויקט_מהארכיון_Build12_2',contacts:'שחזור_איש_קשר_מהארכיון_Build12_2',tasks:'שחזור_משימה_מהארכיון_Build12_2'}; google.script.run.withSuccessHandler(()=>BH_refreshArchive(type)).withFailureHandler(e=>alert(e.message))[map[type]]({id,authToken:currentToken()}); };
+  window.deleteForeverArchive = function(type,id){ if(!confirm('למחוק לצמיתות? לא ניתן לשחזר פעולה זו.')) return; const map={projects:'מחיקת_פרויקט_לצמיתות_Build12_2',contacts:'מחיקת_איש_קשר_לצמיתות_Build12_2',tasks:'מחיקת_משימה_לצמיתות_Build12_2'}; google.script.run.withSuccessHandler(()=>BH_refreshArchive(type)).withFailureHandler(e=>alert(e.message))[map[type]]({id,authToken:currentToken()}); };
+  window.saveContactPermissionFromPicker = function(){ const c=(DATA.contacts||[]).find(x=>x['מזהה איש קשר']===permContactPick.value); if(!c){ alert('לא נבחר איש קשר'); return; } google.script.run.withSuccessHandler(()=>{closeM();BH_refreshModules(['contacts','settings'], null, {dashboard:true});}).withFailureHandler(e=>alert(e.message)).שמירת_איש_קשר({authToken:currentToken(),id:c['מזהה איש קשר'],name:c['שם מלא'],phone:c['טלפון'],email:c['אימייל'],address:c['כתובת'],source:c['מקור הגעה'],contactType:c['סוג איש קשר'],status:c['סטטוס לקוח'],tags:c['תגיות'],manager:'',owner:'',systemPermission:permContactRole.value}); };
+  window.saveSystemUser = function(id){ const payload={authToken:currentToken(),id,systemPermission:suPermission.value,systemActive:suActive.value,manager:window.suManager?suManager.value:'',owner:window.suOwner?suOwner.value:''}; if(window.suCentralAssignmentDomain) payload.assignmentCentralDomain=suCentralAssignmentDomain.value; if(window.suAdditionalAssignmentDomains) payload.assignmentAdditionalDomains=selectedSystemUserAdditionalDomains(); google.script.run.withSuccessHandler(()=>{closeM();BH_refreshModules(['contacts','settings']);}).withFailureHandler(e=>alert(e.message)).שמירת_משתמש_מערכת(payload); };
+  window.toggleSystemUserAccess = function(id,nextActive){ const row=(DATA.contacts||[]).find(c=>String(c['מזהה איש קשר']||'')===String(id||'')); if(!row) return alert('המשתמש לא נמצא'); google.script.run.withSuccessHandler(()=>BH_refreshModules(['contacts','settings'])).withFailureHandler(e=>alert(e.message)).שמירת_משתמש_מערכת({authToken:currentToken(),id,systemPermission:row['הרשאת מערכת'],systemActive:nextActive}); };
+})();
+</script>
 
 </body>
 </html>

@@ -18,11 +18,11 @@ has(html, /renderCalendarDashboard[\s\S]*?const waiters =/, 'callbacks execute o
 has(html, /waiters\.forEach\(cb=>\{\s*try\{ cb\(\); \}catch\(err\)\{ console\.log\(err\); \}\s*\}\)/, 'callback errors are isolated');
 has(html, /withFailureHandler\(e=>\{\s*window\.__BH_CORE_REFRESHING__ = false;\s*window\.__BH_CORE_REFRESH_WAITERS__ = \[\];\s*alert\(e\.message\);/, 'failure clears queue and permits later refresh');
 has(html, /BH_isCustomerDomainSelectionRequired[\s\S]*?window\.__BH_CORE_REFRESH_WAITERS__ = \[\];[\s\S]*?BH_showCustomerDomainDialog/, 'domain selection clears refresh queue before dialog');
-has(html, /function load\(forceDashboard=true, after\)\{[\s\S]*?\.קבלת_נתוני_ליבה_Build13\(token\);/, 'initial production load uses canonical full core endpoint');
+has(html, /function load\(forceDashboard=true, after\)\{[\s\S]*?\.קבלת_נתוני_פתיחה_Build13_2\(token\);/, 'initial production load uses lightweight opening endpoint');
 has(html, /\.קבלת_מודול_Build13_2\(token, module\)/, 'lazy module loading uses existing module endpoint');
 has(html, /function markLoadedModulesFromFullCore_Build13_2\(d\)\{[\s\S]*?__BH_LOADED_MODULES__\.settings = true;[\s\S]*?\}/, 'full core payload initializes loaded module state');
 has(html, /d\.loadedModules\[moduleName\] === true && hasRealModuleData_Build13_2\(moduleName, d\)/, 'shell loadedModules flags are ignored unless real module data is present');
-has(html, /mergeData_Build13_2\(d\);\s*renderShell_Build13_2\(d\);[\s\S]*?__BH_LOADED_MODULES__\[module\] = true;/, 'module endpoint response shape remains compatible with existing handler');
+has(html, /mergeData_Build13_2\(d\);\s*renderShell_Build13_2\(d\);\s*renderModule_Build13_2\(module\);\s*__BH_LOADED_MODULES__\[module\] = true;/, 'module endpoint renders only the requested module');
 has(html, /function load\(forceDashboard=true, after\)\{[\s\S]*?__BH_CORE_LOADING__ = true[\s\S]*?if\(!token\)\{\s*window\.__BH_CORE_LOADING__ = false;[\s\S]*?withSuccessHandler\(d=>\{\s*window\.__BH_CORE_LOADING__ = false;[\s\S]*?withFailureHandler\(e=>\{\s*window\.__BH_CORE_LOADING__ = false;/, 'load guard clears on token, success/domain/unauthorized, and failure paths');
 has(html, /__BH_CORE_LOADING__/, 'duplicate initial core request guard exists');
 has(html, /__BH_CORE_REFRESHING__/, 'duplicate refresh guard exists');
