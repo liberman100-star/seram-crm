@@ -478,6 +478,7 @@ function closeM(){ modal.classList.add('hidden'); }
 
 
 function showLogin(msg=''){
+  if(window.BH_IDLE && typeof window.BH_IDLE.stop === 'function') window.BH_IDLE.stop();
   loginScreen.classList.remove('hidden');
   userArea.classList.add('hidden');
 
@@ -1645,7 +1646,12 @@ function renderBrandingSettings(){
     <button class="primary" onclick="saveBranding()">שמור מיתוג</button></div>`;
 }
 function saveBranding(){
-  google.script.run.withSuccessHandler(()=>{load();alert('המיתוג נשמר')}).withFailureHandler(e=>alert(e.message))
+  google.script.run.withSuccessHandler(()=>{
+    refreshCore(()=>{
+      if(window.BH_IDLE && typeof window.BH_IDLE.restartAfterSettingsSave === 'function') window.BH_IDLE.restartAfterSettingsSave();
+      alert('המיתוג נשמר');
+    });
+  }).withFailureHandler(e=>alert(e.message))
     .שמירת_מיתוג_Build4_3({systemName:brandName.value,primaryColor:brandPrimary.value,secondaryColor:brandSecondary.value,logo:brandLogoUrl.value,logoHeight:brandLogoHeight.value,logoPosition:brandLogoPosition.value,idleLogoutMinutes:brandIdleLogoutMinutes.value});
 }
 function renderCalendarsSettings(){
@@ -2866,16 +2872,29 @@ renderContactCard = function(d){
     modal.classList.remove('hidden');
   }
 
-  function resetIdleTimer(){
-    closeIdleWarning();
+  function stopIdleTimers(){
     clearTimeout(idleTimer);
     clearTimeout(idleWarnTimer);
+    idleTimer = null;
+    idleWarnTimer = null;
+    closeIdleWarning();
+  }
+
+  function resetIdleTimer(){
+    stopIdleTimers();
     if(!currentToken || !currentToken()) return;
     scheduleIdleTimers();
   }
 
+  function startIdleTimersAfterAuthenticatedLoad(){
+    resetIdleTimer();
+  }
+
   window.BH_IDLE = {
     markUserActivity: resetIdleTimer,
+    startAfterAuthenticatedLoad: startIdleTimersAfterAuthenticatedLoad,
+    restartAfterSettingsSave: startIdleTimersAfterAuthenticatedLoad,
+    stop: stopIdleTimers,
     continueWorking: continueWorkingFromWarning,
     logoutNow: idleLogoutNow,
     getLimitMinutes: idleLimitMinutes,
@@ -3128,6 +3147,7 @@ function load(forceDashboard=true, after){
 
       hideLogin();
       render(DATA);
+      if(window.BH_IDLE && typeof window.BH_IDLE.startAfterAuthenticatedLoad === 'function') window.BH_IDLE.startAfterAuthenticatedLoad();
 
       if(forceDashboard){
         const btn = document.getElementById('btn_dashboard');
@@ -3313,6 +3333,7 @@ function refreshCore(after){
 
       mergeData_Build13_2(d);
       renderShell_Build13_2(d);
+      if(window.BH_IDLE && typeof window.BH_IDLE.startAfterAuthenticatedLoad === 'function') window.BH_IDLE.startAfterAuthenticatedLoad();
 
       renderDashboard();
       tableProjects();
