@@ -7,6 +7,10 @@ assert(html.includes("const IDLE_ALLOWED_MINUTES = [15, 30, 60, 90]"), 'client a
 assert(/idleWarningMs\(\)\{ return Math\.max\(0, idleLimitMs\(\) - IDLE_WARNING_BEFORE_MS\); \}/.test(html), 'warning is scheduled five minutes before logout');
 assert(html.includes('המערכת תתנתק בעוד 5 דקות עקב חוסר פעילות. להמשיך לעבוד?'), 'warning modal text exists');
 assert(html.includes('BH_IDLE.continueWorking()') && html.includes('BH_IDLE.logoutNow()'), 'warning modal buttons exist');
+assert(/function scheduleIdleTimers\(\)\{\s*clearTimeout\(idleTimer\);\s*clearTimeout\(idleWarnTimer\);\s*idleWarnTimer = setTimeout\(warnIdle, idleWarningMs\(\)\);\s*idleTimer = setTimeout\(forceLogoutByIdle, idleLimitMs\(\)\);\s*\}/.test(html), 'scheduling always replaces old timers before creating the active pair');
+assert(/startSession: resetIdleTimer/.test(html), 'idle API exposes explicit session start after login/load');
+assert(/render\(DATA\);\s*if\(window\.BH_IDLE && typeof window\.BH_IDLE\.startSession === 'function'\) window\.BH_IDLE\.startSession\(\);/.test(html), 'load starts idle timer immediately after authenticated render');
+assert(/if\(window\.BH_IDLE && typeof window\.BH_IDLE\.startSession === 'function'\) window\.BH_IDLE\.startSession\(\);/.test(html), 'render path restarts one active idle timer when shell data changes');
 const warnIdleBody = html.match(/function warnIdle\(\)\{[\s\S]*?modal\.classList\.remove\('hidden'\);[\s\S]*?\n  \}/)[0];
 assert(!/resetIdleTimer|clearTimeout|scheduleIdleTimers/.test(warnIdleBody), 'opening the warning modal does not reset or reschedule idle timers');
 assert(/function continueWorkingFromWarning\(\)\{[\s\S]*resetIdleTimer\(\)/.test(html), 'continue working starts a full new idle period');
