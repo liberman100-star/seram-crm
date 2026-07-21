@@ -7,6 +7,16 @@ assert(html.includes("const IDLE_ALLOWED_MINUTES = [15, 30, 60, 90]"), 'client a
 assert(/idleWarningMs\(\)\{ return Math\.max\(0, idleLimitMs\(\) - IDLE_WARNING_BEFORE_MS\); \}/.test(html), 'warning is scheduled five minutes before logout');
 assert(html.includes('המערכת תתנתק בעוד 5 דקות עקב חוסר פעילות. להמשיך לעבוד?'), 'warning modal text exists');
 assert(html.includes('BH_IDLE.continueWorking()') && html.includes('BH_IDLE.logoutNow()'), 'warning modal buttons exist');
+
+assert(/function startIdleTimersAfterAuthenticatedLoad\(\)\{[\s\S]*resetIdleTimer\(\)/.test(html), 'authenticated loads explicitly start idle timers');
+assert(html.includes('startAfterAuthenticatedLoad: startIdleTimersAfterAuthenticatedLoad'), 'idle API exposes authenticated-load scheduler');
+assert(new RegExp("hideLogin\\(\\);\\n\\s*render\\(DATA\\);\\n\\s*if\\(window\\.BH_IDLE && typeof window\\.BH_IDLE\\.startAfterAuthenticatedLoad === 'function'\\) window\\.BH_IDLE\\.startAfterAuthenticatedLoad\\(\\);").test(html), 'full authenticated load starts timers without activity');
+assert(new RegExp("renderShell_Build13_2\\(d\\);\\n\\s*if\\(window\\.BH_IDLE && typeof window\\.BH_IDLE\\.startAfterAuthenticatedLoad === 'function'\\) window\\.BH_IDLE\\.startAfterAuthenticatedLoad\\(\\);").test(html), 'authenticated refresh starts timers without activity');
+assert(/function saveBranding\(\)\{[\s\S]*refreshCore\(\(\)=>\{[\s\S]*restartAfterSettingsSave/.test(html), 'branding save reloads data and restarts timers');
+assert(/<select id="brandIdleLogoutMinutes">\$\{\[15,30,60,90\]\.map/.test(html), 'settings UI renders exactly the allowed idle durations');
+assert(/שמירת_מיתוג_Build4_3\(\{[\s\S]*idleLogoutMinutes:brandIdleLogoutMinutes\.value/.test(html), 'settings UI posts selected idle duration to the existing branding save');
+assert(new RegExp("function showLogin\\(msg=''\\)\\{\\n\\s*if\\(window\\.BH_IDLE && typeof window\\.BH_IDLE\\.stop === 'function'\\) window\\.BH_IDLE\\.stop\\(\\);").test(html), 'login screen stops idle timers after logout or expired sessions');
+
 const warnIdleBody = html.match(/function warnIdle\(\)\{[\s\S]*?modal\.classList\.remove\('hidden'\);[\s\S]*?\n  \}/)[0];
 assert(!/resetIdleTimer|clearTimeout|scheduleIdleTimers/.test(warnIdleBody), 'opening the warning modal does not reset or reschedule idle timers');
 assert(/function continueWorkingFromWarning\(\)\{[\s\S]*resetIdleTimer\(\)/.test(html), 'continue working starts a full new idle period');
