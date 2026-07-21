@@ -478,7 +478,7 @@ function tab(id,b){
   b.classList.add('active');
 }
 function modalBackdropClose(e){ if(e.target.id === 'modal') closeM(); }
-function closeM(){ modal.classList.add('hidden'); }
+function closeM(){ modal.classList.add('hidden'); window.__BH_OPEN_TASK_CARD_ID__ = ''; }
 
 
 function showLogin(msg=''){
@@ -2542,7 +2542,7 @@ openContactCard = function(contactOrId){
   if(!id) return alert('איש הקשר לא נמצא לאחר הרענון');
   google.script.run.withSuccessHandler(renderContactCard).withFailureHandler(e=>alert(e.message)).כרטיס_איש_קשר({id,authToken:currentToken()});
 }
-openTaskCard = function(id){ google.script.run.withSuccessHandler(renderTaskCard).withFailureHandler(e=>alert(e.message)).קבלת_כרטיס_משימה_Build10({id,authToken:currentToken()}); }
+openTaskCard = function(id){ window.__BH_OPEN_TASK_CARD_ID__ = String(id || ''); google.script.run.withSuccessHandler(renderTaskCard).withFailureHandler(e=>alert(e.message)).קבלת_כרטיס_משימה_Build10({id,authToken:currentToken()}); }
 
 saveProject = function(id){
   if(!canEdit() && id) return alert('אין לך הרשאה לעריכה');
@@ -3366,6 +3366,15 @@ function BH_refreshModules(modules, after, opts){
   }
   modules.forEach(function(module){
     if(window.__BH_LOADED_MODULES__) window.__BH_LOADED_MODULES__[module] = false;
+    if(window.__BH_LOADING_MODULE__ && window.__BH_LOADING_MODULE__[module]){
+      window.__BH_MODULE_WAITERS__ = window.__BH_MODULE_WAITERS__ || {};
+      window.__BH_MODULE_WAITERS__[module] = window.__BH_MODULE_WAITERS__[module] || [];
+      window.__BH_MODULE_WAITERS__[module].push(function(){
+        if(window.__BH_LOADED_MODULES__) window.__BH_LOADED_MODULES__[module] = false;
+        loadModule_Build13_2(module, done);
+      });
+      return;
+    }
     loadModule_Build13_2(module, done);
   });
 }
