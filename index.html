@@ -1354,7 +1354,7 @@ function saveTask(id){
       owner:tOwner.value
     });
 }
-function doneTask(id){ google.script.run.withSuccessHandler(()=>BH_refreshTasks()).withFailureHandler(e=>alert(e.message)).סימון_משימה_בוצעה(id); }
+function doneTask(id){ google.script.run.withSuccessHandler(()=>BH_refreshTasks(BH_afterTaskMutation(id))).withFailureHandler(e=>alert(e.message)).סימון_משימה_בוצעה(id); }
 function delTask(id){ if(confirm('למחוק משימה?')) google.script.run.withSuccessHandler(()=>BH_refreshTasks()).withFailureHandler(e=>alert(e.message)).מחיקת_משימה(id); }
 
 /* Links */
@@ -2596,7 +2596,7 @@ delTask = function(id){
 doneTask = function(id){
   if(!canEdit()) return alert('אין לך הרשאה לעריכה');
   google.script.run
-    .withSuccessHandler(()=>BH_refreshTasks())
+    .withSuccessHandler(()=>BH_refreshTasks(BH_afterTaskMutation(id)))
     .withFailureHandler(e=>alert(e.message))
     .סימון_משימה_בוצעה({id,authToken:currentToken()});
 }
@@ -3134,7 +3134,7 @@ function load(forceDashboard=true, after){
       markLoadedModulesFromFullCore_Build13_2(d);
 
       hideLogin();
-      render(DATA);
+      renderShell_Build13_2(d);
       if(window.BH_IDLE && typeof window.BH_IDLE.startSession === 'function') window.BH_IDLE.startSession();
 
       if(forceDashboard){
@@ -3245,7 +3245,6 @@ function loadModule_Build13_2(module, after){
       }
 
       mergeData_Build13_2(d);
-      renderShell_Build13_2(d);
       renderModule_Build13_2(module);
 
       __BH_LOADED_MODULES__[module] = true;
@@ -3375,6 +3374,8 @@ function BH_refreshContacts(after){ BH_refreshModules(['contacts'], after, {dash
 function BH_refreshTasks(after){ BH_refreshModules(['tasks'], after, {dashboard:true, calendar:true}); }
 function BH_refreshSettings(after){ BH_refreshModules(['settings'], after); }
 function BH_refreshArchive(type, after){ BH_refreshModules(['archive'], function(){ if(typeof renderArchive === 'function') renderArchive(type || 'projects'); if(typeof after === 'function') after(); }, {dashboard:true, calendar:true}); }
+function BH_isTaskCardOpen(id){ return !!(window.__BH_OPEN_TASK_CARD_ID__ && String(window.__BH_OPEN_TASK_CARD_ID__) === String(id || '') && typeof modal !== 'undefined' && !modal.classList.contains('hidden')); }
+function BH_afterTaskMutation(id){ return function(){ if(BH_isTaskCardOpen(id)) openTaskCard(id); }; }
 </script>
 
 <!-- FINAL PATCH – Stable UI + full-load repair + calendar buttons -->
@@ -3718,6 +3719,7 @@ function BH_refreshArchive(type, after){ BH_refreshModules(['archive'], function
   window.renderTaskCard = function(d){
     const t = d.task || {};
     const id = esc(t['מזהה משימה'] || '');
+    window.__BH_OPEN_TASK_CARD_ID__ = id;
     const isDone = t['סטטוס'] === 'בוצע';
     const isArchived = String(t['בארכיון'] || '') === 'כן';
     const readOnly = isArchived || d.readOnly === true;

@@ -22,7 +22,8 @@ has(html, /function load\(forceDashboard=true, after\)\{[\s\S]*?\.קבלת_נת�
 has(html, /\.קבלת_מודול_Build13_2\(token, module\)/, 'lazy module loading uses existing module endpoint');
 has(html, /function markLoadedModulesFromFullCore_Build13_2\(d\)\{[\s\S]*?__BH_LOADED_MODULES__\.settings = true;[\s\S]*?\}/, 'full core payload initializes loaded module state');
 has(html, /d\.loadedModules\[moduleName\] === true && hasRealModuleData_Build13_2\(moduleName, d\)/, 'shell loadedModules flags are ignored unless real module data is present');
-has(html, /mergeData_Build13_2\(d\);\s*renderShell_Build13_2\(d\);\s*renderModule_Build13_2\(module\);\s*__BH_LOADED_MODULES__\[module\] = true;/, 'module endpoint renders only the requested module');
+has(html, /function load\(forceDashboard=true, after\)\{[\s\S]*?renderShell_Build13_2\(d\);[\s\S]*?\.קבלת_נתוני_פתיחה_Build13_2\(token\);/, 'initial load renders only the lightweight shell');
+has(html, /mergeData_Build13_2\(d\);\s*renderModule_Build13_2\(module\);\s*__BH_LOADED_MODULES__\[module\] = true;/, 'module endpoint renders only the requested module without rebuilding shell/dashboard');
 has(html, /function load\(forceDashboard=true, after\)\{[\s\S]*?__BH_CORE_LOADING__ = true[\s\S]*?if\(!token\)\{\s*window\.__BH_CORE_LOADING__ = false;[\s\S]*?withSuccessHandler\(d=>\{\s*window\.__BH_CORE_LOADING__ = false;[\s\S]*?withFailureHandler\(e=>\{\s*window\.__BH_CORE_LOADING__ = false;/, 'load guard clears on token, success/domain/unauthorized, and failure paths');
 has(html, /__BH_CORE_LOADING__/, 'duplicate initial core request guard exists');
 has(html, /__BH_CORE_REFRESHING__/, 'duplicate refresh guard exists');
