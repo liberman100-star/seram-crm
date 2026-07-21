@@ -7,6 +7,7 @@ function match(re, msg){ const m = html.match(re); assert(m, msg); return m[0]; 
 has(/<script id="BH_TARGETED_REFRESH_HELPERS">/, 'targeted refresh helpers are integrated outside the end-of-file override patch');
 notHas(/BH_SYSTEM_WIDE_TARGETED_REFRESH/, 'review-blocked end-of-file override patch was removed');
 has(/function BH_refreshModules\(modules, after, opts\)[\s\S]*loadModule_Build13_2\(module, done\)/, 'targeted refreshes use module endpoint');
+has(/function BH_refreshModules\(modules, after, opts\)[\s\S]*window\.__BH_LOADING_MODULE__ && window\.__BH_LOADING_MODULE__\[module\][\s\S]*window\.__BH_MODULE_WAITERS__\[module\]\.push\(function\(\)\{[\s\S]*loadModule_Build13_2\(module, done\);[\s\S]*return;[\s\S]*loadModule_Build13_2\(module, done\);/, 'targeted refresh waits for any in-flight module load, then starts a fresh post-mutation load');
 const loadModuleBody = match(/function loadModule_Build13_2\(module, after\)\{[\s\S]*?\n\}/, 'module loader exists');
 assert(!/renderShell_Build13_2\(d\)/.test(loadModuleBody), 'targeted module refresh does not rerender the whole shell');
 has(/function BH_refreshArchive\(type, after\)[\s\S]*renderArchive\(type \|\| 'projects'\)/, 'archive restore/delete reopens the affected archive view');
