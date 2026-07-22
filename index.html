@@ -2005,7 +2005,7 @@ function restoreArchive(type,id){
       const shouldRefreshOpenTask = type === 'tasks' && isTaskCardOpen(id);
       refreshCore(()=>{
         renderArchive(type);
-        if(shouldRefreshOpenTask) refreshOpenTaskCardAfterMutation(id);
+        if(shouldRefreshOpenTask) openTaskCard(id);
       });
     })
     .withFailureHandler(e=>alert(e.message))
@@ -2593,6 +2593,8 @@ function isTaskCardOpen(id){
 }
 
 function taskCardDataSources(){
+  if(typeof DATA === 'undefined' || !DATA) return [];
+
   const sources = [DATA.tasks, DATA.archiveTasks, DATA.archivedTasks, DATA.taskArchive, DATA.tasksArchive];
 
   if(Array.isArray(DATA.archive)){
@@ -2660,7 +2662,7 @@ delTask = function(id){
 doneTask = function(id){
   if(!canEdit()) return alert('אין לך הרשאה לעריכה');
   google.script.run
-    .withSuccessHandler(()=>refreshCore(()=>refreshOpenTaskCardAfterMutation(id)))
+    .withSuccessHandler(()=>refreshCore(()=>openTaskCard(id)))
     .withFailureHandler(e=>alert(e.message))
     .סימון_משימה_בוצעה({id,authToken:currentToken()});
 }
@@ -2668,7 +2670,7 @@ doneTask = function(id){
 reactivateTask = function(id){
   if(!canEdit()) return alert('אין לך הרשאה לעריכה');
   google.script.run
-    .withSuccessHandler(()=>refreshCore(()=>refreshOpenTaskCardAfterMutation(id)))
+    .withSuccessHandler(()=>refreshCore(()=>openTaskCard(id)))
     .withFailureHandler(e=>alert(e.message))
     .החזרת_משימה_לפעילה({id,authToken:currentToken()});
 }
