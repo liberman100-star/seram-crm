@@ -6931,5 +6931,125 @@ window.calendarTasksForDate = function(d){
 .meeting-contact-chip{display:inline-flex;gap:6px;align-items:center;margin:4px;padding:5px 10px;border-radius:999px;background:#e0f2fe;color:#075985}.meeting-contact-chip button{border:0;background:transparent;font-weight:800;cursor:pointer}.warn{color:#b45309}.meeting-dialog-backdrop{position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:9999;display:flex;align-items:center;justify-content:center}.meeting-dialog{background:#fff;max-width:720px;width:92%;max-height:85vh;overflow:auto;border-radius:14px;padding:18px;box-shadow:0 20px 60px rgba(0,0,0,.25)}.meeting-contact-list{max-height:420px;overflow:auto;margin:12px 0}.meeting-contact-row{display:flex;gap:10px;align-items:flex-start;padding:8px;border-bottom:1px solid #e5e7eb}.meeting-contact-row input{width:auto}
 </style>
 
+<script>
+/* Task card archive/refresh behavior fixes */
+(function(){
+  function safeCoreData(){
+    return (window.DATA && typeof window.DATA === 'object') ? window.DATA : {};
+  }
+
+  window.taskCardDataSources = function(){
+    const data = safeCoreData();
+    return {
+      tasks: Array.isArray(data.tasks) ? data.tasks : [],
+      projects: Array.isArray(data.projects) ? data.projects : [],
+      contacts: Array.isArray(data.contacts) ? data.contacts : [],
+      notes: Array.isArray(data.notes) ? data.notes : []
+    };
+  };
+
+  function taskIdOf(t){ return String((t || {})['מזהה משימה'] || '').trim(); }
+  function findLocalTask(id){
+    const sources = window.taskCardDataSources();
+    return sources.tasks.find(t => taskIdOf(t) === String(id));
+  }
+  function localTaskCardData(id, overrides){
+    const sources = window.taskCardDataSources();
+    const local = Object.assign({}, findLocalTask(id) || {'מזהה משימה': id, 'כותרת': 'משימה'}, overrides || {});
+    const projectId = String(local['מזהה פרויקט'] || '');
+    const contactId = String(local['מזהה איש קשר'] || '');
+    const project = sources.projects.find(p => String(p['מזהה פרויקט'] || '') === projectId) || {};
+    const contact = sources.contacts.find(c => String(c['מזהה איש קשר'] || '') === contactId) || {};
+    return {
+      task: local,
+      projectName: project['שם פרויקט'] || (typeof projectNameById === 'function' ? projectNameById(projectId) : ''),
+      contactName: contact['שם מלא'] || (typeof contactNameById === 'function' ? contactNameById(contactId) : ''),
+      notes: sources.notes.filter(n => String(n['מזהה משימה'] || '') === String(id)),
+      readOnly: String(local['בארכיון'] || '') === 'כן'
+    };
+  }
+  function setOpenTaskId(id){
+    if(window.modalBox){
+      if(id) modalBox.setAttribute('data-open-task-id', String(id));
+      else modalBox.removeAttribute('data-open-task-id');
+    }
+  }
+  function getOpenTaskId(){
+    return window.modalBox ? (modalBox.getAttribute('data-open-task-id') || '') : '';
+  }
+  function openTaskCardFromServer(id){
+    setOpenTaskId(id);
+    google.script.run
+      .withSuccessHandler(d=>{ setOpenTaskId(id); renderTaskCard(d); })
+      .withFailureHandler(e=>alert(e.message))
+      .קבלת_כרטיס_משימה_Build10({id, authToken: currentToken()});
+  }
+
+  window.openTaskCard = openTaskCardFromServer;
+
+  const previousRenderTaskCard = window.renderTaskCard;
+  window.renderTaskCard = function(d){
+    d = d || {};
+    const id = taskIdOf(d.task);
+    if(id) setOpenTaskId(id);
+    const result = previousRenderTaskCard ? previousRenderTaskCard.call(this, d) : undefined;
+    const isArchived = String(((d.task || {})['בארכיון']) || '') === 'כן';
+    if(isArchived && window.modalBox){
+      setOpenTaskId(id);
+      const toolbar = modalBox.querySelector('.toolbar');
+      if(toolbar && id && !toolbar.querySelector('[data-restore-task-archive]')){
+        toolbar.insertAdjacentHTML('afterbegin', `<button class="ok" data-restore-task-archive="true" onclick="restoreArchive('tasks','${esc(id)}')">שחזר מארכיון</button>`);
+      }
+    }
+    return result;
+  };
+
+  window.doneTask = function(id){
+    if(!canEdit()) return alert('אין לך הרשאה לעריכה');
+    google.script.run
+      .withSuccessHandler(()=>refreshCore(()=>openTaskCard(id)))
+      .withFailureHandler(e=>alert(e.message))
+      .סימון_משימה_בוצעה({id, authToken: currentToken()});
+  };
+
+  window.reactivateTask = function(id){
+    if(!canEdit()) return alert('אין לך הרשאה לעריכה');
+    google.script.run
+      .withSuccessHandler(()=>refreshCore(()=>openTaskCard(id)))
+      .withFailureHandler(e=>alert(e.message))
+      .החזרת_משימה_לפעילה({id, authToken: currentToken()});
+  };
+
+  window.delTask = function(id){
+    if(typeof canDelete === 'function' && !canDelete()) return alert('אין לך הרשאה למחיקה');
+    if(!confirm('האם אתה בטוח שברצונך להעביר את המשימה לארכיון?')) return;
+    google.script.run
+      .withSuccessHandler(()=>{
+        renderTaskCard(localTaskCardData(id, {'בארכיון': 'כן'}));
+        refreshCore();
+      })
+      .withFailureHandler(e=>alert(e.message))
+      .מחיקת_משימה({id, authToken: currentToken()});
+  };
+
+  const previousRestoreArchive = window.restoreArchive;
+  window.restoreArchive = function(type, id){
+    if(!confirm('האם לשחזר פריט זה מהארכיון?')) return;
+    const openTaskId = getOpenTaskId();
+    google.script.run
+      .withSuccessHandler(()=>{
+        refreshCore(()=>{
+          if(typeof renderArchive === 'function') renderArchive(type);
+          if(type === 'tasks' && openTaskId && String(openTaskId) === String(id)){
+            openTaskCardFromServer(id);
+          }
+        });
+      })
+      .withFailureHandler(e=>alert(e.message))
+      .שחזור_מארכיון({authToken: currentToken(), type, id});
+  };
+})();
+</script>
+
 </body>
 </html>
