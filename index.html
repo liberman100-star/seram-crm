@@ -2589,7 +2589,14 @@ delContact = function(id){
 }
 
 function isTaskCardOpen(id){
-  return !!(modal && !modal.classList.contains('hidden') && modalBox && modalBox.getAttribute('data-open-task-id') === String(id));
+  return !!(
+    typeof modal !== 'undefined' &&
+    typeof modalBox !== 'undefined' &&
+    modal &&
+    modalBox &&
+    !modal.classList.contains('hidden') &&
+    modalBox.getAttribute('data-open-task-id') === String(id)
+  );
 }
 
 function taskCardDataSources(){
