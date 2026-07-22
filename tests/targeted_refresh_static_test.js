@@ -16,7 +16,27 @@ has(/function saveTaskNote\(taskId\)[\s\S]*withSuccessHandler\(\(\)=>\{\s*openTa
 has(/openTaskCard = function\(id\)\{\s*window\.__BH_OPEN_TASK_CARD_ID__ = String\(id \|\| ''\);[\s\S]*קבלת_כרטיס_משימה_Build10/, 'opening a task card records the open card id before async refresh callbacks run');
 has(/function closeM\(\)\{ modal\.classList\.add\('hidden'\); window\.__BH_OPEN_TASK_CARD_ID__ = ''; \}/, 'closing the modal clears the open task card id');
 has(/function BH_afterTaskMutation\(id\)\{ return function\(\)\{ if\(BH_isTaskCardOpen\(id\)\) openTaskCard\(id\); \}; \}/, 'task mutation callback reopens the currently displayed task card');
-has(/doneTask = function\(id\)\{[\s\S]*BH_refreshTasks\(BH_afterTaskMutation\(id\)\)[\s\S]*סימון_משימה_בוצעה/, 'mark-done refreshes tasks and updates the open task card');
+
+
+function assignmentBody(name){
+  const marker = `${name} = function(id){`;
+  const start = html.indexOf(marker);
+  assert(start !== -1, `${name} assignment exists`);
+  const next = html.indexOf('\n}\n\n', start);
+  assert(next !== -1, `${name} assignment closes`);
+  return html.slice(start, next + 3);
+}
+const delTaskBody = assignmentBody('delTask');
+const doneTaskBody = assignmentBody('doneTask');
+const reactivateTaskBody = assignmentBody('reactivateTask');
+has(/delTask = function\(id\)\{[\s\S]*withSuccessHandler\(\(\)=>\{closeM\(\);BH_refreshTasks\(\);\}\)[\s\S]*מחיקת_משימה/, 'archive task closes modal and refreshes tasks');
+has(/doneTask = function\(id\)\{[\s\S]*withSuccessHandler\(\(\)=>\{openTaskCard\(id\);BH_refreshTasks\(\);\}\)[\s\S]*סימון_משימה_בוצעה/, 'mark-done directly refreshes the task card and task list');
+has(/reactivateTask = function\(id\)\{[\s\S]*withSuccessHandler\(\(\)=>\{openTaskCard\(id\);BH_refreshTasks\(\);\}\)[\s\S]*החזרת_משימה_לפעילה/, 'reactivate directly refreshes the task card and task list');
+for (const [name, body] of Object.entries({delTaskBody, doneTaskBody, reactivateTaskBody})) {
+  assert(!/refreshCore\s*\(/.test(body), `${name} does not call refreshCore`);
+  assert(!/renderShell_Build13_2\s*\(/.test(body), `${name} does not render the shell`);
+}
+
 has(/window\.renderTaskCard = function\(d\)\{\s*const t = d\.task \|\| \{\};\s*const id = esc\(t\['מזהה משימה'\] \|\| ''\);\s*window\.__BH_OPEN_TASK_CARD_ID__ = id;/, 'task card render tracks the open task id');
 has(/window\.openTask = function\(r=\{\}, preset=\{\}\)[\s\S]*<label>איש קשר\$\{BH_requiredMark\('task','מזהה איש קשר'\)\}<\/label>\s*<select id="tContact">/, 'final task editor exposes contact field for all task types');
 has(/window\.sendContactInvitation = function\(contactId\)[\s\S]*BH_refreshContacts\(\(\)=>\{[\s\S]*openContactCardById\(contactId\)/, 'contact invitation refreshes only contacts before reopening card');

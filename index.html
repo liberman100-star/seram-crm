@@ -2589,14 +2589,14 @@ delContact = function(id){
 
 delTask = function(id){
   if(confirm('האם אתה בטוח שברצונך להעביר את המשימה לארכיון?')){
-    google.script.run.withSuccessHandler(()=>BH_refreshTasks()).withFailureHandler(e=>alert(e.message)).מחיקת_משימה({id,authToken:currentToken()});
+    google.script.run.withSuccessHandler(()=>{closeM();BH_refreshTasks();}).withFailureHandler(e=>alert(e.message)).מחיקת_משימה({id,authToken:currentToken()});
   }
 }
 
 doneTask = function(id){
   if(!canEdit()) return alert('אין לך הרשאה לעריכה');
   google.script.run
-    .withSuccessHandler(()=>BH_refreshTasks(BH_afterTaskMutation(id)))
+    .withSuccessHandler(()=>{openTaskCard(id);BH_refreshTasks();})
     .withFailureHandler(e=>alert(e.message))
     .סימון_משימה_בוצעה({id,authToken:currentToken()});
 }
@@ -2604,7 +2604,7 @@ doneTask = function(id){
 reactivateTask = function(id){
   if(!canEdit()) return alert('אין לך הרשאה לעריכה');
   google.script.run
-    .withSuccessHandler(()=>{BH_refreshTasks(()=>openTaskCard(id));})
+    .withSuccessHandler(()=>{openTaskCard(id);BH_refreshTasks();})
     .withFailureHandler(e=>alert(e.message))
     .החזרת_משימה_לפעילה({id,authToken:currentToken()});
 }
