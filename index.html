@@ -2592,31 +2592,68 @@ function isTaskCardOpen(id){
   return !!(modal && !modal.classList.contains('hidden') && modalBox && modalBox.getAttribute('data-open-task-id') === String(id));
 }
 
-function taskCardPayloadFromData(id){
-  const task = (DATA.tasks || []).find(t => String(t['מזהה משימה'] || '') === String(id));
+function taskCardDataSources(){
+  const sources = [DATA.tasks, DATA.archiveTasks, DATA.archivedTasks, DATA.taskArchive, DATA.tasksArchive];
+
+  if(Array.isArray(DATA.archive)){
+    sources.push(DATA.archive);
+  }
+
+  return sources.filter(Array.isArray);
+}
+
+function taskRowById(id){
+  for(const rows of taskCardDataSources()){
+    const task = rows.find(t => String((t || {})['מזהה משימה'] || '') === String(id));
+    if(task) return task;
+  }
+
+  return null;
+}
+
+function taskCardPayloadFromTask(task, forceArchived){
   if(!task) return null;
 
+  const cardTask = Object.assign({}, task);
+  if(forceArchived) cardTask['בארכיון'] = 'כן';
+
   return {
-    task,
-    projectName: projectNameById(task['מזהה פרויקט']),
-    contactName: contactNameById(task['מזהה איש קשר']),
-    notes: (DATA.notes || []).filter(n => String(n['מזהה משימה'] || '') === String(id))
+    task: cardTask,
+    projectName: projectNameById(cardTask['מזהה פרויקט']),
+    contactName: contactNameById(cardTask['מזהה איש קשר']),
+    notes: (DATA.notes || []).filter(n => String(n['מזהה משימה'] || '') === String(cardTask['מזהה משימה'] || ''))
   };
 }
 
-function refreshOpenTaskCardAfterMutation(id){
-  const payload = taskCardPayloadFromData(id);
+function taskCardPayloadFromData(id){
+  return taskCardPayloadFromTask(taskRowById(id), false);
+}
+
+function refreshOpenTaskCardAfterMutation(id, options){
+  options = options || {};
+  const payload = taskCardPayloadFromTask(taskRowById(id), options.forceArchived === true) || taskCardPayloadFromTask(options.fallbackTask, options.forceArchived === true);
+
   if(payload){
     renderTaskCard(payload);
     return;
   }
 
-  openTaskCard(id);
+  if(options.allowOpenFetch !== false){
+    openTaskCard(id);
+  }
 }
 
 delTask = function(id){
   if(confirm('האם אתה בטוח שברצונך להעביר את המשימה לארכיון?')){
-    google.script.run.withSuccessHandler(()=>refreshCore(()=>refreshOpenTaskCardAfterMutation(id))).withFailureHandler(e=>alert(e.message)).מחיקת_משימה({id,authToken:currentToken()});
+    const activeTaskBeforeArchive = Object.assign({}, taskRowById(id) || {}, {'מזהה משימה': id, 'בארכיון': 'כן'});
+    google.script.run
+      .withSuccessHandler(()=>refreshCore(()=>refreshOpenTaskCardAfterMutation(id, {
+        allowOpenFetch: false,
+        fallbackTask: activeTaskBeforeArchive,
+        forceArchived: true
+      })))
+      .withFailureHandler(e=>alert(e.message))
+      .מחיקת_משימה({id,authToken:currentToken()});
   }
 }
 
