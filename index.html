@@ -2600,10 +2600,11 @@ function isTaskCardOpen(id){
 }
 
 function taskCardDataSources(){
-  const sources = [DATA.tasks, DATA.archiveTasks, DATA.archivedTasks, DATA.taskArchive, DATA.tasksArchive];
+  const data = (typeof DATA !== 'undefined' && DATA) ? DATA : {};
+  const sources = [data.tasks, data.archiveTasks, data.archivedTasks, data.taskArchive, data.tasksArchive];
 
-  if(Array.isArray(DATA.archive)){
-    sources.push(DATA.archive);
+  if(Array.isArray(data.archive)){
+    sources.push(data.archive);
   }
 
   return sources.filter(Array.isArray);
