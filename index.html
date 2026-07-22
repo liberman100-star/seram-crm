@@ -2002,7 +2002,11 @@ function restoreArchive(type,id){
 
   google.script.run
     .withSuccessHandler(()=>{
-      refreshCore(()=>renderArchive(type));
+      const shouldRefreshOpenTask = type === 'tasks' && isTaskCardOpen(id);
+      refreshCore(()=>{
+        renderArchive(type);
+        if(shouldRefreshOpenTask) refreshOpenTaskCardAfterMutation(id);
+      });
     })
     .withFailureHandler(e=>alert(e.message))
     .שחזור_מארכיון({
@@ -2584,16 +2588,42 @@ delContact = function(id){
   }
 }
 
+function isTaskCardOpen(id){
+  return !!(modal && !modal.classList.contains('hidden') && modalBox && modalBox.getAttribute('data-open-task-id') === String(id));
+}
+
+function taskCardPayloadFromData(id){
+  const task = (DATA.tasks || []).find(t => String(t['מזהה משימה'] || '') === String(id));
+  if(!task) return null;
+
+  return {
+    task,
+    projectName: projectNameById(task['מזהה פרויקט']),
+    contactName: contactNameById(task['מזהה איש קשר']),
+    notes: (DATA.notes || []).filter(n => String(n['מזהה משימה'] || '') === String(id))
+  };
+}
+
+function refreshOpenTaskCardAfterMutation(id){
+  const payload = taskCardPayloadFromData(id);
+  if(payload){
+    renderTaskCard(payload);
+    return;
+  }
+
+  openTaskCard(id);
+}
+
 delTask = function(id){
   if(confirm('האם אתה בטוח שברצונך להעביר את המשימה לארכיון?')){
-    google.script.run.withSuccessHandler(()=>refreshCore()).withFailureHandler(e=>alert(e.message)).מחיקת_משימה({id,authToken:currentToken()});
+    google.script.run.withSuccessHandler(()=>refreshCore(()=>refreshOpenTaskCardAfterMutation(id))).withFailureHandler(e=>alert(e.message)).מחיקת_משימה({id,authToken:currentToken()});
   }
 }
 
 doneTask = function(id){
   if(!canEdit()) return alert('אין לך הרשאה לעריכה');
   google.script.run
-    .withSuccessHandler(()=>refreshCore())
+    .withSuccessHandler(()=>refreshCore(()=>refreshOpenTaskCardAfterMutation(id)))
     .withFailureHandler(e=>alert(e.message))
     .סימון_משימה_בוצעה({id,authToken:currentToken()});
 }
@@ -2601,7 +2631,7 @@ doneTask = function(id){
 reactivateTask = function(id){
   if(!canEdit()) return alert('אין לך הרשאה לעריכה');
   google.script.run
-    .withSuccessHandler(()=>{refreshCore(()=>openTaskCard(id));})
+    .withSuccessHandler(()=>refreshCore(()=>refreshOpenTaskCardAfterMutation(id)))
     .withFailureHandler(e=>alert(e.message))
     .החזרת_משימה_לפעילה({id,authToken:currentToken()});
 }
@@ -3706,19 +3736,22 @@ function refreshCore(after){
         ? `<button class="primary" onclick="sendCalendarInvite('${id}')">${t['מזהה אירוע ביומן'] ? 'שלח עדכון למשתתפים' : 'שלח זימון למשתתפים'}</button>`
         : '';
 
-    const editButtons = readOnly
-      ? ''
-      : `
-        <button class="primary" onclick='openTask(${JSON.stringify(t)})'>ערוך</button>
-        ${calendarBtn}
-        ${isDone
-          ? `<button class="ok" onclick="reactivateTask('${id}')">החזר לפעיל</button>`
-          : `<button class="ok" onclick="doneTask('${id}')">סמן בוצע</button>`
-        }
-        <button class="danger" onclick="delTask('${id}')">העבר לארכיון</button>
-      `;
+    const editButtons = isArchived
+      ? `<button class="ok" onclick="restoreArchive('tasks','${id}')">שחזר מארכיון</button>`
+      : readOnly
+        ? ''
+        : `
+          <button class="primary" onclick='openTask(${JSON.stringify(t)})'>ערוך</button>
+          ${calendarBtn}
+          ${isDone
+            ? `<button class="ok" onclick="reactivateTask('${id}')">החזר לפעיל</button>`
+            : `<button class="ok" onclick="doneTask('${id}')">סמן בוצע</button>`
+          }
+          <button class="danger" onclick="delTask('${id}')">העבר לארכיון</button>
+        `;
 
     modalBox.className='box small';
+    modalBox.setAttribute('data-open-task-id', String(t['מזהה משימה'] || ''));
     modalBox.innerHTML=`
       <h2>${priorityMark(t['עדיפות'])}${esc(taskDisplayTitle(t)||'משימה')}</h2>
       ${taskDescription(t) ? `<div class="card task-description">${esc(taskDescription(t))}</div>` : ''}
