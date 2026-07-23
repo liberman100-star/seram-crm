@@ -17,4 +17,7 @@ has(html, /function restoreArchive\(type,id\)[\s\S]*?data-open-task-id[\s\S]*?if
 has(html, /delTask = function\(id\)[\s\S]*?fallbackTask = Object\.assign[\s\S]*?'בארכיון':'כן'[\s\S]*?renderTaskCard\(\{task:fallbackTask, notes:\[\], readOnly:true\}\)[\s\S]*?refreshCore\(\(\)=>openTaskCard\(id\)\)/, 'archiving a task keeps the modal open with an archived local fallback, then refreshes and reopens');
 has(html, /setAttribute\('data-open-task-id', id\)/, 'task card preserves data-open-task-id');
 has(html, /const data = \(window\.DATA && DATA\) \|\| \{\};/, 'archive data-source access is guarded when DATA is unavailable');
+has(html, /window\.renderTaskCard = function\(d\)\{ d=d\|\|\{\}; oldTaskCard\(d\);/, 'late task-card grid override guards missing task-card payload');
+has(html, /const data=\(window\.DATA&&DATA\)\|\|\{\}; const c=\(\(Array\.isArray\(data\.contacts\)\?data\.contacts:\[\]\)\)/, 'meeting contact task-card participant lookup guards missing DATA contacts');
+has(html, /const data = \(window\.DATA && DATA\) \|\| \{\};\n    const visibleContacts = \(Array\.isArray\(data\.contacts\) \? data\.contacts : \[\]\)/, 'calendar participant task-card lookup guards missing DATA contacts');
 console.log('task archive/card static assertions passed');

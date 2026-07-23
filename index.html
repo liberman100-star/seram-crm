@@ -6362,7 +6362,7 @@ window.calendarTasksForDate = function(d){
   const oldProjectCard = window.renderProjectCard, oldContactCard = window.renderContactCard, oldTaskCard = window.renderTaskCard;
   window.renderProjectCard = function(d){ oldProjectCard(d); const p=d.project||{}; const grid=modalBox.querySelector('.grid2'); if(grid) grid.innerHTML=cardGrid('project', p); };
   window.renderContactCard = function(d){ oldContactCard(d); const c=d.contact||{}; const grid=modalBox.querySelector('.grid2'); if(grid) grid.innerHTML=cardGrid('contact', c); };
-  window.renderTaskCard = function(d){ oldTaskCard(d); const t=d.task||{}; const grid=modalBox.querySelector('.grid2'); if(grid) grid.innerHTML=cardGrid('task', t, {'משויך לפרויקט':d.projectName||'', 'שם איש קשר':d.contactName||''}); };
+  window.renderTaskCard = function(d){ d=d||{}; oldTaskCard(d); const t=d.task||{}; const grid=modalBox.querySelector('.grid2'); if(grid) grid.innerHTML=cardGrid('task', t, {'משויך לפרויקט':d.projectName||'', 'שם איש קשר':d.contactName||''}); };
 })();
 </script>
 
@@ -6861,7 +6861,7 @@ window.calendarTasksForDate = function(d){
     const ids=splitMeetingIds((task||{})['אנשי קשר בפגישה'] || (task||{}).meetingContactIds || '');
     if(!ids.length) return '<p class="muted">לא נבחרו אנשי קשר לפגישה</p>';
     return '<ul class="calendar-participants-list">'+ids.map(id=>{
-      const c=(DATA.contacts||[]).find(x=>String(x['מזהה איש קשר']||'')===String(id));
+      const data=(window.DATA&&DATA)||{}; const c=((Array.isArray(data.contacts)?data.contacts:[])).find(x=>String(x['מזהה איש קשר']||'')===String(id));
       if(!c) return `<li>${crmEsc(id)} <span class="muted">(איש קשר לא נמצא)</span></li>`;
       const email=String(c['אימייל']||'').trim();
       return `<li>${crmEsc(c['שם מלא']||id)}${email ? ' — '+crmEsc(email) : ' <span class="warn">⚠️ ללא אימייל</span>'}</li>`;
@@ -6870,7 +6870,8 @@ window.calendarTasksForDate = function(d){
   window.renderPersistedCalendarParticipants = function(task){
     const participants = storedParticipants(task || {});
     if(!participants.length) return '<p class="muted">אין משתתפים ביומן</p>';
-    const visibleContacts = (DATA.contacts || []).filter(c=>!(typeof isArchived==='function' && isArchived(c)));
+    const data = (window.DATA && DATA) || {};
+    const visibleContacts = (Array.isArray(data.contacts) ? data.contacts : []).filter(c=>!(typeof isArchived==='function' && isArchived(c)));
     return '<ul class="calendar-participants-list">' + participants.map(email=>{
       const lower = String(email||'').toLowerCase();
       const c = visibleContacts.find(x=>String(x['אימייל']||'').trim().toLowerCase()===lower);
