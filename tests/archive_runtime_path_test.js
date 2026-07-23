@@ -15,7 +15,7 @@ let successHandler;
 const code = [
   'var window = {}; var DATA = {}; window.DATA = DATA; var __BH_LOADED_MODULES__ = {}; var __BH_LOADING_MODULE__ = {};',
   'var renderArchiveCalls = []; var projectsRendered = 0; var contactsRendered = 0; var tasksRendered = 0; var settingsRendered = 0; var dashboardRendered = 0;',
-  'function currentToken(){ return "token"; } function hideModuleLoading_Build13_4(){} function showModuleLoading_Build13_4(){} function clearToken(){} function showLogin(){}',
+  'var document = { getElementById(){ return null; } }; function currentToken(){ return "token"; } function hideModuleLoading_Build13_4(){} function showModuleLoading_Build13_4(){} function clearToken(){} function showLogin(){}',
   'function tableProjects(){ projectsRendered++; } function tableContacts(){ contactsRendered++; } function tableTasks(){ tasksRendered++; } function renderSettings(){ settingsRendered++; } function renderDashboard(){ dashboardRendered++; } function renderShell_Build13_2(d){ mergeData_Build13_2(d); } function applySecurityUI(){}',
   'var google = { script: { run: { withSuccessHandler(fn){ successHandler = fn; return this; }, withFailureHandler(){ return this; }, קבלת_מודול_Build13_2(){} } } };',
   'function canSeeArchive(){ return true; }',
@@ -25,8 +25,10 @@ const code = [
   'function renderArchive(type){ renderArchiveCalls.push(type || "projects"); return renderArchiveOriginal(type || "projects"); }',
   sliceFn('mergeData_Build13_2', 'hasRealModuleData_Build13_2'),
   sliceFn('hasRealModuleData_Build13_2', 'markLoadedModulesFromFullCore_Build13_2'),
+  sliceFn('markLoadedModulesFromFullCore_Build13_2', 'renderShell_Build13_2'),
   sliceFn('archivedRowsFor', 'renderArchive').replace('function archivedRowsFor', 'function archivedRowsFor'),
   sliceFn('renderArchive', 'restoreArchive').replace('function renderArchive', 'function renderArchiveOriginal'),
+  sliceFn('ensureModule_Build13_2', 'showModuleLoading_Build13_4'),
   sliceFn('loadModule_Build13_2', 'renderModule_Build13_2'),
   sliceFn('renderModule_Build13_2', 'refreshCore')
 ].join('\n');
@@ -48,6 +50,28 @@ const archivePayload = {
   contacts:[],
   tasks: sourceTasks.filter(t => String(t['בארכיון'] || '').trim() === 'כן')
 };
+
+
+// Full core contains active projects/tasks but no real archive payload. It must not
+// mark archive as loaded, otherwise ensureModule_Build13_2('archive') would render
+// stale empty DATA.archive.tasks and skip the server module request in production.
+sandbox.__BH_LOADED_MODULES__ = {};
+sandbox.DATA = { projects: [{'מזהה פרויקט':'ACTIVE_P','בארכיון':''}], tasks: [{'מזהה משימה':'ACTIVE','בארכיון':''}], archive: { tasks: [] } };
+sandbox.window.DATA = sandbox.DATA;
+sandbox.markLoadedModulesFromFullCore_Build13_2({
+  dashboard:{projectsCount:1},
+  projects: sandbox.DATA.projects,
+  contacts: [],
+  tasks: sandbox.DATA.tasks
+});
+assert.strictEqual(sandbox.__BH_LOADED_MODULES__.archive, undefined, 'full core active rows do not mark archive as loaded');
+assert.strictEqual(sandbox.hasRealModuleData_Build13_2('archive', {projects: sandbox.DATA.projects, tasks: sandbox.DATA.tasks}), false, 'active core row arrays are not real archive module data');
+
+let moduleRequests = [];
+sandbox.google.script.run.קבלת_מודול_Build13_2 = function(token, module){ moduleRequests.push(module); };
+sandbox.ensureModule_Build13_2('archive');
+assert.deepStrictEqual(moduleRequests, ['archive'], 'entering archive after full core performs real archive module load');
+assert.strictEqual(sandbox.renderArchiveCalls.length, 0, 'archive is not rendered from stale data before the module response');
 
 sandbox.DATA = { archive: { tasks: [] }, tasks: [{'מזהה משימה':'ACTIVE','בארכיון':''}] };
 sandbox.window.DATA = sandbox.DATA;

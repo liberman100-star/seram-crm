@@ -532,7 +532,7 @@ function verifyLoginCode(){
       }catch(e){}
 
       loginMessage.textContent = '';
-      hardRefresh();
+      window.location.replace(CRM_WEB_APP_URL + "?refresh=" + Date.now());
     })
     .withFailureHandler(e=> loginMessage.textContent = e.message)
     .אימות_קוד_כניסה_Build7(email, code);
@@ -3048,7 +3048,15 @@ function hasRealModuleData_Build13_2(moduleName, d){
     );
   }
   if(moduleName === 'archive'){
-    return Array.isArray(d.archive) || Array.isArray(d.archiveProjects) || Array.isArray(d.projects);
+    return Array.isArray(d.archive) ||
+      Array.isArray(d.archiveProjects) ||
+      Array.isArray(d.archiveContacts) ||
+      Array.isArray(d.archiveTasks) ||
+      !!(d.loadedModules && d.loadedModules.archive === true && (
+        Object.prototype.hasOwnProperty.call(d, 'projects') ||
+        Object.prototype.hasOwnProperty.call(d, 'contacts') ||
+        Object.prototype.hasOwnProperty.call(d, 'tasks')
+      ));
   }
   const value = d[moduleName];
   return Array.isArray(value) ? value.length > 0 : value !== undefined && value !== null;
@@ -3900,8 +3908,9 @@ function refreshCore(after){
         if(!res||!res.ok){ loginMessage.textContent=(res&&res.message)||'קוד שגוי'; return; }
         try{ if(res.user) localStorage.setItem('CRM_USER_INFO', JSON.stringify(res.user)); }catch(e){}
         if(typeof setToken==='function') setToken(res.token); else localStorage.setItem('CRM_SESSION_TOKEN',res.token);
+        try{ localStorage.removeItem('crmLastTab'); sessionStorage.removeItem('crmLastTab'); }catch(e){}
         loginMessage.textContent='';
-        if(typeof hardRefresh==='function') hardRefresh(); else window.location.reload();
+        window.location.replace(CRM_WEB_APP_URL + "?refresh=" + Date.now());
       })
       .withFailureHandler(function(e){ loginMessage.textContent=e.message; })
       .אימות_קוד_כניסה_Build7(email,code);
