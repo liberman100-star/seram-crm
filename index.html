@@ -524,6 +524,7 @@ function verifyLoginCode(){
         return;
       }
 
+      try{ if(res.user) localStorage.setItem('CRM_USER_INFO', JSON.stringify(res.user)); }catch(e){}
       setToken(res.token);
 
       try{
@@ -2910,12 +2911,6 @@ renderContactCard = function(d){
     window.addEventListener(ev, resetIdleTimer, {passive:true});
   });
 
-  const oldVerifyLoginCode = window.verifyLoginCode;
-  window.verifyLoginCode = function(){
-    sessionStorage.setItem('CRM_GO_HOME_AFTER_LOGIN','1');
-    return oldVerifyLoginCode.apply(this, arguments);
-  };
-
   function renderModernKpis(){
     const dashboardEl = document.getElementById('dashboard');
     if(!dashboardEl || !(DATA && DATA.dashboard)) return;
@@ -3897,24 +3892,6 @@ function refreshCore(after){
       });
     }catch(e){}
   }
-
-  const oldVerifyFinal=window.verifyLoginCode;
-  window.verifyLoginCode=function(){
-    const email=(loginEmail.value||'').trim();
-    const code=(loginCode.value||'').trim();
-    loginMessage.textContent='בודק קוד...';
-    google.script.run
-      .withSuccessHandler(function(res){
-        if(!res||!res.ok){ loginMessage.textContent=(res&&res.message)||'קוד שגוי'; return; }
-        try{ if(res.user) localStorage.setItem('CRM_USER_INFO', JSON.stringify(res.user)); }catch(e){}
-        if(typeof setToken==='function') setToken(res.token); else localStorage.setItem('CRM_SESSION_TOKEN',res.token);
-        try{ localStorage.removeItem('crmLastTab'); sessionStorage.removeItem('crmLastTab'); }catch(e){}
-        loginMessage.textContent='';
-        window.location.replace(CRM_WEB_APP_URL + "?refresh=" + Date.now());
-      })
-      .withFailureHandler(function(e){ loginMessage.textContent=e.message; })
-      .אימות_קוד_כניסה_Build7(email,code);
-  };
 
   const oldLogoutFinal=window.logout;
   window.logout=function(){

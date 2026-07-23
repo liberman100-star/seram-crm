@@ -3,18 +3,18 @@ const vm = require('vm');
 const assert = require('assert');
 
 const html = fs.readFileSync('index.html', 'utf8');
-const wrapperStart = html.indexOf('const oldVerifyFinal=window.verifyLoginCode;');
-const wrapperEnd = html.indexOf('const oldLogoutFinal=window.logout;', wrapperStart);
-assert(wrapperStart >= 0 && wrapperEnd > wrapperStart, 'final verifyLoginCode wrapper exists');
-const verifyWrapper = html.slice(wrapperStart, wrapperEnd);
+const verifyStart = html.indexOf('function verifyLoginCode(){');
+const verifyEnd = html.indexOf('function backToEmailLogin', verifyStart);
+assert(verifyStart >= 0 && verifyEnd > verifyStart, 'verifyLoginCode function exists');
+assert.strictEqual((html.match(/function verifyLoginCode\(/g) || []).length, 1, 'only one verifyLoginCode function declaration exists');
+assert(!/window\.verifyLoginCode\s*=/.test(html), 'verifyLoginCode is not replaced by a later wrapper');
+assert(!/oldVerify(LoginCode|Final)/.test(html), 'no stale verifyLoginCode wrapper remains');
+const verifyCode = html.slice(verifyStart, verifyEnd);
 
 let successHandler;
 const calls = [];
 const sandbox = {
-  window: {
-    verifyLoginCode(){ calls.push('oldVerify'); },
-    location: { replace(url){ calls.push('replace:' + url); } }
-  },
+  window: { location: { replace(url){ calls.push('replace:' + url); } } },
   loginEmail: { value: ' user@example.com ' },
   loginCode: { value: ' 123456 ' },
   loginMessage: { textContent: '' },
@@ -34,11 +34,10 @@ const sandbox = {
   setToken(token){ calls.push('setToken:' + token); },
   hardRefresh(){ calls.push('hardRefresh'); }
 };
-sandbox.window.location = sandbox.window.location;
 vm.createContext(sandbox);
-vm.runInContext(verifyWrapper, sandbox);
+vm.runInContext(verifyCode, sandbox);
 
-sandbox.window.verifyLoginCode();
+sandbox.verifyLoginCode();
 assert.strictEqual(sandbox.loginMessage.textContent, 'בודק קוד...', 'login status is shown while verifying');
 assert.strictEqual(calls[0], 'verify:user@example.com:123456', 'login code endpoint receives trimmed credentials');
 
