@@ -16,6 +16,7 @@ assert(/links: isCustomer \? archiveLinks : \[\]/.test(helper), 'customer archiv
 assert(/relatedContactIds/.test(helper), 'customer archive derives contact visibility from archive links');
 
 const code = [
+  fn('BH13_4_isArchivedValue_'),
   fn('BH_CAD_projectIdFromRow_'),
   fn('BH_CAD_taskIdFromRow_'),
   fn('BH_CAD_contactIdFromRow_'),
@@ -62,7 +63,7 @@ const user = {role:'לקוח', contactId:'C1'};
 const archive = sandbox.BH13_4_archivePayloadFromCanonical_({auth:{allowed:true}}, data, user);
 const filtered = sandbox.BH_CAD_applySelectedDomainFilter_(archive, user, 'A');
 assert.deepStrictEqual(filtered.projects.map(p=>p['מזהה פרויקט']), ['PA'], 'customer selected domain A cannot see archived project from domain B');
-assert.deepStrictEqual(filtered.tasks.map(t=>t['מזהה משימה']), ['TA'], 'archived task from domain B is excluded');
+assert.deepStrictEqual(filtered.tasks.map(t=>t['מזהה משימה']).sort(), ['TA','TX'], 'customer archive keeps tasks from projects in the selected domain and excludes domain B');
 assert(!filtered.contacts.some(c=>c['מזהה איש קשר']==='CB' || c['מזהה איש קשר']==='CU'), 'unrelated archived contacts are excluded');
 assert(filtered.contacts.some(c=>c['מזהה איש קשר']==='C1'), 'customer own archived contact is preserved when canonically present');
 assert(filtered.links.every(l=>l['מזהה פרויקט']==='PA'), 'archive payload contains no unauthorized links');

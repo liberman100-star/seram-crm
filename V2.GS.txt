@@ -5915,6 +5915,11 @@ function BH_CAD_applySelectedDomainFilter_(canonicalData, user, selectedDomain){
   const selectedProjects = (data.projects || []).filter(p => BH_AD_projectDomain_(p) === selectedDomain);
   const selectedProjectIds = selectedProjects.map(p => BH_CAD_projectIdFromRow_(p)).filter(Boolean);
   const projectIdSet = {}; selectedProjectIds.forEach(id => projectIdSet[id] = true);
+  if(data.loadedModules && data.loadedModules.archive === true && data._archiveTaskProjectDomains){
+    Object.keys(data._archiveTaskProjectDomains || {}).forEach(id => {
+      if(String(data._archiveTaskProjectDomains[id] || "").trim() === selectedDomain) projectIdSet[id] = true;
+    });
+  }
 
   const selectedTasks = (data.tasks || []).filter(t => projectIdSet[BH_CAD_projectIdFromRow_(t)]);
   const taskIdSet = {}; selectedTasks.forEach(t => { const id = BH_CAD_taskIdFromRow_(t); if(id) taskIdSet[id] = true; });
@@ -6378,7 +6383,10 @@ function BH13_4_filterContactsModuleForCustomer_(payload, user, selectedDomain){
 }
 
 function BH13_4_stripInternalPayloadMarkers_(payload){
-  if(payload && typeof payload === "object") delete payload._payloadType;
+  if(payload && typeof payload === "object"){
+    delete payload._payloadType;
+    delete payload._archiveTaskProjectDomains;
+  }
   return payload;
 }
 
@@ -6430,18 +6438,30 @@ var BH13_4_originalOpening_ = קבלת_נתוני_פתיחה_Build13_2;
 };
 
 
+function BH13_4_isArchivedValue_(value){
+  if(value === true) return true;
+  return String(value || '').trim() === 'כן';
+}
+
 function BH13_4_archivePayloadFromCanonical_(baseOut, data, user){
   const role = String(user && user.role || "").trim();
   const isCustomer = role === "לקוח";
-  const archivedProjects = (data.projects || []).filter(r => String(r['בארכיון'] || '') === 'כן');
+  const archivedProjects = (data.projects || []).filter(r => BH13_4_isArchivedValue_(r && r['בארכיון']));
   const archivedProjectIds = {};
   archivedProjects.forEach(p => { const id = String(p['מזהה פרויקט'] || '').trim(); if(id) archivedProjectIds[id] = true; });
   const archiveLinks = (data.links || []).filter(l => archivedProjectIds[String(l['מזהה פרויקט'] || '').trim()]);
+  const archivedTasks = (data.tasks || []).filter(r => BH13_4_isArchivedValue_(r && r['בארכיון']));
+  const archiveTaskProjectDomains = {};
+  (data.projects || []).forEach(p => {
+    const id = String(p['מזהה פרויקט'] || '').trim();
+    if(id) archiveTaskProjectDomains[id] = BH_AD_projectDomain_(p);
+  });
   const out = Object.assign({}, baseOut || {}, {
     projects: archivedProjects,
-    contacts: (data.contacts || []).filter(r => String(r['בארכיון'] || '') === 'כן'),
-    tasks: (data.tasks || []).filter(r => String(r['בארכיון'] || '') === 'כן' && archivedProjectIds[String(r['מזהה פרויקט'] || '').trim()]),
+    contacts: (data.contacts || []).filter(r => BH13_4_isArchivedValue_(r && r['בארכיון'])),
+    tasks: archivedTasks,
     links: isCustomer ? archiveLinks : [],
+    _archiveTaskProjectDomains: archiveTaskProjectDomains,
     loadedModules: { archive:true }
   });
   if(isCustomer){
@@ -6449,7 +6469,7 @@ function BH13_4_archivePayloadFromCanonical_(baseOut, data, user){
     archiveLinks.forEach(l => { const id = String(l['מזהה איש קשר'] || '').trim(); if(id) relatedContactIds[id] = true; });
     const ownId = String(user && user.contactId || '').trim();
     if(ownId && (data.contacts || []).some(c => String(c['מזהה איש קשר'] || '').trim() === ownId)) relatedContactIds[ownId] = true;
-    out.contacts = (data.contacts || []).filter(c => String(c['בארכיון'] || '') === 'כן' && relatedContactIds[String(c['מזהה איש קשר'] || '').trim()]);
+    out.contacts = (data.contacts || []).filter(c => BH13_4_isArchivedValue_(c && c['בארכיון']) && relatedContactIds[String(c['מזהה איש קשר'] || '').trim()]);
   }
   return out;
 }
