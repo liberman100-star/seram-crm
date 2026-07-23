@@ -1935,6 +1935,16 @@ function tableContacts(){
   });
 }
 
+function archivedRowsFor(type){
+  const data = (window.DATA && DATA) || {};
+  const archive = data.archive || {};
+  const key = type === 'tasks' ? 'tasks' : (type === 'contacts' ? 'contacts' : 'projects');
+  const explicitKey = type === 'tasks' ? 'archiveTasks' : (type === 'contacts' ? 'archiveContacts' : 'archiveProjects');
+  if(Array.isArray(archive[key])) return archive[key];
+  if(Array.isArray(data[explicitKey])) return data[explicitKey];
+  return (Array.isArray(data[key]) ? data[key] : []).filter(r => String(r['בארכיון'] || '') === 'כן');
+}
+
 function renderArchive(type='projects'){
   if(!canSeeArchive()){
     archiveContent.innerHTML = '<p>אין לך הרשאה לצפות בארכיון.</p>';
@@ -1948,7 +1958,7 @@ function renderArchive(type='projects'){
 
   if(type === 'projects'){
     title = 'פרויקטים בארכיון';
-    rows = (DATA.projects || []).filter(r => String(r['בארכיון'] || '') === 'כן');
+    rows = archivedRowsFor('projects');
     cols = [
       {key:'שם פרויקט',label:'שם פרויקט'},
       {key:'עיר',label:'עיר'},
@@ -1961,7 +1971,7 @@ function renderArchive(type='projects'){
 
   if(type === 'contacts'){
     title = 'אנשי קשר בארכיון';
-    rows = (DATA.contacts || []).filter(r => String(r['בארכיון'] || '') === 'כן');
+    rows = archivedRowsFor('contacts');
     cols = [
       {key:'שם מלא',label:'שם מלא'},
       {key:'טלפון',label:'טלפון'},
@@ -1974,7 +1984,7 @@ function renderArchive(type='projects'){
 
   if(type === 'tasks'){
     title = 'משימות בארכיון';
-    rows = (DATA.tasks || []).filter(r => String(r['בארכיון'] || '') === 'כן');
+    rows = archivedRowsFor('tasks');
     cols = [
       {key:'כותרת',label:'כותרת'},
       {key:'סוג משימה',label:'סוג'},
@@ -2002,10 +2012,14 @@ function renderArchive(type='projects'){
 
 function restoreArchive(type,id){
   if(!confirm('האם לשחזר פריט זה מהארכיון?')) return;
+  const openTaskId = modalBox && modalBox.getAttribute ? modalBox.getAttribute('data-open-task-id') : '';
 
   google.script.run
     .withSuccessHandler(()=>{
-      refreshCore(()=>renderArchive(type));
+      refreshCore(()=>{
+        if(type === 'tasks' && String(openTaskId || '') === String(id || '')) openTaskCard(id);
+        else renderArchive(type);
+      });
     })
     .withFailureHandler(e=>alert(e.message))
     .שחזור_מארכיון({
@@ -2130,6 +2144,7 @@ function saveTask(id){
 function renderTaskCard(d){
   const t=d.task||{}; const id=esc(t['מזהה משימה']||''); const isDone=t['סטטוס']==='בוצע';
   modalBox.className='box small';
+  if(modalBox && modalBox.setAttribute) modalBox.setAttribute('data-open-task-id', id);
   modalBox.innerHTML=`
     <h2>${priorityMark(t['עדיפות'])}${esc(t['כותרת']||'משימה')}</h2>
     <div class="toolbar"><button class="primary" onclick='openTask(${JSON.stringify(t)})'>ערוך</button>${isDone?`<button class="ok" onclick="reactivateTask('${id}')">החזר לפעיל</button>`:`<button class="ok" onclick="doneTask('${id}')">סמן בוצע</button>`}<button class="danger" onclick="delTask('${id}')">העבר לארכיון</button><button onclick="closeM()">סגור</button></div>
@@ -2252,6 +2267,7 @@ function openTask(r={}, preset={}){
 }
 
 function renderTaskCard(d){
+  d = d || {};
   const t = d.task || {};
   const id = esc(t['מזהה משימה'] || '');
   const isDone = t['סטטוס'] === 'בוצע';
@@ -2272,9 +2288,9 @@ function renderTaskCard(d){
       ? `<button class="primary" onclick="sendCalendarInvite('${id}')">${t['מזהה אירוע ביומן'] ? 'שלח עדכון למשתתפים' : 'שלח זימון למשתתפים'}</button>`
       : '';
 
-  const editButtons = readOnly
-    ? ''
-    : `
+  const editButtons = isArchived
+    ? `<button class="ok" onclick="restoreArchive('tasks','${id}')">שחזר מארכיון</button>`
+    : (readOnly ? '' : `
       <button class="primary" onclick='openTask(${JSON.stringify(t)})'>ערוך</button>
       ${calendarBtn}
       ${isDone
@@ -2282,7 +2298,7 @@ function renderTaskCard(d){
         : `<button class="ok" onclick="doneTask('${id}')">סמן בוצע</button>`
       }
       <button class="danger" onclick="delTask('${id}')">העבר לארכיון</button>
-    `;
+    `);
 
   modalBox.className='box small';
   modalBox.innerHTML=`
@@ -2589,14 +2605,19 @@ delContact = function(id){
 
 delTask = function(id){
   if(confirm('האם אתה בטוח שברצונך להעביר את המשימה לארכיון?')){
-    google.script.run.withSuccessHandler(()=>refreshCore()).withFailureHandler(e=>alert(e.message)).מחיקת_משימה({id,authToken:currentToken()});
+    google.script.run.withSuccessHandler(()=>{
+      const source = ((window.DATA && Array.isArray(DATA.tasks)) ? DATA.tasks : []).find(t=>String(t['מזהה משימה'])===String(id)) || {};
+      const fallbackTask = Object.assign({}, source, {'מזהה משימה':id, 'בארכיון':'כן'});
+      renderTaskCard({task:fallbackTask, notes:[], readOnly:true});
+      refreshCore(()=>openTaskCard(id));
+    }).withFailureHandler(e=>alert(e.message)).מחיקת_משימה({id,authToken:currentToken()});
   }
 }
 
 doneTask = function(id){
   if(!canEdit()) return alert('אין לך הרשאה לעריכה');
   google.script.run
-    .withSuccessHandler(()=>refreshCore())
+    .withSuccessHandler(()=>refreshCore(()=>openTaskCard(id)))
     .withFailureHandler(e=>alert(e.message))
     .סימון_משימה_בוצעה({id,authToken:currentToken()});
 }
@@ -2971,9 +2992,19 @@ function mergeData_Build13_2(d){
   d = d || {};
   DATA = DATA || {};
 
+  const isArchiveModulePayload = d.loadedModules && d.loadedModules.archive === true;
+  if(isArchiveModulePayload){
+    DATA.archive = {
+      projects: Array.isArray(d.projects) ? d.projects : (Array.isArray(d.archiveProjects) ? d.archiveProjects : []),
+      contacts: Array.isArray(d.contacts) ? d.contacts : (Array.isArray(d.archiveContacts) ? d.archiveContacts : []),
+      tasks: Array.isArray(d.tasks) ? d.tasks : (Array.isArray(d.archiveTasks) ? d.archiveTasks : [])
+    };
+  }
+
   Object.keys(d).forEach(function(k){
     if(k === 'realSettings') return;
     if(k === 'loadedModules') return;
+    if(isArchiveModulePayload && (k === 'projects' || k === 'contacts' || k === 'tasks')) return;
 
     if(d[k] !== undefined && d[k] !== null){
       DATA[k] = d[k];
@@ -3689,6 +3720,7 @@ function refreshCore(after){
   };
 
   window.renderTaskCard = function(d){
+    d = d || {};
     const t = d.task || {};
     const id = esc(t['מזהה משימה'] || '');
     const isDone = t['סטטוס'] === 'בוצע';
@@ -3709,9 +3741,9 @@ function refreshCore(after){
         ? `<button class="primary" onclick="sendCalendarInvite('${id}')">${t['מזהה אירוע ביומן'] ? 'שלח עדכון למשתתפים' : 'שלח זימון למשתתפים'}</button>`
         : '';
 
-    const editButtons = readOnly
-      ? ''
-      : `
+    const editButtons = isArchived
+      ? `<button class="ok" onclick="restoreArchive('tasks','${id}')">שחזר מארכיון</button>`
+      : (readOnly ? '' : `
         <button class="primary" onclick='openTask(${JSON.stringify(t)})'>ערוך</button>
         ${calendarBtn}
         ${isDone
@@ -3719,9 +3751,10 @@ function refreshCore(after){
           : `<button class="ok" onclick="doneTask('${id}')">סמן בוצע</button>`
         }
         <button class="danger" onclick="delTask('${id}')">העבר לארכיון</button>
-      `;
+      `);
 
     modalBox.className='box small';
+    if(modalBox && modalBox.setAttribute) modalBox.setAttribute('data-open-task-id', id);
     modalBox.innerHTML=`
       <h2>${priorityMark(t['עדיפות'])}${esc(taskDisplayTitle(t)||'משימה')}</h2>
       ${taskDescription(t) ? `<div class="card task-description">${esc(taskDescription(t))}</div>` : ''}
@@ -6329,7 +6362,7 @@ window.calendarTasksForDate = function(d){
   const oldProjectCard = window.renderProjectCard, oldContactCard = window.renderContactCard, oldTaskCard = window.renderTaskCard;
   window.renderProjectCard = function(d){ oldProjectCard(d); const p=d.project||{}; const grid=modalBox.querySelector('.grid2'); if(grid) grid.innerHTML=cardGrid('project', p); };
   window.renderContactCard = function(d){ oldContactCard(d); const c=d.contact||{}; const grid=modalBox.querySelector('.grid2'); if(grid) grid.innerHTML=cardGrid('contact', c); };
-  window.renderTaskCard = function(d){ oldTaskCard(d); const t=d.task||{}; const grid=modalBox.querySelector('.grid2'); if(grid) grid.innerHTML=cardGrid('task', t, {'משויך לפרויקט':d.projectName||'', 'שם איש קשר':d.contactName||''}); };
+  window.renderTaskCard = function(d){ d=d||{}; oldTaskCard(d); const t=d.task||{}; const grid=modalBox.querySelector('.grid2'); if(grid) grid.innerHTML=cardGrid('task', t, {'משויך לפרויקט':d.projectName||'', 'שם איש קשר':d.contactName||''}); };
 })();
 </script>
 
@@ -6828,7 +6861,7 @@ window.calendarTasksForDate = function(d){
     const ids=splitMeetingIds((task||{})['אנשי קשר בפגישה'] || (task||{}).meetingContactIds || '');
     if(!ids.length) return '<p class="muted">לא נבחרו אנשי קשר לפגישה</p>';
     return '<ul class="calendar-participants-list">'+ids.map(id=>{
-      const c=(DATA.contacts||[]).find(x=>String(x['מזהה איש קשר']||'')===String(id));
+      const data=(window.DATA&&DATA)||{}; const c=((Array.isArray(data.contacts)?data.contacts:[])).find(x=>String(x['מזהה איש קשר']||'')===String(id));
       if(!c) return `<li>${crmEsc(id)} <span class="muted">(איש קשר לא נמצא)</span></li>`;
       const email=String(c['אימייל']||'').trim();
       return `<li>${crmEsc(c['שם מלא']||id)}${email ? ' — '+crmEsc(email) : ' <span class="warn">⚠️ ללא אימייל</span>'}</li>`;
@@ -6837,7 +6870,8 @@ window.calendarTasksForDate = function(d){
   window.renderPersistedCalendarParticipants = function(task){
     const participants = storedParticipants(task || {});
     if(!participants.length) return '<p class="muted">אין משתתפים ביומן</p>';
-    const visibleContacts = (DATA.contacts || []).filter(c=>!(typeof isArchived==='function' && isArchived(c)));
+    const data = (window.DATA && DATA) || {};
+    const visibleContacts = (Array.isArray(data.contacts) ? data.contacts : []).filter(c=>!(typeof isArchived==='function' && isArchived(c)));
     return '<ul class="calendar-participants-list">' + participants.map(email=>{
       const lower = String(email||'').toLowerCase();
       const c = visibleContacts.find(x=>String(x['אימייל']||'').trim().toLowerCase()===lower);
