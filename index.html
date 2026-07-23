@@ -3282,6 +3282,7 @@ function loadModule_Build13_2(module, after){
       }
 
       renderDashboard();
+      renderModule_Build13_2(module);
 
       __BH_LOADED_MODULES__[module] = true;
       const moduleWaiters = window.__BH_MODULE_WAITERS__[module] || [];
@@ -3303,6 +3304,7 @@ function renderModule_Build13_2(module){
     if(module==='contacts') tableContacts();
     if(module==='tasks') tableTasks();
     if(module==='settings') renderSettings();
+    if(module==='archive') renderArchive('projects');
     applySecurityUI();
   }catch(e){ console.log(e); }
 }
