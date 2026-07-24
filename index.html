@@ -1936,6 +1936,12 @@ function tableContacts(){
   });
 }
 
+const ARCHIVE_TASKS_DEBUG = false;
+function archiveTasksDebugLog_Build13_4(label, data){
+  if(!ARCHIVE_TASKS_DEBUG || typeof console === 'undefined') return;
+  console.log('[ARCHIVE_TASKS_DEBUG]', label, data);
+}
+
 function archivedValue_Build13_4(value){
   if(value === true) return true;
   const normalized = String(value || '').trim().toLowerCase();
@@ -1947,9 +1953,17 @@ function archivedRowsFor(type){
   const archive = data.archive || {};
   const key = type === 'tasks' ? 'tasks' : (type === 'contacts' ? 'contacts' : 'projects');
   const explicitKey = type === 'tasks' ? 'archiveTasks' : (type === 'contacts' ? 'archiveContacts' : 'archiveProjects');
-  if(Array.isArray(archive[key])) return archive[key];
-  if(Array.isArray(data[explicitKey])) return data[explicitKey];
-  return (Array.isArray(data[key]) ? data[key] : []).filter(r => archivedValue_Build13_4(r['בארכיון']));
+  if(Array.isArray(archive[key])){
+    if(typeof archiveTasksDebugLog_Build13_4 === 'function') archiveTasksDebugLog_Build13_4('archivedRowsFor', { type:type, rowsLength:archive[key].length });
+    return archive[key];
+  }
+  if(Array.isArray(data[explicitKey])){
+    if(typeof archiveTasksDebugLog_Build13_4 === 'function') archiveTasksDebugLog_Build13_4('archivedRowsFor', { type:type, rowsLength:data[explicitKey].length });
+    return data[explicitKey];
+  }
+  const fallbackRows = (Array.isArray(data[key]) ? data[key] : []).filter(r => archivedValue_Build13_4(r['בארכיון']));
+  if(typeof archiveTasksDebugLog_Build13_4 === 'function') archiveTasksDebugLog_Build13_4('archivedRowsFor', { type:type, rowsLength:fallbackRows.length });
+  return fallbackRows;
 }
 
 function renderArchive(type='projects'){
@@ -1992,6 +2006,7 @@ function renderArchive(type='projects'){
   if(type === 'tasks'){
     title = 'משימות בארכיון';
     rows = archivedRowsFor('tasks');
+    if(typeof archiveTasksDebugLog_Build13_4 === 'function') archiveTasksDebugLog_Build13_4('renderArchive(tasks)', { rowsLength:rows.length });
     cols = [
       {key:'כותרת',label:'כותרת'},
       {key:'סוג משימה',label:'סוג'},
@@ -2995,6 +3010,7 @@ function mergeData_Build13_2(d){
 
   const isArchiveModulePayload = d.loadedModules && d.loadedModules.archive === true;
   if(isArchiveModulePayload){
+    if(typeof archiveTasksDebugLog_Build13_4 === 'function') archiveTasksDebugLog_Build13_4('archive payload received', { payloadTasksLength:Array.isArray(d.tasks) ? d.tasks.length : null, loadedArchive:!!(d.loadedModules && d.loadedModules.archive === true) });
     DATA.archive = {
       projects: Array.isArray(d.projects) ? d.projects : (Array.isArray(d.archiveProjects) ? d.archiveProjects : []),
       contacts: Array.isArray(d.contacts) ? d.contacts : (Array.isArray(d.archiveContacts) ? d.archiveContacts : []),
@@ -3011,6 +3027,10 @@ function mergeData_Build13_2(d){
       DATA[k] = d[k];
     }
   });
+
+  if(isArchiveModulePayload){
+    if(typeof archiveTasksDebugLog_Build13_4 === 'function') archiveTasksDebugLog_Build13_4('after archive merge', { archiveTasksLength:DATA.archive && Array.isArray(DATA.archive.tasks) ? DATA.archive.tasks.length : null, dataTasksLength:Array.isArray(DATA.tasks) ? DATA.tasks.length : null });
+  }
 
   if(d.realSettings){
     DATA.realSettings = Object.assign(DATA.realSettings || {}, d.realSettings || {});
