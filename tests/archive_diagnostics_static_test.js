@@ -4,7 +4,7 @@ const fs = require('fs');
 const gs = fs.readFileSync('V2.GS.txt', 'utf8');
 const html = fs.readFileSync('index.html', 'utf8');
 
-assert(/function BH_DEBUG_archiveTasksPipeline_\(token\)/.test(gs), 'server archive task pipeline diagnostic exists');
+assert(/function BH_DEBUG_archiveTasksPipeline\(token\)/.test(gs), 'server archive task pipeline diagnostic exists');
 assert(/const sheetName = SHEETS\.TASKS;[\s\S]*const rawTasks = readSheet_\(sheetName\);/.test(gs), 'diagnostic reads the canonical tasks sheet');
 assert(/rawArchiveValueSamples[\s\S]*type:typeof value/.test(gs), 'diagnostic returns archive value samples with value types');
 assert(/archivedByFlagCount:archivedRawTasks\.length/.test(gs), 'diagnostic counts raw archived task flags');
@@ -25,6 +25,6 @@ assert(/function archiveTasksServerPipelineDebug_Build13_4\(type\)[\s\S]*type !=
 assert(/currentToken\(\)/.test(html), 'server diagnostic uses the existing token function');
 assert(/withSuccessHandler\(result => \{[\s\S]*console\.log\('\[ARCHIVE_TASKS_DEBUG\]', 'server pipeline diagnostic', result\)/.test(html), 'server diagnostic success handler logs with required prefix');
 assert(/withFailureHandler\(error => \{[\s\S]*console\.error\('\[ARCHIVE_TASKS_DEBUG\]', 'server pipeline diagnostic failed', error\)/.test(html), 'server diagnostic failure handler logs with required prefix');
-assert(/BH_DEBUG_archiveTasksPipeline_\(token\)/.test(html), 'client calls the server archive pipeline diagnostic');
+assert(/BH_DEBUG_archiveTasksPipeline\(token\)/.test(html), 'client calls the server archive pipeline diagnostic');
 
 console.log('archive diagnostics static assertions passed');
