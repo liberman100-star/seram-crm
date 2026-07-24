@@ -3998,12 +3998,16 @@ function BH14_העשרת_נתוני_יומן_(data, user){
   }
 
   const enrichedTasks = (data.tasks || [])
-    .filter(t => String(t["בארכיון"] || "") !== "כן")
+    .filter(t => {
+      if(isSuperAdmin) return true;
+      return String(t["בארכיון"] || "") !== "כן";
+    })
     .filter(t => {
       const projectId = String(t["מזהה פרויקט"] || "").trim();
       if(!projectId) return true;
 
       const p = projectsById[projectId] || {};
+      if(isSuperAdmin) return true;
       return String(p["בארכיון"] || "") !== "כן";
     })
     .map(t => {
@@ -4022,9 +4026,11 @@ function BH14_העשרת_נתוני_יומן_(data, user){
   data.tasks = enrichedTasks;
 
   data.calendarTasks = enrichedTasks.filter(t => {
-    if(isSuperAdmin) return true;
+    if(String(t["בארכיון"] || "") === "כן") return false;
 
     const projectId = String(t["מזהה פרויקט"] || "").trim();
+    if(isSuperAdmin) return true;
+
     const contactId = String(t["מזהה איש קשר"] || "").trim();
 
     if(projectId && allowedProjectIds[projectId]) return true;
