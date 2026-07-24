@@ -1785,20 +1785,34 @@ ${url}
 }
 
 function קבלת_משתמש_מסשן_Build7_(token) {
+  const __authTotalStart = (typeof BH_authPerfStart_ === "function") ? BH_authPerfStart_("auth.total") : Date.now();
   token = String(token || "").trim();
-  if (!token) return { allowed: false, reason: "לא נמצא Session פעיל" };
+  if (!token) { if(typeof BH_authPerfEnd_ === "function") BH_authPerfEnd_("auth.total", __authTotalStart); return { allowed: false, reason: "לא נמצא Session פעיל" }; }
 
-  const session = readSheet_(BUILD7_SESSIONS_SHEET).find(s => s["Token"] === token && s["פעיל"] === "כן");
-  if (!session) return { allowed: false, reason: "Session לא פעיל או לא קיים" };
+  const __tokenStart = (typeof BH_authPerfStart_ === "function") ? BH_authPerfStart_("auth.readSessionToken") : Date.now();
+  BH_authPerfEnd_("auth.readSessionToken", __tokenStart);
+  const __sessionsStart = BH_authPerfStart_("auth.readSessionsSheet");
+  const sessions = readSheet_(BUILD7_SESSIONS_SHEET);
+  BH_authPerfEnd_("auth.readSessionsSheet", __sessionsStart);
+  const __findSessionStart = BH_authPerfStart_("auth.findSession");
+  const session = sessions.find(s => s["Token"] === token && s["פעיל"] === "כן");
+  BH_authPerfEnd_("auth.findSession", __findSessionStart);
+  if (!session) { BH_authPerfEnd_("auth.total", __authTotalStart); return { allowed: false, reason: "Session לא פעיל או לא קיים" }; }
 
+  const __expiryStart = BH_authPerfStart_("auth.validateExpiry");
+  BH_authPerfEnd_("auth.validateExpiry", __expiryStart);
   const email = נרמול_מייל_Build7_(session["מייל"]);
+  const __userStart = BH_authPerfStart_("auth.readUsers_findUser_resolveRole");
   const user = איתור_מורשה_לפי_מייל_Build7_(email);
-  if (!user.allowed) return { allowed: false, reason: user.reason || "אין הרשאה", email };
+  BH_authPerfEnd_("auth.readUsers_findUser_resolveRole", __userStart);
+  if (!user.allowed) { BH_authPerfEnd_("auth.total", __authTotalStart); return { allowed: false, reason: user.reason || "אין הרשאה", email }; }
 
+  const __updateStart = BH_authPerfStart_("auth.updateSession");
   session["עדכון אחרון"] = new Date();
   upsert_(BUILD7_SESSIONS_SHEET, "Token", token, session);
+  BH_authPerfEnd_("auth.updateSession", __updateStart);
 
-    return {
+  const __result = {
     allowed: true,
     email,
     name: user.name || email || "",
@@ -1811,6 +1825,8 @@ function קבלת_משתמש_מסשן_Build7_(token) {
     isOwner: !!user.isOwner,
     token
   };
+  if(typeof BH_authPerfEnd_ === "function") BH_authPerfEnd_("auth.total", __authTotalStart);
+  return __result;
 }
 
 function התנתקות_Build7(token) {
@@ -6195,6 +6211,30 @@ var __BH_REQUEST_PERF__ = null;
 var __BH_REQUEST_ID__ = '';
 var __BH_original_readSheet_perf__ = readSheet_;
 
+function BH_authPerfStart_(label){
+  if(!__BH_REQUEST_PERF__) return Date.now();
+  if(!__BH_REQUEST_PERF__.authentication) __BH_REQUEST_PERF__.authentication = {};
+  if(!__BH_REQUEST_PERF__.authDiagnostics) __BH_REQUEST_PERF__.authDiagnostics = { writesEveryRequest: true, updatesLastActivity: true, cleanupSessionsEveryRequest: false, lockService: false, externalServices: false };
+  return Date.now();
+}
+function BH_authPerfEnd_(label, start){
+  if(!__BH_REQUEST_PERF__) return;
+  const ms = Date.now() - start;
+  __BH_REQUEST_PERF__.authentication[label] = (__BH_REQUEST_PERF__.authentication[label] || 0) + ms;
+  __BH_REQUEST_PERF__.timings[label] = (__BH_REQUEST_PERF__.timings[label] || 0) + ms;
+  Logger.log('[CRM_PERFORMANCE] requestId=' + (__BH_REQUEST_PERF__.requestId || '') + ' ' + label + ' ' + ms + 'ms');
+}
+function BH_mutationPerf_(label, fn, requestId){
+  return BH_withRequestRows_('mutation.' + label, function(){
+    const total = BH_perfStart_('mutation.' + label + '.total');
+    try{
+      const out = fn();
+      BH_perfEnd_('mutation.' + label + '.total', total);
+      return out;
+    }catch(e){ BH_perfEnd_('mutation.' + label + '.total', total); throw e; }
+  }, requestId);
+}
+
 function BH_perfStart_(label){
   if(!__BH_REQUEST_PERF__) __BH_REQUEST_PERF__ = { started: Date.now(), requestId: __BH_REQUEST_ID__ || '', reads: {}, readDurations: {}, timings: {}, payloadBytes: 0, recordCounts: {} };
   return Date.now();
@@ -6283,6 +6323,27 @@ if(BH_perf_originalModuleFinal_){
     }, requestId);
   };
 }
+
+
+/***********************
+ * Build 13.5 – diagnostic-only mutation performance wrappers
+ ***********************/
+var BH_DIAG_originalSaveProject_ = שמירת_פרויקט;
+שמירת_פרויקט = function(data, requestId){ return BH_mutationPerf_('saveProject', function(){ return BH_DIAG_originalSaveProject_(data); }, requestId || (data && data.requestId)); };
+var BH_DIAG_originalSaveContact_ = שמירת_איש_קשר;
+שמירת_איש_קשר = function(data, requestId){ return BH_mutationPerf_('saveContact', function(){ return BH_DIAG_originalSaveContact_(data); }, requestId || (data && data.requestId)); };
+var BH_DIAG_originalSaveTask_ = שמירת_משימה;
+שמירת_משימה = function(data, requestId){ return BH_mutationPerf_('saveTask', function(){ return BH_DIAG_originalSaveTask_(data); }, requestId || (data && data.requestId)); };
+var BH_DIAG_originalSaveLink_ = שמירת_שיוך;
+שמירת_שיוך = function(data, requestId){ return BH_mutationPerf_('saveLink', function(){ return BH_DIAG_originalSaveLink_(data); }, requestId || (data && data.requestId)); };
+var BH_DIAG_originalSaveProjectNote_ = שמירת_הערה_לפרויקט_Build5;
+שמירת_הערה_לפרויקט_Build5 = function(data, requestId){ return BH_mutationPerf_('saveProjectNote', function(){ return BH_DIAG_originalSaveProjectNote_(data); }, requestId || (data && data.requestId)); };
+var BH_DIAG_originalDoneTask_ = סימון_משימה_בוצעה;
+סימון_משימה_בוצעה = function(arg, requestId){ return BH_mutationPerf_('updateTaskStatusDone', function(){ return BH_DIAG_originalDoneTask_(arg); }, requestId || (arg && arg.requestId)); };
+var BH_DIAG_originalRestoreTask_ = החזרת_משימה_לפעילה;
+החזרת_משימה_לפעילה = function(arg, requestId){ return BH_mutationPerf_('updateTaskStatusActive', function(){ return BH_DIAG_originalRestoreTask_(arg); }, requestId || (arg && arg.requestId)); };
+var BH_DIAG_originalRestoreArchive_ = שחזור_מארכיון;
+שחזור_מארכיון = function(arg, requestId){ return BH_mutationPerf_('restoreArchive', function(){ return BH_DIAG_originalRestoreArchive_(arg); }, requestId || (arg && arg.requestId)); };
 
 /***********************
  * Build 13.4 – production lazy shell hardening

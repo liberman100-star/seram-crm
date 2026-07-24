@@ -1269,16 +1269,17 @@ function saveTaskNote(taskId){
     return;
   }
 
+  const __perf=CRM_mutationStart_('saveTaskNote'), __server=CRM_perfNow_();
   google.script.run
     .withSuccessHandler(()=>{
-      openTaskCard(taskId);
+      CRM_mutationSuccess_(__perf,__server,function(done){ openTaskCard(taskId); if(typeof done==='function') done(); });
     })
     .withFailureHandler(e=>alert(e.message))
-    .שמירת_הערת_משימה({
+    .שמירת_הערת_משימה(CRM_mutationPayload_({
       authToken: currentToken(),
       taskId: taskId,
       note: note
-    });
+    }, __perf));
 }
 
 function reactivateTask(id){
@@ -2027,19 +2028,23 @@ function restoreArchive(type,id){
   if(!confirm('האם לשחזר פריט זה מהארכיון?')) return;
   const openTaskId = modalBox && modalBox.getAttribute ? modalBox.getAttribute('data-open-task-id') : '';
 
+  const __perf=CRM_mutationStart_('restoreArchive'), __server=CRM_perfNow_();
   google.script.run
     .withSuccessHandler(()=>{
-      refreshCore(()=>{
-        if(type === 'tasks' && String(openTaskId || '') === String(id || '')) openTaskCard(id);
-        else renderArchive(type);
+      CRM_mutationSuccess_(__perf,__server,function(done,parent){
+        refreshCore(()=>{
+          if(type === 'tasks' && String(openTaskId || '') === String(id || '')) openTaskCard(id);
+          else renderArchive(type);
+          if(typeof done==='function') done();
+        }, parent);
       });
     })
     .withFailureHandler(e=>alert(e.message))
-    .שחזור_מארכיון({
+    .שחזור_מארכיון(CRM_mutationPayload_({
       authToken: currentToken(),
       type,
       id
-    });
+    }, __perf));
 }
 
 function deleteForeverArchive(type,id){
@@ -2576,24 +2581,28 @@ openTaskCard = function(id){ google.script.run.withSuccessHandler(renderTaskCard
 saveProject = function(id){
   if(!canEdit() && id) return alert('אין לך הרשאה לעריכה');
   if(!canCreate() && !id) return alert('אין לך הרשאה להוספה');
-  google.script.run.withSuccessHandler(()=>{closeM();refreshCore();}).withFailureHandler(e=>alert(e.message))
-    .שמירת_פרויקט({authToken:currentToken(),id,name:pName.value,city:pCity.value,type:pType.value,status:pStatus.value,assignmentDomain:(typeof pAssignmentDomain !== 'undefined' ? pAssignmentDomain.value : ''),owner:pOwner.value,tags:pTags.value,drive:pDrive.value});
+  const __perf=CRM_mutationStart_('saveProject'), __server=CRM_perfNow_();
+  google.script.run.withSuccessHandler(()=>{closeM();CRM_mutationSuccess_(__perf,__server,refreshCore);}).withFailureHandler(e=>alert(e.message))
+    .שמירת_פרויקט(CRM_mutationPayload_({authToken:currentToken(),id,name:pName.value,city:pCity.value,type:pType.value,status:pStatus.value,assignmentDomain:(typeof pAssignmentDomain !== 'undefined' ? pAssignmentDomain.value : ''),owner:pOwner.value,tags:pTags.value,drive:pDrive.value}, __perf));
 }
 saveContact = function(id){
   if(!canEdit() && id) return alert('אין לך הרשאה לעריכה');
   if(!canCreate() && !id) return alert('אין לך הרשאה להוספה');
-  google.script.run.withSuccessHandler(()=>{closeM();refreshCore();}).withFailureHandler(e=>alert(e.message))
-    .שמירת_איש_קשר({authToken:currentToken(),id,name:cName.value,phone:cPhone.value,email:cEmail.value,address:cAddress.value,source:cSource.value,contactType:cType.value,status:cStatus.value,tags:cTags.value,owner:cOwner.value,systemPermission:cPermission.value,assignmentCentralDomain:(typeof cCentralAssignmentDomain !== 'undefined' ? cCentralAssignmentDomain.value : ''),assignmentAdditionalDomains:selectedAdditionalAssignmentDomains(),assignmentDomains:selectedAdditionalAssignmentDomains()});
+  const __perf=CRM_mutationStart_('saveContact'), __server=CRM_perfNow_();
+  google.script.run.withSuccessHandler(()=>{closeM();CRM_mutationSuccess_(__perf,__server,refreshCore);}).withFailureHandler(e=>alert(e.message))
+    .שמירת_איש_קשר(CRM_mutationPayload_({authToken:currentToken(),id,name:cName.value,phone:cPhone.value,email:cEmail.value,address:cAddress.value,source:cSource.value,contactType:cType.value,status:cStatus.value,tags:cTags.value,owner:cOwner.value,systemPermission:cPermission.value,assignmentCentralDomain:(typeof cCentralAssignmentDomain !== 'undefined' ? cCentralAssignmentDomain.value : ''),assignmentAdditionalDomains:selectedAdditionalAssignmentDomains(),assignmentDomains:selectedAdditionalAssignmentDomains()}, __perf));
 }
 saveTask = function(id){
   if(!canEdit() && id) return alert('אין לך הרשאה לעריכה');
   if(!canCreate() && !id) return alert('אין לך הרשאה להוספה');
-  google.script.run.withSuccessHandler(()=>{closeM();refreshCore();}).withFailureHandler(e=>alert(e.message))
-    .שמירת_משימה({authToken:currentToken(),id,title:tTitle.value,taskType:tType.value,priority:tPriority.value,date:tDate.value,time:(typeof tTime!=='undefined'?tTime.value:''),endTime:(typeof tEndTime!=='undefined'?tEndTime.value:''),addToCalendar:(typeof tCalendar!=='undefined'?tCalendar.value:'לא'),calendarGuests:selectedCalendarGuests(),status:tStatus.value,projectId:tProject.value,contactId:tContact.value,owner:tOwner.value,taskNotes:tTaskNotes.value});
+  const __perf=CRM_mutationStart_('saveTask'), __server=CRM_perfNow_();
+  google.script.run.withSuccessHandler(()=>{closeM();CRM_mutationSuccess_(__perf,__server,refreshCore);}).withFailureHandler(e=>alert(e.message))
+    .שמירת_משימה(CRM_mutationPayload_({authToken:currentToken(),id,title:tTitle.value,taskType:tType.value,priority:tPriority.value,date:tDate.value,time:(typeof tTime!=='undefined'?tTime.value:''),endTime:(typeof tEndTime!=='undefined'?tEndTime.value:''),addToCalendar:(typeof tCalendar!=='undefined'?tCalendar.value:'לא'),calendarGuests:selectedCalendarGuests(),status:tStatus.value,projectId:tProject.value,contactId:tContact.value,owner:tOwner.value,taskNotes:tTaskNotes.value}, __perf));
 }
 saveLink = function(projectId,contactId,role,portal,cb){
   if(!canEdit()) return alert('אין לך הרשאה לעריכת שיוכים');
-  google.script.run.withSuccessHandler(()=>{refreshCore(cb);}).withFailureHandler(e=>alert(e.message)).שמירת_שיוך({authToken:currentToken(),projectId,contactId,role,portal});
+  const __perf=CRM_mutationStart_('saveLink'), __server=CRM_perfNow_();
+  google.script.run.withSuccessHandler(()=>{CRM_mutationSuccess_(__perf,__server,function(done,parent){ refreshCore(function(){ if(typeof cb==='function') cb(); if(typeof done==='function') done(); }, parent); });}).withFailureHandler(e=>alert(e.message)).שמירת_שיוך(CRM_mutationPayload_({authToken:currentToken(),projectId,contactId,role,portal}, __perf));
 }
 deleteLink = function(id,cb){
   if(confirm('להסיר שיוך?')){
@@ -3010,6 +3019,31 @@ function CRM_logServerDiagnostics_(requestId, d){
   console.log('[CRM_PERFORMANCE] requestId=' + requestId + ' server diagnostics', d.performanceDiagnostics);
 }
 
+function CRM_mutationStart_(mutation){
+  const perf = CRM_newPerfRequest_('mutation=' + mutation);
+  perf.mutation = mutation;
+  CRM_perfLog_(perf.requestId, 'mutation=' + mutation + ' server call started');
+  return perf;
+}
+function CRM_mutationPayload_(payload, perf){
+  payload = payload || {};
+  if(perf && perf.requestId) payload.requestId = perf.requestId;
+  return payload;
+}
+function CRM_mutationSuccess_(perf, serverStart, refreshFn){
+  CRM_perfLog_(perf.requestId, 'mutation=' + perf.mutation + ' server call finished');
+  CRM_perfLog_(perf.requestId, 'mutation=' + perf.mutation + ' server round trip', CRM_perfElapsed_(serverStart));
+  const refreshStart = CRM_perfNow_();
+  if(typeof refreshFn === 'function'){
+    refreshFn(function(){
+      CRM_perfLog_(perf.requestId, 'mutation=' + perf.mutation + ' refresh after mutation', CRM_perfElapsed_(refreshStart));
+      CRM_perfLog_(perf.requestId, 'mutation=' + perf.mutation + ' total', CRM_perfElapsed_(perf.started));
+    }, perf.requestId);
+  } else {
+    CRM_perfLog_(perf.requestId, 'mutation=' + perf.mutation + ' total', CRM_perfElapsed_(perf.started));
+  }
+}
+
 function activeSectionId_Build13_2(){
   const sec = Array.from(document.querySelectorAll('main section')).find(s=>!s.classList.contains('hidden'));
   return sec ? sec.id : 'dashboard';
@@ -3376,7 +3410,7 @@ function renderModule_Build13_2(module){
 }
 
 
-function refreshCore(after){
+function refreshCore(after, parentRequestId){
   window.__BH_CORE_REFRESH_WAITERS__ = window.__BH_CORE_REFRESH_WAITERS__ || [];
 
   if(window.__BH_CORE_REFRESHING__){
@@ -3395,8 +3429,14 @@ function refreshCore(after){
     return;
   }
 
+  const __refreshPerf = CRM_newPerfRequest_(parentRequestId ? ('refreshCore parentRequestId=' + parentRequestId) : 'refreshCore');
+  const __refreshServerStart = CRM_perfNow_();
+  CRM_perfLog_(__refreshPerf.requestId, 'server call started קבלת_נתוני_ליבה_Build13 parentRequestId=' + (parentRequestId || ''));
   google.script.run
     .withSuccessHandler(d=>{
+      CRM_perfLog_(__refreshPerf.requestId, 'server call finished קבלת_נתוני_ליבה_Build13 parentRequestId=' + (parentRequestId || ''));
+      CRM_perfLog_(__refreshPerf.requestId, 'server round trip parentRequestId=' + (parentRequestId || ''), CRM_perfElapsed_(__refreshServerStart));
+      CRM_logServerDiagnostics_(__refreshPerf.requestId, d);
       if(window.BH_isCustomerDomainSelectionRequired && window.BH_isCustomerDomainSelectionRequired(d)){
         window.__BH_CORE_REFRESHING__ = false;
         window.__BH_CORE_REFRESH_WAITERS__ = [];
@@ -3440,13 +3480,14 @@ function refreshCore(after){
       waiters.forEach(cb=>{
         try{ cb(); }catch(err){ console.log(err); }
       });
+      CRM_perfLog_(__refreshPerf.requestId, 'total parentRequestId=' + (parentRequestId || ''), CRM_perfElapsed_(__refreshPerf.started));
     })
     .withFailureHandler(e=>{
       window.__BH_CORE_REFRESHING__ = false;
       window.__BH_CORE_REFRESH_WAITERS__ = [];
       alert(e.message);
     })
-    .קבלת_נתוני_ליבה_Build13(token);
+    .קבלת_נתוני_ליבה_Build13(token, __refreshPerf.requestId);
 }
 </script>
 
