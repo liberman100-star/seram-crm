@@ -1956,7 +1956,7 @@ function archiveTasksServerPipelineDebug_Build13_4(type){
     .withFailureHandler(error => {
       console.error('[ARCHIVE_TASKS_DEBUG]', 'server pipeline diagnostic failed', error);
     })
-    .BH_DEBUG_archiveTasksPipeline_(token);
+    .BH_DEBUG_archiveTasksPipeline(token);
 }
 
 function archivedValue_Build13_4(value){

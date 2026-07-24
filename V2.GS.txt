@@ -6476,7 +6476,7 @@ function BH13_4_archivePayloadFromCanonical_(baseOut, data, user){
 }
 
 
-function BH_DEBUG_archiveTasksPipeline_(token){
+function BH_DEBUG_archiveTasksPipeline(token){
   איפוס_מטמון_קריאה_Build13_();
   const user = קבלת_משתמש_מסשן_Build7_(token);
   if(!user || !user.allowed) return { auth:{ allowed:false, reason:user && user.reason || "אין הרשאה" } };
