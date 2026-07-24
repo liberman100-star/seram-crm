@@ -6475,6 +6475,55 @@ function BH13_4_archivePayloadFromCanonical_(baseOut, data, user){
   return out;
 }
 
+
+function BH_DEBUG_archiveTasksPipeline_(token){
+  איפוס_מטמון_קריאה_Build13_();
+  const user = קבלת_משתמש_מסשן_Build7_(token);
+  if(!user || !user.allowed) return { auth:{ allowed:false, reason:user && user.reason || "אין הרשאה" } };
+  const sheetName = SHEETS.TASKS;
+  const rawTasks = readSheet_(sheetName);
+  const rawArchiveValueSamples = [];
+  const seen = {};
+  (rawTasks || []).forEach(t => {
+    const value = t && t['בארכיון'];
+    const key = (typeof value) + ':' + String(value);
+    if(rawArchiveValueSamples.length < 20 && !seen[key]){
+      seen[key] = true;
+      rawArchiveValueSamples.push({ value:value, type:typeof value });
+    }
+  });
+  const archivedRawTasks = (rawTasks || []).filter(r => BH13_4_isArchivedValue_(r && r['בארכיון']));
+
+  const canonical = קבלת_נתונים_Build7(token);
+  const afterPermissionTasks = (canonical && canonical.tasks) || [];
+  const archivedAfterPermission = afterPermissionTasks.filter(r => BH13_4_isArchivedValue_(r && r['בארכיון']));
+
+  const baseOut = { auth:{ allowed:true }, currentUser:canonical && canonical.currentUser || user };
+  const archivePayload = BH13_4_archivePayloadFromCanonical_(baseOut, canonical || {}, user);
+  const afterDomainPayload = BH13_4_applyCustomerDomainIfNeeded_(Object.assign({}, archivePayload), token, 'archive') || {};
+  const payloadTasks = Array.isArray(afterDomainPayload.tasks) ? afterDomainPayload.tasks : [];
+
+  return {
+    auth:{ allowed:true },
+    sheetName:sheetName,
+    archiveColumnName:'בארכיון',
+    taskFieldNames:Object.keys((rawTasks && rawTasks[0]) || {}),
+    possibleArchiveFieldNames:Object.keys((rawTasks && rawTasks[0]) || {}).filter(k => /ארכיון/.test(String(k))),
+    totalTasks:rawTasks.length,
+    totalTasksFromSheet:rawTasks.length,
+    rawArchiveValueSamples:rawArchiveValueSamples,
+    archivedByFlagCount:archivedRawTasks.length,
+    archivedTaskIds:archivedRawTasks.map(t => String(t['מזהה משימה'] || '').trim()).filter(Boolean),
+    currentUserRole:String((user && user.role) || '').trim(),
+    currentUserIsOwner:user && user.isOwner === true,
+    afterPermissionCount:archivedAfterPermission.length,
+    afterDomainCount:payloadTasks.length,
+    afterProjectCount:payloadTasks.length,
+    payloadTasksCount:payloadTasks.length,
+    payloadTaskIds:payloadTasks.map(t => String(t['מזהה משימה'] || '').trim()).filter(Boolean)
+  };
+}
+
 var BH13_4_originalModule_ = קבלת_מודול_Build13_2;
 קבלת_מודול_Build13_2 = function(token, moduleName){
   return BH_withRequestRows_('קבלת_מודול_Build13_2:' + moduleName, function(){
