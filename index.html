@@ -1936,10 +1936,27 @@ function tableContacts(){
   });
 }
 
-const ARCHIVE_TASKS_DEBUG = false;
+const ARCHIVE_TASKS_DEBUG = true;
+let ARCHIVE_TASKS_SERVER_DEBUG_RAN = false;
 function archiveTasksDebugLog_Build13_4(label, data){
   if(!ARCHIVE_TASKS_DEBUG || typeof console === 'undefined') return;
   console.log('[ARCHIVE_TASKS_DEBUG]', label, data);
+}
+
+
+function archiveTasksServerPipelineDebug_Build13_4(type){
+  if(type !== 'tasks' || !ARCHIVE_TASKS_DEBUG || ARCHIVE_TASKS_SERVER_DEBUG_RAN) return;
+  ARCHIVE_TASKS_SERVER_DEBUG_RAN = true;
+  const token = (typeof currentToken === 'function') ? currentToken() : '';
+  if(!token || !window.google || !google.script || !google.script.run) return;
+  google.script.run
+    .withSuccessHandler(result => {
+      console.log('[ARCHIVE_TASKS_DEBUG]', 'server pipeline diagnostic', result);
+    })
+    .withFailureHandler(error => {
+      console.error('[ARCHIVE_TASKS_DEBUG]', 'server pipeline diagnostic failed', error);
+    })
+    .BH_DEBUG_archiveTasksPipeline_(token);
 }
 
 function archivedValue_Build13_4(value){
@@ -1967,6 +1984,7 @@ function archivedRowsFor(type){
 }
 
 function renderArchive(type='projects'){
+  if(typeof archiveTasksServerPipelineDebug_Build13_4 === 'function') archiveTasksServerPipelineDebug_Build13_4(type);
   if(!canSeeArchive()){
     archiveContent.innerHTML = '<p>אין לך הרשאה לצפות בארכיון.</p>';
     return;
