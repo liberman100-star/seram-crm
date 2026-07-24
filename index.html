@@ -1936,6 +1936,12 @@ function tableContacts(){
   });
 }
 
+function archivedValue_Build13_4(value){
+  if(value === true) return true;
+  const normalized = String(value || '').trim().toLowerCase();
+  return normalized === 'כן' || normalized === 'true' || normalized === '1';
+}
+
 function archivedRowsFor(type){
   const data = (window.DATA && DATA) || {};
   const archive = data.archive || {};
@@ -1943,7 +1949,7 @@ function archivedRowsFor(type){
   const explicitKey = type === 'tasks' ? 'archiveTasks' : (type === 'contacts' ? 'archiveContacts' : 'archiveProjects');
   if(Array.isArray(archive[key])) return archive[key];
   if(Array.isArray(data[explicitKey])) return data[explicitKey];
-  return (Array.isArray(data[key]) ? data[key] : []).filter(r => String(r['בארכיון'] || '') === 'כן');
+  return (Array.isArray(data[key]) ? data[key] : []).filter(r => archivedValue_Build13_4(r['בארכיון']));
 }
 
 function renderArchive(type='projects'){

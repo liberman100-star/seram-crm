@@ -6440,7 +6440,8 @@ var BH13_4_originalOpening_ = קבלת_נתוני_פתיחה_Build13_2;
 
 function BH13_4_isArchivedValue_(value){
   if(value === true) return true;
-  return String(value || '').trim() === 'כן';
+  const normalized = String(value || '').trim().toLowerCase();
+  return normalized === 'כן' || normalized === 'true' || normalized === '1';
 }
 
 function BH13_4_archivePayloadFromCanonical_(baseOut, data, user){
