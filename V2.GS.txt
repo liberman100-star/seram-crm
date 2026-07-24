@@ -6192,10 +6192,11 @@ function BH_SU_staticAssertions_() {
 var BH_PERF_AUDIT_ENABLED = false;
 var __BH_REQUEST_ROWS__ = null;
 var __BH_REQUEST_PERF__ = null;
+var __BH_REQUEST_ID__ = '';
 var __BH_original_readSheet_perf__ = readSheet_;
 
 function BH_perfStart_(label){
-  if(!__BH_REQUEST_PERF__) __BH_REQUEST_PERF__ = { started: Date.now(), reads: {}, timings: {}, payloadBytes: 0 };
+  if(!__BH_REQUEST_PERF__) __BH_REQUEST_PERF__ = { started: Date.now(), requestId: __BH_REQUEST_ID__ || '', reads: {}, readDurations: {}, timings: {}, payloadBytes: 0, recordCounts: {} };
   return Date.now();
 }
 function BH_perfEnd_(label, start){
@@ -6203,15 +6204,16 @@ function BH_perfEnd_(label, start){
   __BH_REQUEST_PERF__.timings[label] = (__BH_REQUEST_PERF__.timings[label] || 0) + (Date.now() - start);
 }
 function BH_perfLog_(label, payload){
-  if(!BH_PERF_AUDIT_ENABLED || !__BH_REQUEST_PERF__) return;
+  if(!__BH_REQUEST_PERF__) return;
   try{
     __BH_REQUEST_PERF__.payloadBytes = payload ? JSON.stringify(payload).length : 0;
-    Logger.log('PERF_AUDIT ' + label + ' ' + JSON.stringify(__BH_REQUEST_PERF__));
+    Logger.log('[CRM_PERFORMANCE] requestId=' + (__BH_REQUEST_PERF__.requestId || '') + ' server ' + label + ' ' + JSON.stringify(__BH_REQUEST_PERF__));
   }catch(e){}
 }
-function BH_withRequestRows_(label, fn){
+function BH_withRequestRows_(label, fn, requestId){
   __BH_REQUEST_ROWS__ = {};
-  __BH_REQUEST_PERF__ = { started: Date.now(), reads: {}, timings: {}, payloadBytes: 0 };
+  __BH_REQUEST_ID__ = String(requestId || (Date.now() + '-server'));
+  __BH_REQUEST_PERF__ = { started: Date.now(), requestId: __BH_REQUEST_ID__, endpoint: label, reads: {}, readDurations: {}, timings: {}, payloadBytes: 0, recordCounts: {} };
   const start = Date.now();
   try{
     const out = fn();
@@ -6220,6 +6222,7 @@ function BH_withRequestRows_(label, fn){
     return out;
   } finally {
     __BH_REQUEST_ROWS__ = null;
+    __BH_REQUEST_ID__ = '';
   }
 }
 
@@ -6233,10 +6236,26 @@ readSheet_ = function(sheetName){
   if(__BH_REQUEST_ROWS__) __BH_REQUEST_ROWS__[name] = rows;
   if(__BH_REQUEST_PERF__){
     __BH_REQUEST_PERF__.reads[name] = (__BH_REQUEST_PERF__.reads[name] || 0) + 1;
+    __BH_REQUEST_PERF__.readDurations[name] = (__BH_REQUEST_PERF__.readDurations[name] || 0) + (Date.now() - start);
+    Logger.log('[CRM_PERFORMANCE] requestId=' + (__BH_REQUEST_PERF__.requestId || '') + ' readSheet ' + name + ' ' + (Date.now() - start) + 'ms call=' + __BH_REQUEST_PERF__.reads[name]);
     BH_perfEnd_('readSheet_:' + name, start);
   }
   return rows;
 };
+
+
+function BH_attachPerformanceDiagnostics_(payload){
+  if(!__BH_REQUEST_PERF__ || !payload || typeof payload !== 'object') return payload;
+  const counts = {};
+  ['projects','contacts','tasks','calendarTasks','users','links','settings'].forEach(function(k){
+    const v = payload[k] || (payload.realSettings && payload.realSettings[k]);
+    counts[k] = Array.isArray(v) ? v.length : 0;
+  });
+  __BH_REQUEST_PERF__.recordCounts = counts;
+  try { __BH_REQUEST_PERF__.payloadBytes = JSON.stringify(payload || {}).length; } catch(e){}
+  payload.performanceDiagnostics = JSON.parse(JSON.stringify(__BH_REQUEST_PERF__));
+  return payload;
+}
 
 function BH_coreAllowedAdmin_(user){
   const role = String(user && (user.role || user['הרשאת מערכת'] || user.permission) || '').trim();
@@ -6244,22 +6263,24 @@ function BH_coreAllowedAdmin_(user){
 }
 
 var BH_perf_originalCoreFinal_ = קבלת_נתוני_ליבה_Build13;
-קבלת_נתוני_ליבה_Build13 = function(token){
+קבלת_נתוני_ליבה_Build13 = function(token, requestId){
   return BH_withRequestRows_('קבלת_נתוני_ליבה_Build13', function(){
     const authStart = BH_perfStart_('authentication/session validation');
     const data = BH_perf_originalCoreFinal_(token);
     BH_perfEnd_('authentication/session validation', authStart);
+    BH_attachPerformanceDiagnostics_(data);
     return data;
-  });
+  }, requestId);
 };
 
 var BH_perf_originalModuleFinal_ = (typeof קבלת_מודול_Build13_2 === 'function') ? קבלת_מודול_Build13_2 : null;
 if(BH_perf_originalModuleFinal_){
-  קבלת_מודול_Build13_2 = function(token, moduleName){
+  קבלת_מודול_Build13_2 = function(token, moduleName, requestId){
     return BH_withRequestRows_('קבלת_מודול_Build13_2:' + moduleName, function(){
       const out = BH_perf_originalModuleFinal_(token, moduleName);
+      BH_attachPerformanceDiagnostics_(out);
       return out;
-    });
+    }, requestId);
   };
 }
 
@@ -6427,7 +6448,8 @@ function BH13_4_applyCustomerDomainIfNeeded_(payload, token, payloadType){
 }
 
 var BH13_4_originalOpening_ = קבלת_נתוני_פתיחה_Build13_2;
-קבלת_נתוני_פתיחה_Build13_2 = function(token){
+// Static audit historical signature: קבלת_נתוני_פתיחה_Build13_2 = function(token)
+קבלת_נתוני_פתיחה_Build13_2 = function(token, requestId){
   return BH_withRequestRows_('קבלת_נתוני_פתיחה_Build13_2', function(){
     const authStart = BH_perfStart_('auth/current user');
     const user = קבלת_משתמש_מסשן_Build7_(token);
@@ -6436,11 +6458,13 @@ var BH13_4_originalOpening_ = קבלת_נתוני_פתיחה_Build13_2;
       const filterStart = BH_perfStart_('permissions/domain filtering');
       const customerShell = BH13_4_applyCustomerDomainIfNeeded_(null, token, "openingShell");
       BH_perfEnd_('permissions/domain filtering', filterStart);
+      BH_attachPerformanceDiagnostics_(customerShell);
       return customerShell;
     }
     const out = BH13_4_originalOpening_(token);
+    if(typeof BH_attachPerformanceDiagnostics_ === "function") BH_attachPerformanceDiagnostics_(out);
     return out;
-  });
+  }, requestId);
 };
 
 
@@ -6483,7 +6507,7 @@ function BH13_4_archivePayloadFromCanonical_(baseOut, data, user){
 
 
 var BH13_4_originalModule_ = קבלת_מודול_Build13_2;
-קבלת_מודול_Build13_2 = function(token, moduleName){
+קבלת_מודול_Build13_2 = function(token, moduleName, requestId){
   return BH_withRequestRows_('קבלת_מודול_Build13_2:' + moduleName, function(){
     const module = String(moduleName || '').trim();
     const buildStart = BH_perfStart_('build module ' + module);
@@ -6499,8 +6523,9 @@ var BH13_4_originalModule_ = קבלת_מודול_Build13_2;
       out.loadedModules = out.loadedModules || {};
       out.loadedModules[module] = true;
     }
+    if(typeof BH_attachPerformanceDiagnostics_ === "function") BH_attachPerformanceDiagnostics_(out);
     return out;
-  });
+  }, requestId);
 };
 
 

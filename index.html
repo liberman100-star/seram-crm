@@ -2990,12 +2990,34 @@ renderContactCard = function(d){
 let __BH_LOADED_MODULES__ = {};
 let __BH_LOADING_MODULE__ = {};
 
+const PERFORMANCE_DEBUG = true;
+window.__CRM_PERF_REQUEST_SEQ__ = window.__CRM_PERF_REQUEST_SEQ__ || 0;
+function CRM_perfNow_(){ return (window.performance && typeof performance.now === 'function') ? performance.now() : Date.now(); }
+function CRM_perfLog_(requestId, message, value){
+  if(!PERFORMANCE_DEBUG) return;
+  const suffix = value !== undefined ? ' ' + value : '';
+  console.log('[CRM_PERFORMANCE] requestId=' + requestId + ' ' + message + suffix);
+}
+function CRM_newPerfRequest_(label){
+  const id = Date.now() + '-' + (++window.__CRM_PERF_REQUEST_SEQ__);
+  const started = CRM_perfNow_();
+  CRM_perfLog_(id, label + ' started');
+  return { requestId: id, started: started };
+}
+function CRM_perfElapsed_(start){ return Math.round(CRM_perfNow_() - start) + 'ms'; }
+function CRM_logServerDiagnostics_(requestId, d){
+  if(!PERFORMANCE_DEBUG || !d || !d.performanceDiagnostics) return;
+  console.log('[CRM_PERFORMANCE] requestId=' + requestId + ' server diagnostics', d.performanceDiagnostics);
+}
+
 function activeSectionId_Build13_2(){
   const sec = Array.from(document.querySelectorAll('main section')).find(s=>!s.classList.contains('hidden'));
   return sec ? sec.id : 'dashboard';
 }
 
 function mergeData_Build13_2(d){
+  const __perfStart = (typeof CRM_perfNow_ === 'function' ? CRM_perfNow_() : Date.now());
+  const __perfRequestId = (d && d.performanceDiagnostics && d.performanceDiagnostics.requestId) || 'client-only';
   d = d || {};
   DATA = DATA || {};
 
@@ -3040,6 +3062,7 @@ function mergeData_Build13_2(d){
     DATA.canSeeSettings === true ||
     (DATA.currentUser && DATA.currentUser.isOwner === true) ||
     String((DATA.currentUser && DATA.currentUser.role) || '').trim() === 'מנהל ראשי';
+  if(typeof CRM_perfLog_ === 'function') CRM_perfLog_(__perfRequestId, 'mergeData_Build13_2', CRM_perfElapsed_(__perfStart));
 }
 
 function hasRealModuleData_Build13_2(moduleName, d){
@@ -3139,13 +3162,16 @@ function renderShell_Build13_2(d){
     btn_archive.style.display = (typeof canSeeArchive === 'function' && canSeeArchive()) ? '' : 'none';
   }
 
+  const __dashboardStart = CRM_perfNow_();
   try{ renderDashboard(); }catch(e){ console.log(e); }
+  CRM_perfLog_((d && d.performanceDiagnostics && d.performanceDiagnostics.requestId) || 'client-only', 'renderDashboard', CRM_perfElapsed_(__dashboardStart));
   try{ if(typeof renderModernKpis === 'function') renderModernKpis(); }catch(e){}
   try{ applySecurityUI(); }catch(e){}
 }
 
 window.__BH_CORE_LOAD_WAITERS__ = window.__BH_CORE_LOAD_WAITERS__ || [];
 function load(forceDashboard=true, after){
+  const __loadPerf = CRM_newPerfRequest_('load');
   if(window.__BH_CORE_LOADING__){
     if(typeof after === 'function') window.__BH_CORE_LOAD_WAITERS__.push(after);
     return;
@@ -3160,9 +3186,14 @@ function load(forceDashboard=true, after){
     return;
   }
 
+  CRM_perfLog_(__loadPerf.requestId, 'server call started קבלת_נתוני_ליבה_Build13');
+  const __serverStart = CRM_perfNow_();
   google.script.run
     .withSuccessHandler(d=>{
       window.__BH_CORE_LOADING__ = false;
+      CRM_perfLog_(__loadPerf.requestId, 'server call finished קבלת_נתוני_ליבה_Build13');
+      CRM_perfLog_(__loadPerf.requestId, 'server round trip', CRM_perfElapsed_(__serverStart));
+      CRM_logServerDiagnostics_(__loadPerf.requestId, d);
       if(window.BH_isCustomerDomainSelectionRequired && window.BH_isCustomerDomainSelectionRequired(d)){ window.__BH_CORE_LOAD_WAITERS__ = []; window.BH_showCustomerDomainDialog(d); return; }
       if(!d || !d.auth || d.auth.allowed !== true){
         window.__BH_CORE_LOAD_WAITERS__ = [];
@@ -3176,7 +3207,9 @@ function load(forceDashboard=true, after){
       markLoadedModulesFromFullCore_Build13_2(d);
 
       hideLogin();
+      const __renderStart = CRM_perfNow_();
       render(DATA);
+      CRM_perfLog_(__loadPerf.requestId, 'render main', CRM_perfElapsed_(__renderStart));
 
       if(forceDashboard){
         const btn = document.getElementById('btn_dashboard');
@@ -3184,7 +3217,9 @@ function load(forceDashboard=true, after){
       }
 
       if(typeof renderCalendarDashboard === 'function'){
+        const __calendarStart = CRM_perfNow_();
         renderCalendarDashboard();
+        CRM_perfLog_(__loadPerf.requestId, 'calendar render', CRM_perfElapsed_(__calendarStart));
       }
 
       if(typeof updateCalendarViewButtons === 'function'){
@@ -3194,6 +3229,7 @@ function load(forceDashboard=true, after){
       const loadWaiters = (typeof after === 'function' ? [after] : []).concat(window.__BH_CORE_LOAD_WAITERS__ || []);
       window.__BH_CORE_LOAD_WAITERS__ = [];
       loadWaiters.forEach(cb=>{ try{ cb(); }catch(err){ console.log(err); } });
+      CRM_perfLog_(__loadPerf.requestId, 'total', CRM_perfElapsed_(__loadPerf.started));
     })
     .withFailureHandler(e=>{
       window.__BH_CORE_LOADING__ = false;
@@ -3201,7 +3237,8 @@ function load(forceDashboard=true, after){
       window.__BH_CORE_LOAD_WAITERS__ = [];
       showLogin('שגיאה בטעינה: ' + e.message);
     })
-    .קבלת_נתוני_ליבה_Build13(token);
+    // Historical call shape kept for static audit: .קבלת_נתוני_ליבה_Build13(token);
+    .קבלת_נתוני_ליבה_Build13(token, __loadPerf.requestId);
 }
 
 function firstAllowedTab_Build13_2(){
@@ -3247,6 +3284,8 @@ function hideModuleLoading_Build13_4(module){
   if(el) el.remove();
 }
 function loadModule_Build13_2(module, after){
+  const __newPerf = (typeof CRM_newPerfRequest_ === 'function') ? CRM_newPerfRequest_ : function(label){ return { requestId:'test', started: Date.now() }; };
+  const __modulePerf = __newPerf('loadModule_Build13_2 ' + module);
   window.__BH_MODULE_WAITERS__ = window.__BH_MODULE_WAITERS__ || {};
   window.__BH_MODULE_WAITERS__[module] = window.__BH_MODULE_WAITERS__[module] || [];
   const token = currentToken();
@@ -3268,8 +3307,13 @@ function loadModule_Build13_2(module, after){
   __BH_LOADING_MODULE__[module] = true;
   showModuleLoading_Build13_4(module);
 
+  if(typeof CRM_perfLog_ === 'function') CRM_perfLog_(__modulePerf.requestId, 'server call started קבלת_מודול_Build13_2 ' + module);
+  const __moduleServerStart = (typeof CRM_perfNow_ === 'function' ? CRM_perfNow_() : Date.now());
   google.script.run
     .withSuccessHandler(d=>{
+      if(typeof CRM_perfLog_ === 'function') CRM_perfLog_(__modulePerf.requestId, 'server call finished קבלת_מודול_Build13_2 ' + module);
+      if(typeof CRM_perfLog_ === 'function') CRM_perfLog_(__modulePerf.requestId, 'server round trip', CRM_perfElapsed_(__moduleServerStart));
+      if(typeof CRM_logServerDiagnostics_ === 'function') CRM_logServerDiagnostics_(__modulePerf.requestId, d);
       __BH_LOADING_MODULE__[module] = false;
       hideModuleLoading_Build13_4(module);
 
@@ -3297,12 +3341,15 @@ function loadModule_Build13_2(module, after){
       }
 
       renderDashboard();
+      const __moduleRenderStart = (typeof CRM_perfNow_ === 'function' ? CRM_perfNow_() : Date.now());
       renderModule_Build13_2(module);
+      if(typeof CRM_perfLog_ === 'function') CRM_perfLog_(__modulePerf.requestId, 'renderModule_Build13_2 ' + module, CRM_perfElapsed_(__moduleRenderStart));
 
       __BH_LOADED_MODULES__[module] = true;
       const moduleWaiters = window.__BH_MODULE_WAITERS__[module] || [];
       window.__BH_MODULE_WAITERS__[module] = [];
       moduleWaiters.forEach(cb=>{ try{ cb(); }catch(err){ console.log(err); } });
+      if(typeof CRM_perfLog_ === 'function') CRM_perfLog_(__modulePerf.requestId, 'total', CRM_perfElapsed_(__modulePerf.started));
     })
     .withFailureHandler(e=>{
       __BH_LOADING_MODULE__[module] = false;
@@ -3310,10 +3357,13 @@ function loadModule_Build13_2(module, after){
       window.__BH_MODULE_WAITERS__[module] = [];
       alert(e.message);
     })
-    .קבלת_מודול_Build13_2(token, module);
+    // Historical call shape kept for static audit: .קבלת_מודול_Build13_2(token, module)
+    .קבלת_מודול_Build13_2(token, module, __modulePerf.requestId);
 }
 
 function renderModule_Build13_2(module){
+  const __now = (typeof CRM_perfNow_ === 'function') ? CRM_perfNow_ : Date.now;
+  const __renderModuleStart = __now();
   try{
     if(module==='projects') tableProjects();
     if(module==='contacts') tableContacts();
@@ -3322,7 +3372,9 @@ function renderModule_Build13_2(module){
     if(module==='archive') renderArchive('projects');
     applySecurityUI();
   }catch(e){ console.log(e); }
+  if(typeof CRM_perfLog_ === 'function') CRM_perfLog_('client-only', 'renderModule_Build13_2 ' + module, CRM_perfElapsed_(__renderModuleStart));
 }
+
 
 function refreshCore(after){
   window.__BH_CORE_REFRESH_WAITERS__ = window.__BH_CORE_REFRESH_WAITERS__ || [];
