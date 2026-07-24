@@ -7,6 +7,7 @@ function has(src, re, msg){ assert(re.test(src), msg); }
 function notHas(src, re, msg){ assert(!re.test(src), msg); }
 has(gs, /var __BH_REQUEST_ROWS__ = null/, 'request-scoped sheet cache exists');
 has(gs, /Object\.prototype\.hasOwnProperty\.call\(__BH_REQUEST_ROWS__, name\)/, 'readSheet_ reuses request rows');
+has(gs, /if\(!__BH_REQUEST_PERF__\.timings\) __BH_REQUEST_PERF__\.timings = \{\};[\s\S]*?if\(!__BH_REQUEST_PERF__\.authentication\) __BH_REQUEST_PERF__\.authentication = \{\};/, 'auth performance timers tolerate existing perf contexts without auth timing maps');
 has(gs, /BH_PERF_AUDIT_ENABLED = false/, 'performance audit logging is disabled by default');
 has(gs, /Build 13\.4 – production lazy shell hardening/, 'server contains production lazy shell hardening');
 has(gs, /קבלת_נתוני_פתיחה_Build13_2 = function\(token\)/, 'initial shell endpoint is wrapped and instrumented');

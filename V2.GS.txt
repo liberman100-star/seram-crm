@@ -6213,12 +6213,15 @@ var __BH_original_readSheet_perf__ = readSheet_;
 
 function BH_authPerfStart_(label){
   if(!__BH_REQUEST_PERF__) return Date.now();
+  if(!__BH_REQUEST_PERF__.timings) __BH_REQUEST_PERF__.timings = {};
   if(!__BH_REQUEST_PERF__.authentication) __BH_REQUEST_PERF__.authentication = {};
   if(!__BH_REQUEST_PERF__.authDiagnostics) __BH_REQUEST_PERF__.authDiagnostics = { writesEveryRequest: true, updatesLastActivity: true, cleanupSessionsEveryRequest: false, lockService: false, externalServices: false };
   return Date.now();
 }
 function BH_authPerfEnd_(label, start){
   if(!__BH_REQUEST_PERF__) return;
+  if(!__BH_REQUEST_PERF__.timings) __BH_REQUEST_PERF__.timings = {};
+  if(!__BH_REQUEST_PERF__.authentication) __BH_REQUEST_PERF__.authentication = {};
   const ms = Date.now() - start;
   __BH_REQUEST_PERF__.authentication[label] = (__BH_REQUEST_PERF__.authentication[label] || 0) + ms;
   __BH_REQUEST_PERF__.timings[label] = (__BH_REQUEST_PERF__.timings[label] || 0) + ms;
