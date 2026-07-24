@@ -1936,28 +1936,6 @@ function tableContacts(){
   });
 }
 
-const ARCHIVE_TASKS_DEBUG = true;
-let ARCHIVE_TASKS_SERVER_DEBUG_RAN = false;
-function archiveTasksDebugLog_Build13_4(label, data){
-  if(!ARCHIVE_TASKS_DEBUG || typeof console === 'undefined') return;
-  console.log('[ARCHIVE_TASKS_DEBUG]', label, data);
-}
-
-
-function archiveTasksServerPipelineDebug_Build13_4(type){
-  if(type !== 'tasks' || !ARCHIVE_TASKS_DEBUG || ARCHIVE_TASKS_SERVER_DEBUG_RAN) return;
-  ARCHIVE_TASKS_SERVER_DEBUG_RAN = true;
-  const token = (typeof currentToken === 'function') ? currentToken() : '';
-  if(!token || !window.google || !google.script || !google.script.run) return;
-  google.script.run
-    .withSuccessHandler(result => {
-      console.log('[ARCHIVE_TASKS_DEBUG]', 'server pipeline diagnostic', result);
-    })
-    .withFailureHandler(error => {
-      console.error('[ARCHIVE_TASKS_DEBUG]', 'server pipeline diagnostic failed', error);
-    })
-    .BH_DEBUG_archiveTasksPipeline(token);
-}
 
 function archivedValue_Build13_4(value){
   if(value === true) return true;
@@ -1971,20 +1949,16 @@ function archivedRowsFor(type){
   const key = type === 'tasks' ? 'tasks' : (type === 'contacts' ? 'contacts' : 'projects');
   const explicitKey = type === 'tasks' ? 'archiveTasks' : (type === 'contacts' ? 'archiveContacts' : 'archiveProjects');
   if(Array.isArray(archive[key])){
-    if(typeof archiveTasksDebugLog_Build13_4 === 'function') archiveTasksDebugLog_Build13_4('archivedRowsFor', { type:type, rowsLength:archive[key].length });
     return archive[key];
   }
   if(Array.isArray(data[explicitKey])){
-    if(typeof archiveTasksDebugLog_Build13_4 === 'function') archiveTasksDebugLog_Build13_4('archivedRowsFor', { type:type, rowsLength:data[explicitKey].length });
     return data[explicitKey];
   }
   const fallbackRows = (Array.isArray(data[key]) ? data[key] : []).filter(r => archivedValue_Build13_4(r['בארכיון']));
-  if(typeof archiveTasksDebugLog_Build13_4 === 'function') archiveTasksDebugLog_Build13_4('archivedRowsFor', { type:type, rowsLength:fallbackRows.length });
   return fallbackRows;
 }
 
 function renderArchive(type='projects'){
-  if(typeof archiveTasksServerPipelineDebug_Build13_4 === 'function') archiveTasksServerPipelineDebug_Build13_4(type);
   if(!canSeeArchive()){
     archiveContent.innerHTML = '<p>אין לך הרשאה לצפות בארכיון.</p>';
     return;
@@ -2024,7 +1998,6 @@ function renderArchive(type='projects'){
   if(type === 'tasks'){
     title = 'משימות בארכיון';
     rows = archivedRowsFor('tasks');
-    if(typeof archiveTasksDebugLog_Build13_4 === 'function') archiveTasksDebugLog_Build13_4('renderArchive(tasks)', { rowsLength:rows.length });
     cols = [
       {key:'כותרת',label:'כותרת'},
       {key:'סוג משימה',label:'סוג'},
@@ -3028,7 +3001,6 @@ function mergeData_Build13_2(d){
 
   const isArchiveModulePayload = d.loadedModules && d.loadedModules.archive === true;
   if(isArchiveModulePayload){
-    if(typeof archiveTasksDebugLog_Build13_4 === 'function') archiveTasksDebugLog_Build13_4('archive payload received', { payloadTasksLength:Array.isArray(d.tasks) ? d.tasks.length : null, loadedArchive:!!(d.loadedModules && d.loadedModules.archive === true) });
     DATA.archive = {
       projects: Array.isArray(d.projects) ? d.projects : (Array.isArray(d.archiveProjects) ? d.archiveProjects : []),
       contacts: Array.isArray(d.contacts) ? d.contacts : (Array.isArray(d.archiveContacts) ? d.archiveContacts : []),
@@ -3045,10 +3017,6 @@ function mergeData_Build13_2(d){
       DATA[k] = d[k];
     }
   });
-
-  if(isArchiveModulePayload){
-    if(typeof archiveTasksDebugLog_Build13_4 === 'function') archiveTasksDebugLog_Build13_4('after archive merge', { archiveTasksLength:DATA.archive && Array.isArray(DATA.archive.tasks) ? DATA.archive.tasks.length : null, dataTasksLength:Array.isArray(DATA.tasks) ? DATA.tasks.length : null });
-  }
 
   if(d.realSettings){
     DATA.realSettings = Object.assign(DATA.realSettings || {}, d.realSettings || {});
