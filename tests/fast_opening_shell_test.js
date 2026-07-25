@@ -1,0 +1,21 @@
+const fs=require('fs'),assert=require('assert');
+const html=fs.readFileSync('index.html','utf8'), gs=fs.readFileSync('V2.GS.txt','utf8');
+function has(src,re,msg){assert(re.test(src),msg);}
+has(html,/CRM_FAST_SHELL_DEFAULT_MODE = 'privileged'/,'safe privileged rollout flag exists');
+has(html,/if\(!CRM_fastShellEnabled_\(\)\)\{ CRM_loadFullCoreFallback_/,'disabled flag selects full core');
+has(html,/\.קבלת_נתוני_פתיחה_Build13_2\(token,perf\.requestId\)/,'enabled startup selects opening endpoint');
+has(html,/withFailureHandler\(e=>CRM_loadFullCoreFallback_/,'opening failure falls back');
+has(html,/if\(!CRM_fastShellPayloadValid_\(d\)\)\{ CRM_loadFullCoreFallback_/,'invalid payload falls back');
+has(html,/schemaVersion === 1[\s\S]*loadedModules\.dashboard === true/,'opening schema is validated');
+has(html,/if\(__BH_LOADED_MODULES__\[module\]\)[\s\S]*renderModule_Build13_2\(module\);[\s\S]*return;/,'loaded module is not requested twice');
+has(html,/__BH_LOADING_MODULE__\[module\]/,'concurrent module requests are deduplicated');
+for(const m of ['projects','contacts','tasks']) has(html,new RegExp("if\\(module==='"+m+"'\\)"),'module renderer supports '+m);
+has(gs,/if\(module==='settings'&&!actions\.canSeeSettings\) throw/,'settings authorization happens before settings reads');
+has(gs,/loadedModules:\{dashboard:true\}/,'shell marks only dashboard loaded');
+has(gs,/tasks:dated,calendarTasks:dated/,'shell includes only dated initial tasks');
+has(gs,/never construct settings, notes, timeline, archive, or module payloads/,'opening path documents excluded stores');
+const finalOpening=gs.slice(gs.lastIndexOf('קבלת_נתוני_פתיחה_Build13_2=function'));
+assert(!/קבלת_נתוני_ליבה_Build13\(/.test(finalOpening.split('function BH_FAST_moduleForAuthorizedUser_')[0]),'successful opening does not invoke full core');
+for(const metric of ['fastShell.serverRoundTrip','fastShell.total','fastShell.payloadBytes','fastShell.recordsReturned','fastShell.sheetReads','fastShell.firstDataRender','fullCoreFallback','timeToDashboardUsable']) has(html,new RegExp(metric.replaceAll('.','\\.')),metric+' metric exists');
+has(html,/moduleLoad.' \+ module \+ '\.serverRoundTrip'/,'module round-trip metric exists');
+console.log('fast opening shell assertions passed');

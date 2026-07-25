@@ -37,3 +37,11 @@ Every lazy endpoint validates the auth token, applies role permissions via the e
 
 ## Measurement status
 Actual live production before/after numbers were not obtained from this repository environment because the Apps Script service and production spreadsheet cannot be executed locally. Use `BH13_4_מדידת_ליבה_מול_פתיחה(token)` with a super-admin token in Apps Script to obtain verified production totals without exposing record contents.
+
+## Production rollout and fallback
+`CRM_FAST_SHELL_DEFAULT_MODE` is `privileged`: the first rollout applies to a cached owner or primary administrator. Operations can set `window.CRM_FAST_SHELL_MODE` to `on` or `off` before startup. A transport failure or a response that fails the versioned opening-shell schema triggers exactly one direct full-core fallback; the fallback does not call the shell again. A successful shell never starts a background full-core request. Mutation `refreshCore` behavior is intentionally unchanged.
+
+The expected startup request count is one server call in both the successful old and new paths (two only on fallback). The old response contains every core collection; the shell contains dashboard aggregates and dated calendar tasks, so its returned-record count and serialized bytes scale with initial calendar records rather than all CRM records. Exact byte/read comparisons must be collected against production with the existing diagnostic because repository tests have no spreadsheet access.
+
+## Manual verification checklist
+The deploy owner must exercise: owner, primary administrator, manager, regular user, customer (including the domain gate), a user with no projects, and a large dataset; browser refresh and post-email-code login; first and second opening of every module; and an intentionally failed/malformed shell confirming one full-core fallback. Verify branding, user name, dashboard totals, initial calendar, navigation permissions, and absence of pre-selection customer data. This checklist requires the deployed Apps Script and production spreadsheet and therefore cannot be completed in the repository-only test environment.
