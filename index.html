@@ -3204,75 +3204,79 @@ function renderShell_Build13_2(d){
 }
 
 window.__BH_CORE_LOAD_WAITERS__ = window.__BH_CORE_LOAD_WAITERS__ || [];
-function load(forceDashboard=true, after){
-  const __loadPerf = CRM_newPerfRequest_('load');
-  if(window.__BH_CORE_LOADING__){
-    if(typeof after === 'function') window.__BH_CORE_LOAD_WAITERS__.push(after);
-    return;
-  }
-  window.__BH_CORE_LOADING__ = true;
-  const token = currentToken();
+// Production-safe rollout: only owners / primary admins use the shell by default.
+// Set window.CRM_FAST_SHELL_MODE to "on" or "off" before load() for staged rollout/diagnostics.
+const CRM_FAST_SHELL_DEFAULT_MODE = 'privileged';
+function CRM_fastShellMode_(){ return String(window.CRM_FAST_SHELL_MODE || CRM_FAST_SHELL_DEFAULT_MODE).toLowerCase(); }
+function CRM_fastShellEnabled_(){ return CRM_fastShellMode_() !== 'off'; }
 
+function CRM_fastShellPayloadValid_(d){
+  return !!(d && d.schemaVersion === 1 && d.payloadType === 'openingShell' &&
+    d.auth && d.auth.allowed === true && d.currentUser && d.system &&
+    d.dashboard && typeof d.dashboard === 'object' &&
+    d.loadedModules && d.loadedModules.dashboard === true &&
+    Array.isArray(d.tasks) && Array.isArray(d.calendarTasks));
+}
+function CRM_payloadBytes_(d){ try{ return JSON.stringify(d || {}).length; }catch(e){ return 0; } }
+function CRM_recordCount_(d){
+  return ['projects','contacts','links','tasks','calendarTasks','categories','fields'].reduce((n,k)=>n+(Array.isArray(d&&d[k])?d[k].length:0),0);
+}
+function CRM_finishInitialLoad_(d, forceDashboard, after, perf, isFastShell){
+  window.__BH_CORE_LOADING__ = false;
+  DATA = d || {}; window.DATA = DATA;
+  if(isFastShell) mergeData_Build13_2(d); else markLoadedModulesFromFullCore_Build13_2(d);
+  hideLogin();
+  const renderStart = CRM_perfNow_();
+  render(DATA);
+  CRM_perfLog_(perf.requestId, isFastShell ? 'fastShell.firstDataRender' : 'render main', CRM_perfElapsed_(renderStart));
+  if(forceDashboard){ const btn=document.getElementById('btn_dashboard'); if(btn) tab('dashboard',btn); }
+  if(typeof renderCalendarDashboard === 'function') renderCalendarDashboard();
+  if(typeof updateCalendarViewButtons === 'function') updateCalendarViewButtons();
+  const waiters=(typeof after==='function'?[after]:[]).concat(window.__BH_CORE_LOAD_WAITERS__||[]);
+  window.__BH_CORE_LOAD_WAITERS__=[];
+  waiters.forEach(cb=>{ try{cb();}catch(err){console.log(err);} });
+  CRM_perfLog_(perf.requestId, isFastShell ? 'timeToDashboardUsable' : 'total', CRM_perfElapsed_(perf.started));
+  if(isFastShell) CRM_perfLog_(perf.requestId, 'fastShell.total', CRM_perfElapsed_(perf.started));
+}
+function CRM_loadFullCoreFallback_(token, forceDashboard, after, perf, reason, isFallback=true){
+  if(isFallback) CRM_perfLog_(perf.requestId, 'fullCoreFallback', reason || 'fast shell failed');
+  const started=CRM_perfNow_();
+  google.script.run.withSuccessHandler(d=>{
+    CRM_perfLog_(perf.requestId, 'fullCore.serverRoundTrip', CRM_perfElapsed_(started));
+    CRM_logServerDiagnostics_(perf.requestId,d);
+    if(window.BH_isCustomerDomainSelectionRequired && window.BH_isCustomerDomainSelectionRequired(d)){ window.__BH_CORE_LOADING__=false; window.__BH_CORE_LOAD_WAITERS__=[]; window.BH_showCustomerDomainDialog(d); return; }
+    if(!d || !d.auth || d.auth.allowed !== true){
+      window.__BH_CORE_LOAD_WAITERS__ = [];
+      window.__BH_CORE_LOADING__=false; clearToken(); showLogin((d&&d.auth&&d.auth.reason)||'אין הרשאה או שהחיבור פג'); return; }
+    CRM_finishInitialLoad_(d,forceDashboard,after,perf,false);
+  }).withFailureHandler(e=>{ window.__BH_CORE_LOADING__=false; window.__BH_CORE_LOAD_WAITERS__=[]; clearToken(); showLogin('שגיאה בטעינה: '+e.message); })
+    .קבלת_נתוני_ליבה_Build13(token,perf.requestId);
+}
+function load(forceDashboard=true, after){
+  const perf=CRM_newPerfRequest_('load');
+  if(window.__BH_CORE_LOADING__){ if(typeof after==='function') window.__BH_CORE_LOAD_WAITERS__.push(after); return; }
+  window.__BH_CORE_LOADING__=true;
+  const token=currentToken();
   if(!token){
     window.__BH_CORE_LOADING__ = false;
     window.__BH_CORE_LOAD_WAITERS__ = [];
-    showLogin();
-    return;
+    showLogin(); return;
   }
-
-  CRM_perfLog_(__loadPerf.requestId, 'server call started קבלת_נתוני_ליבה_Build13');
-  const __serverStart = CRM_perfNow_();
-  google.script.run
-    .withSuccessHandler(d=>{
-      window.__BH_CORE_LOADING__ = false;
-      CRM_perfLog_(__loadPerf.requestId, 'server call finished קבלת_נתוני_ליבה_Build13');
-      CRM_perfLog_(__loadPerf.requestId, 'server round trip', CRM_perfElapsed_(__serverStart));
-      CRM_logServerDiagnostics_(__loadPerf.requestId, d);
-      if(window.BH_isCustomerDomainSelectionRequired && window.BH_isCustomerDomainSelectionRequired(d)){ window.__BH_CORE_LOAD_WAITERS__ = []; window.BH_showCustomerDomainDialog(d); return; }
-      if(!d || !d.auth || d.auth.allowed !== true){
-        window.__BH_CORE_LOAD_WAITERS__ = [];
-        clearToken();
-        showLogin((d && d.auth && d.auth.reason) ? d.auth.reason : 'אין הרשאה או שהחיבור פג');
-        return;
-      }
-
-      DATA = d || {};
-      window.DATA = DATA;
-      markLoadedModulesFromFullCore_Build13_2(d);
-
-      hideLogin();
-      const __renderStart = CRM_perfNow_();
-      render(DATA);
-      CRM_perfLog_(__loadPerf.requestId, 'render main', CRM_perfElapsed_(__renderStart));
-
-      if(forceDashboard){
-        const btn = document.getElementById('btn_dashboard');
-        if(btn) tab('dashboard', btn);
-      }
-
-      if(typeof renderCalendarDashboard === 'function'){
-        const __calendarStart = CRM_perfNow_();
-        renderCalendarDashboard();
-        CRM_perfLog_(__loadPerf.requestId, 'calendar render', CRM_perfElapsed_(__calendarStart));
-      }
-
-      if(typeof updateCalendarViewButtons === 'function'){
-        updateCalendarViewButtons();
-      }
-
-      const loadWaiters = (typeof after === 'function' ? [after] : []).concat(window.__BH_CORE_LOAD_WAITERS__ || []);
-      window.__BH_CORE_LOAD_WAITERS__ = [];
-      loadWaiters.forEach(cb=>{ try{ cb(); }catch(err){ console.log(err); } });
-      CRM_perfLog_(__loadPerf.requestId, 'total', CRM_perfElapsed_(__loadPerf.started));
-    })
-    .withFailureHandler(e=>{
-      window.__BH_CORE_LOADING__ = false;
-      clearToken();
-      window.__BH_CORE_LOAD_WAITERS__ = [];
-      showLogin('שגיאה בטעינה: ' + e.message);
-    })
-    // Historical call shape kept for static audit: .קבלת_נתוני_ליבה_Build13(token);
-    .קבלת_נתוני_ליבה_Build13(token, __loadPerf.requestId);
+  if(!CRM_fastShellEnabled_()){ CRM_loadFullCoreFallback_(token,forceDashboard,after,perf,'feature flag disabled',false); return; }
+  const started=CRM_perfNow_();
+  CRM_perfLog_(perf.requestId,'server call started קבלת_נתוני_פתיחה_Build13_2');
+  google.script.run.withSuccessHandler(d=>{
+    CRM_perfLog_(perf.requestId,'fastShell.serverRoundTrip',CRM_perfElapsed_(started));
+    CRM_perfLog_(perf.requestId,'fastShell.payloadBytes',CRM_payloadBytes_(d));
+    CRM_perfLog_(perf.requestId,'fastShell.recordsReturned',CRM_recordCount_(d));
+    CRM_logServerDiagnostics_(perf.requestId,d);
+    if(window.BH_isCustomerDomainSelectionRequired && window.BH_isCustomerDomainSelectionRequired(d)){ window.__BH_CORE_LOADING__=false; window.__BH_CORE_LOAD_WAITERS__=[]; window.BH_showCustomerDomainDialog(d); return; }
+    if(d && d.payloadType === 'fullCore' && d.auth && d.auth.allowed === true){ CRM_finishInitialLoad_(d,forceDashboard,after,perf,false); return; }
+    if(!CRM_fastShellPayloadValid_(d)){ CRM_loadFullCoreFallback_(token,forceDashboard,after,perf,'invalid opening payload'); return; }
+    CRM_perfLog_(perf.requestId,'fastShell.sheetReads',JSON.stringify((d.performanceDiagnostics&&d.performanceDiagnostics.reads)||{}));
+    CRM_finishInitialLoad_(d,forceDashboard,after,perf,true);
+  }).withFailureHandler(e=>CRM_loadFullCoreFallback_(token,forceDashboard,after,perf,'opening endpoint failed: '+(e&&e.message||e)))
+    .קבלת_נתוני_פתיחה_Build13_2(token,perf.requestId,CRM_fastShellMode_());
 }
 
 function firstAllowedTab_Build13_2(){
@@ -3346,7 +3350,8 @@ function loadModule_Build13_2(module, after){
   google.script.run
     .withSuccessHandler(d=>{
       if(typeof CRM_perfLog_ === 'function') CRM_perfLog_(__modulePerf.requestId, 'server call finished קבלת_מודול_Build13_2 ' + module);
-      if(typeof CRM_perfLog_ === 'function') CRM_perfLog_(__modulePerf.requestId, 'server round trip', CRM_perfElapsed_(__moduleServerStart));
+      if(typeof CRM_perfLog_ === 'function') CRM_perfLog_(__modulePerf.requestId, 'moduleLoad.' + module + '.serverRoundTrip', CRM_perfElapsed_(__moduleServerStart));
+      if(typeof CRM_perfLog_ === 'function') CRM_perfLog_(__modulePerf.requestId, 'moduleLoad.' + module + '.payloadBytes', typeof CRM_payloadBytes_ === 'function' ? CRM_payloadBytes_(d) : 0);
       if(typeof CRM_logServerDiagnostics_ === 'function') CRM_logServerDiagnostics_(__modulePerf.requestId, d);
       __BH_LOADING_MODULE__[module] = false;
       hideModuleLoading_Build13_4(module);
