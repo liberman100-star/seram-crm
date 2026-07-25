@@ -6614,3 +6614,54 @@ function BH13_4_מדידת_ליבה_מול_פתיחה(token){
     newFastShell: BH13_4_measureEndpointAggregate_('newFastShell', function(){ return קבלת_נתוני_פתיחה_Build13_2(token); })
   };
 }
+
+/***********************
+ * Targeted task-status mutations
+ * The legacy wrappers remain the feature-flag-off path.
+ ***********************/
+var BH_TARGETED_legacyDoneTask_ = סימון_משימה_בוצעה;
+var BH_TARGETED_legacyReactivateTask_ = החזרת_משימה_לפעילה;
+
+function BH_TARGETED_taskStatusMutation_(arg, status, mutation){
+  arg = arg || {};
+  const x = חילוץ_מזהה_וטוקן_Build11_2_(arg);
+  const user = דרוש_כתיבה_Build11_2_(x.token);
+  const before = readSheet_(SHEETS.TASKS).find(t => String(t["מזהה משימה"] || "") === String(x.id || ""));
+  if(!before) throw new Error("המשימה לא נמצאה");
+  BH_AD_assertCreatorWrite_(user, before, "משימה");
+
+  const changedAt = new Date();
+  const updated = Object.assign({}, before, {"סטטוס":status, "עדכון אחרון":changedAt});
+  upsert_(SHEETS.TASKS, "מזהה משימה", x.id, updated);
+  clearSheetCache_(SHEETS.TASKS);
+
+  const entity = readSheet_(SHEETS.TASKS).find(t => String(t["מזהה משימה"] || "") === String(x.id || ""));
+  if(!entity) throw new Error("המשימה לא נמצאה לאחר העדכון");
+  if(!משימה_מותרת_לפתיחה_Build11_2_(user, entity)) throw new Error("אין הרשאה לצפייה במשימה זו");
+
+  const description = mutation === 'doneTask' ? 'סטטוס המשימה שונה לבוצע' : 'סטטוס המשימה שונה לפתוח';
+  BH_TL_addEvent_('משימה', x.id, 'שינוי סטטוס', description, BH_FINAL_userName_(user));
+  log_(mutation === 'doneTask' ? "סימון משימה בוצעה" : "החזרת משימה לפעילה", x.id);
+
+  const updatedAt = String(entity["עדכון אחרון"] || Utilities.formatDate(changedAt, CONFIG.TIMEZONE, "yyyy-MM-dd HH:mm"));
+  const calendarRelevant = !!entity["תאריך"] && String(entity["בארכיון"] || "") !== "כן";
+  const reads = (__BH_REQUEST_PERF__ && __BH_REQUEST_PERF__.reads) || {};
+  const rows = (__BH_REQUEST_ROWS__ || {});
+  return {
+    ok:true, mutation:mutation, entityType:'task', entity:entity,
+    dashboardDelta:{taskId:x.id, previousStatus:before["סטטוס"], status:entity["סטטוס"], date:entity["תאריך"] || ""},
+    calendarItem:calendarRelevant ? entity : null,
+    version:updatedAt, updatedAt:updatedAt,
+    permissions:{canEdit:true, canView:true},
+    telemetry:{serverCalls:1, sheetReads:Object.keys(reads).reduce((n,k)=>n+(reads[k]||0),0), rowsRead:Object.keys(rows).reduce((n,k)=>n+((rows[k]||[]).length||0),0)}
+  };
+}
+
+סימון_משימה_בוצעה = function(arg, requestId){
+  if(!(arg && arg.targetedTaskStatus === true)) return BH_TARGETED_legacyDoneTask_(arg, requestId);
+  return BH_mutationPerf_('taskStatus.doneTask', function(){ return BH_TARGETED_taskStatusMutation_(arg, 'בוצע', 'doneTask'); }, requestId || arg.requestId);
+};
+החזרת_משימה_לפעילה = function(arg, requestId){
+  if(!(arg && arg.targetedTaskStatus === true)) return BH_TARGETED_legacyReactivateTask_(arg, requestId);
+  return BH_mutationPerf_('taskStatus.reactivateTask', function(){ return BH_TARGETED_taskStatusMutation_(arg, 'פתוח', 'reactivateTask'); }, requestId || arg.requestId);
+};

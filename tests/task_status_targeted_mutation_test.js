@@ -1,0 +1,31 @@
+const fs = require('fs');
+const assert = require('assert');
+const html = fs.readFileSync('index.html','utf8');
+const gs = fs.readFileSync('V2.GS.txt','utf8');
+const block = html.match(/<script id="CRM_TARGETED_TASK_STATUS_MUTATIONS">([\s\S]*?)<\/script>/);
+assert(block, 'targeted client block exists');
+const client = block[1];
+
+assert(/CRM_TARGETED_TASK_STATUS_MUTATIONS/.test(client), 'feature flag exists');
+assert(/window\.CRM_TARGETED_TASK_STATUS_MUTATIONS !== true[\s\S]*refreshCore\(\(\)=>openTaskCard\(id\)\)/.test(client), 'flag-off path retains legacy behavior');
+const enabledPath = client.slice(client.indexOf("if(window.CRM_TARGETED_TASK_STATUS_MUTATIONS !== true)"));
+const successPath = enabledPath.slice(enabledPath.indexOf('.withSuccessHandler(response=>'));
+assert(!/refreshCore\s*\(/.test(successPath), 'targeted success path never calls refreshCore');
+assert(!/\bload\s*\(/.test(successPath), 'targeted success path never calls load');
+assert(!/קבלת_נתוני_ליבה_Build13/.test(client), 'targeted helper never requests full core');
+assert(!/openTaskCard\s*\(/.test(successPath), 'targeted success path never reopens card');
+assert(/DATA\.tasks = replace\(DATA\.tasks\)/.test(client), 'DATA.tasks is merged');
+assert(/DATA\.calendarTasks/.test(client), 'calendar collection is merged');
+assert(/CRM_taskStatusDashboardMerge_\(entity\)/.test(client), 'dashboard is merged');
+assert(/__CRM_OPEN_TASK_CARD_ID__/.test(client) && /renderTaskCard\(/.test(client), 'open card is rendered in place');
+assert(/__CRM_TASK_STATUS_PENDING__\[id\]/.test(client), 'double click is deduplicated');
+assert(/sequence !== window\.__CRM_TASK_STATUS_SEQUENCE__\[id\]/.test(client), 'stale responses are ignored');
+['total','serverRoundTrip','merge','render','responseBytes','serverCalls','sheetReads','rowsRead','targetedFallback','fullCoreFallback'].forEach(metric=>assert(client.includes("CRM_taskStatusMetric_('"+metric+"'"), metric+' telemetry exists'));
+
+assert(/ok:true, mutation:mutation, entityType:'task', entity:entity/.test(gs), 'canonical mutation envelope exists');
+['dashboardDelta','calendarItem','version','updatedAt','permissions'].forEach(field=>assert(gs.includes(field+':'), field+' response field exists'));
+assert(/clearSheetCache_\(SHEETS\.TASKS\)[\s\S]*readSheet_\(SHEETS\.TASKS\)/.test(gs), 'task is re-read canonically after write');
+assert(/משימה_מותרת_לפתיחה_Build11_2_\(user, entity\)/.test(gs), 'canonical entity is permission filtered');
+assert(/BH_TL_addEvent_/.test(gs) && /log_\(mutation ===/.test(gs), 'timeline and log are retained');
+assert(!/CRM_TARGETED_TASK_STATUS_MUTATIONS[\s\S]*saveTask\s*=/.test(client), 'targeted block does not override saveTask');
+console.log('Targeted task status mutation tests passed');

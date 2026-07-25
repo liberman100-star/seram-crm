@@ -7058,5 +7058,113 @@ window.calendarTasksForDate = function(d){
 .meeting-contact-chip{display:inline-flex;gap:6px;align-items:center;margin:4px;padding:5px 10px;border-radius:999px;background:#e0f2fe;color:#075985}.meeting-contact-chip button{border:0;background:transparent;font-weight:800;cursor:pointer}.warn{color:#b45309}.meeting-dialog-backdrop{position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:9999;display:flex;align-items:center;justify-content:center}.meeting-dialog{background:#fff;max-width:720px;width:92%;max-height:85vh;overflow:auto;border-radius:14px;padding:18px;box-shadow:0 20px 60px rgba(0,0,0,.25)}.meeting-contact-list{max-height:420px;overflow:auto;margin:12px 0}.meeting-contact-row{display:flex;gap:10px;align-items:flex-start;padding:8px;border-bottom:1px solid #e5e7eb}.meeting-contact-row input{width:auto}
 </style>
 
+<script id="CRM_TARGETED_TASK_STATUS_MUTATIONS">
+/* Targeted status updates are independently reversible without changing other mutations. */
+window.CRM_TARGETED_TASK_STATUS_MUTATIONS = window.CRM_TARGETED_TASK_STATUS_MUTATIONS !== false;
+window.__CRM_TASK_STATUS_PENDING__ = window.__CRM_TASK_STATUS_PENDING__ || {};
+window.__CRM_TASK_STATUS_SEQUENCE__ = window.__CRM_TASK_STATUS_SEQUENCE__ || {};
+window.__CRM_OPEN_TASK_CARD_ID__ = window.__CRM_OPEN_TASK_CARD_ID__ || '';
+
+(function(){
+  const previousRenderTaskCard = window.renderTaskCard;
+  window.renderTaskCard = function(payload){
+    const task = payload && payload.task;
+    if(task && task['מזהה משימה']) window.__CRM_OPEN_TASK_CARD_ID__ = String(task['מזהה משימה']);
+    return previousRenderTaskCard.apply(this, arguments);
+  };
+})();
+
+function CRM_taskStatusMetric_(name, value, requestId){
+  CRM_perfLog_(requestId || 'client-only', 'mutation.taskStatus.' + name, value);
+}
+
+function CRM_taskStatusDashboardMerge_(entity){
+  const dashboard = DATA.dashboard = DATA.dashboard || {};
+  const id = String(entity['מזהה משימה'] || '');
+  ['lateTasks','todayTasks','weekTasks'].forEach(k=>{
+    dashboard[k] = (dashboard[k] || []).filter(t=>String(t['מזהה משימה'] || '') !== id);
+  });
+  if(['בוצע','בוטל'].includes(entity['סטטוס'] || '') || !entity['תאריך']) return;
+  const today = new Date(); today.setHours(0,0,0,0);
+  const week = new Date(today); week.setDate(week.getDate()+7);
+  const date = new Date(entity['תאריך']); date.setHours(0,0,0,0);
+  if(date < today) dashboard.lateTasks.push(entity);
+  else if(date.getTime() === today.getTime()) dashboard.todayTasks.push(entity);
+  else if(date > today && date <= week) dashboard.weekTasks.push(entity);
+}
+
+function CRM_mergeTaskMutation_(response){
+  if(!response || response.ok !== true || response.entityType !== 'task' || !response.entity) throw new Error('תשובת עדכון המשימה חסרה');
+  const entity = response.entity;
+  const id = String(entity['מזהה משימה'] || '');
+  const replace = rows => {
+    rows = Array.isArray(rows) ? rows.slice() : [];
+    const index = rows.findIndex(t=>String(t['מזהה משימה'] || '') === id);
+    if(index >= 0) rows[index] = entity; else rows.push(entity);
+    return rows;
+  };
+  DATA.tasks = replace(DATA.tasks);
+
+  const hadCalendarItem = (DATA.calendarTasks || []).some(t=>String(t['מזהה משימה'] || '') === id);
+  DATA.calendarTasks = (DATA.calendarTasks || []).filter(t=>String(t['מזהה משימה'] || '') !== id);
+  if(response.calendarItem && (hadCalendarItem || response.calendarItem['תאריך'])) DATA.calendarTasks.push(response.calendarItem);
+  CRM_taskStatusDashboardMerge_(entity);
+  return entity;
+}
+
+function CRM_renderTaskStatusMutation_(entity){
+  if(typeof tableTasks === 'function') tableTasks();
+  if(typeof renderDashboard === 'function') renderDashboard();
+  const id = String(entity['מזהה משימה'] || '');
+  if(String(window.__CRM_OPEN_TASK_CARD_ID__ || '') === id){
+    renderTaskCard({
+      task:entity,
+      projectName:typeof projectNameById === 'function' ? projectNameById(entity['מזהה פרויקט']) : '',
+      contactName:typeof contactNameById === 'function' ? contactNameById(entity['מזהה איש קשר']) : '',
+      notes:(DATA.notes || []).filter(n=>String(n['מזהה משימה'] || '') === id)
+    });
+  }
+  if(typeof applySecurityUI === 'function') applySecurityUI();
+}
+
+function CRM_taskStatusMutation_(id, mutation, serverMethod){
+  if(!canEdit()) return alert('אין לך הרשאה לעריכה');
+  if(window.CRM_TARGETED_TASK_STATUS_MUTATIONS !== true){
+    return google.script.run.withSuccessHandler(()=>refreshCore(()=>openTaskCard(id))).withFailureHandler(e=>alert(e.message))[serverMethod]({id,authToken:currentToken()});
+  }
+  id = String(id || '');
+  if(window.__CRM_TASK_STATUS_PENDING__[id]) return;
+  const sequence = (window.__CRM_TASK_STATUS_SEQUENCE__[id] || 0) + 1;
+  window.__CRM_TASK_STATUS_SEQUENCE__[id] = sequence;
+  window.__CRM_TASK_STATUS_PENDING__[id] = true;
+  const perf = CRM_mutationStart_('taskStatus.' + mutation), serverStart = CRM_perfNow_();
+  CRM_taskStatusMetric_('serverCalls', 1, perf.requestId);
+  google.script.run
+    .withSuccessHandler(response=>{
+      window.__CRM_TASK_STATUS_PENDING__[id] = false;
+      CRM_taskStatusMetric_('serverRoundTrip', CRM_perfElapsed_(serverStart), perf.requestId);
+      let bytes = 0; try{ bytes = JSON.stringify(response || {}).length; }catch(e){}
+      CRM_taskStatusMetric_('responseBytes', bytes, perf.requestId);
+      if(sequence !== window.__CRM_TASK_STATUS_SEQUENCE__[id]) return;
+      const mergeStart = CRM_perfNow_();
+      try{
+        const entity = CRM_mergeTaskMutation_(response);
+        CRM_taskStatusMetric_('merge', CRM_perfElapsed_(mergeStart), perf.requestId);
+        CRM_taskStatusMetric_('sheetReads', (response.telemetry && response.telemetry.sheetReads) || 0, perf.requestId);
+        CRM_taskStatusMetric_('rowsRead', (response.telemetry && response.telemetry.rowsRead) || 0, perf.requestId);
+        CRM_taskStatusMetric_('targetedFallback', 0, perf.requestId);
+        CRM_taskStatusMetric_('fullCoreFallback', 0, perf.requestId);
+        const renderStart = CRM_perfNow_(); CRM_renderTaskStatusMutation_(entity);
+        CRM_taskStatusMetric_('render', CRM_perfElapsed_(renderStart), perf.requestId);
+        CRM_taskStatusMetric_('total', CRM_perfElapsed_(perf.started), perf.requestId);
+      }catch(e){ alert(e.message); }
+    })
+    .withFailureHandler(e=>{ window.__CRM_TASK_STATUS_PENDING__[id] = false; alert(e.message); })
+    [serverMethod](CRM_mutationPayload_({id:id, authToken:currentToken(), targetedTaskStatus:true}, perf));
+}
+
+doneTask = function(id){ return CRM_taskStatusMutation_(id, 'doneTask', 'סימון_משימה_בוצעה'); };
+reactivateTask = function(id){ return CRM_taskStatusMutation_(id, 'reactivateTask', 'החזרת_משימה_לפעילה'); };
+</script>
 </body>
 </html>
