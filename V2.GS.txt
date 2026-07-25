@@ -6622,35 +6622,81 @@ function BH_FAST_currentUser_(user){
     contactId:user.contactId||'',assignmentCentralDomain:user.assignmentCentralDomain||user['תחום שיוך מרכזי']||'',
     assignmentDomains:user.assignmentDomains||user['תחומי שיוך']||'',allowed:true};
 }
-function BH_FAST_shellForAuthorizedUser_(user){
-  const currentUser=BH_FAST_currentUser_(user);
-  const role=currentUser.role;
-  const projects=readSheet_(SHEETS.PROJECTS);
-  const contacts=readSheet_(SHEETS.CONTACTS);
-  const tasks=readSheet_(SHEETS.TASKS);
-  const links=(currentUser.isOwner||role==='מנהל ראשי')?[]:readSheet_(SHEETS.LINKS);
-  const filtered=סינון_נתונים_לפי_משתמש_Build7_({auth:{allowed:true},system:מיתוג_מערכת_Build7_(),currentUser:currentUser,
-    projects:projects,contacts:contacts,links:links,tasks:tasks,notes:[]},currentUser);
-  const dated=(filtered.tasks||[]).filter(function(t){return !!t['תאריך'];});
-  return {schemaVersion:1,payloadType:'openingShell',auth:{allowed:true},system:filtered.system,currentUser:currentUser,
-    canSeeSettings:filtered.canSeeSettings===true,canSeeDashboard:filtered.canSeeDashboard,canSeeArchive:filtered.canSeeArchive,
-    canSeeTimeline:filtered.canSeeTimeline,actionPermissions:filtered.actionPermissions,canCreate:filtered.canCreate,
-    canEdit:filtered.canEdit,canDelete:filtered.canDelete,readOnly:filtered.readOnly,accessNotice:filtered.accessNotice||'',
-    dashboard:filtered.dashboard||calcDashboard_([],[],[]),tasks:dated,calendarTasks:dated,loadedModules:{dashboard:true}};
+function BH_FAST_trackRangeRead_(sheetName,label,rowCount,started,physicalCalls){
+  if(!__BH_REQUEST_PERF__) return;
+  const key=String(sheetName||'')+':'+String(label||'range');
+  __BH_REQUEST_PERF__.reads[key]=(__BH_REQUEST_PERF__.reads[key]||0)+Number(physicalCalls||1);
+  __BH_REQUEST_PERF__.readDurations[key]=(__BH_REQUEST_PERF__.readDurations[key]||0)+(Date.now()-started);
+  __BH_REQUEST_PERF__.sheetRowsRead=__BH_REQUEST_PERF__.sheetRowsRead||{};
+  __BH_REQUEST_PERF__.sheetRowsRead[key]=(__BH_REQUEST_PERF__.sheetRowsRead[key]||0)+Number(rowCount||0);
+}
+function BH_FAST_sheetShape_(sheetName){
+  const sh=getSS_().getSheetByName(sheetName);
+  if(!sh) return {sheet:null,headers:[],rows:0};
+  const cols=sh.getLastColumn(), rows=Math.max(0,sh.getLastRow()-1), started=Date.now();
+  const headers=cols?sh.getRange(1,1,1,cols).getValues()[0].map(function(h){return String(h||'').trim();}):[];
+  BH_FAST_trackRangeRead_(sheetName,'headers',1,started);
+  return {sheet:sh,headers:headers,rows:rows};
+}
+function BH_FAST_column_(shape,sheetName,header){
+  const col=shape.headers.indexOf(header);
+  if(col<0||!shape.rows) return [];
+  const started=Date.now(), values=shape.sheet.getRange(2,col+1,shape.rows,1).getValues();
+  BH_FAST_trackRangeRead_(sheetName,header,shape.rows,started);
+  return values.map(function(r){return r[0];});
+}
+function BH_FAST_columnLetter_(column){
+  let out='';for(let n=Number(column||0);n>0;n=Math.floor((n-1)/26))out=String.fromCharCode(65+(n-1)%26)+out;return out;
+}
+function BH_FAST_fullRows_(shape,sheetName,rowIndexes,label){
+  if(!rowIndexes.length||!shape.headers.length) return [];
+  const started=Date.now(),groups=[];
+  rowIndexes.forEach(function(i){const last=groups[groups.length-1];if(last&&i===last[1]+1)last[1]=i;else groups.push([i,i]);});
+  const rows=[];groups.forEach(function(group){shape.sheet.getRange(group[0]+2,1,group[1]-group[0]+1,shape.headers.length).getValues().forEach(function(row){rows.push(row);});});
+  BH_FAST_trackRangeRead_(sheetName,label,rowIndexes.length,started,groups.length);
+  return rows.map(function(row){const out={};shape.headers.forEach(function(h,i){out[h]=row[i];});return out;});
+}
+function BH_FAST_activeSummary_(sheetName,includeFirstRows){
+  const shape=BH_FAST_sheetShape_(sheetName), archived=BH_FAST_column_(shape,sheetName,'בארכיון');
+  const active=[];for(let i=0;i<shape.rows;i++) if(String(archived[i]||'').trim()!=='כן') active.push(i);
+  return {count:active.length,rows:includeFirstRows?BH_FAST_fullRows_(shape,sheetName,active.slice(0,5),'dashboardRows'):[]};
+}
+function BH_FAST_taskSummary_(){
+  const shape=BH_FAST_sheetShape_(SHEETS.TASKS), dates=BH_FAST_column_(shape,SHEETS.TASKS,'תאריך');
+  const archived=BH_FAST_column_(shape,SHEETS.TASKS,'בארכיון'), active=[],dated=[];
+  for(let i=0;i<shape.rows;i++) if(String(archived[i]||'').trim()!=='כן'){active.push(i);if(dates[i])dated.push(i);}
+  const datedTasks=BH_FAST_fullRows_(shape,SHEETS.TASKS,dated,'datedDashboardRows');
+  const placeholders=Array(Math.max(0,active.length-datedTasks.length)).fill(0).map(function(){return {};});
+  return {allForDashboard:datedTasks.concat(placeholders),dated:datedTasks};
+}
+function BH_FAST_shellForPrivilegedUser_(user){
+  const currentUser=BH_FAST_currentUser_(user),actions=פעולות_מותרות_Build11_2_(currentUser);
+  const projectSummary=BH_FAST_activeSummary_(SHEETS.PROJECTS,true);
+  const contactSummary=BH_FAST_activeSummary_(SHEETS.CONTACTS,false);
+  const taskSummary=BH_FAST_taskSummary_();
+  const projectRows=projectSummary.rows.concat(Array(Math.max(0,projectSummary.count-projectSummary.rows.length)).fill(0).map(function(){return {};}));
+  const contactRows=Array(contactSummary.count).fill(0).map(function(){return {};});
+  return {schemaVersion:1,payloadType:'openingShell',auth:{allowed:true},system:מיתוג_מערכת_Build7_(),currentUser:currentUser,
+    canSeeSettings:actions.canSeeSettings,canSeeDashboard:actions.canSeeDashboard,canSeeArchive:actions.canSeeArchive,
+    canSeeTimeline:actions.canSeeTimeline,actionPermissions:actions,canCreate:actions.canCreate,canEdit:actions.canEdit,
+    canDelete:actions.canDelete,readOnly:actions.readOnly,accessNotice:'',dashboard:calcDashboard_(projectRows,contactRows,taskSummary.allForDashboard),
+    tasks:taskSummary.dated,calendarTasks:taskSummary.dated,loadedModules:{dashboard:true}};
 }
 
-// Final opening route: authenticate first, build only the authorized dashboard projection,
-// and never construct settings, notes, timeline, archive, or module payloads.
-קבלת_נתוני_פתיחה_Build13_2=function(token,requestId){
+// The client supplies only a rollout preference. Authentication and role eligibility remain server-owned.
+קבלת_נתוני_פתיחה_Build13_2=function(token,requestId,requestedMode){
   return BH_withRequestRows_('fastShell',function(){
-    const authStart=BH_perfStart_('auth/current user');
-    const user=קבלת_משתמש_מסשן_Build7_(token);
+    const authStart=BH_perfStart_('auth/current user'),user=קבלת_משתמש_מסשן_Build7_(token);
     BH_perfEnd_('auth/current user',authStart);
     if(!user||!user.allowed) return BH_attachPerformanceDiagnostics_({schemaVersion:1,payloadType:'openingShell',auth:{allowed:false,reason:user&&user.reason||'אין הרשאה'},system:מיתוג_מערכת_Build7_()});
-    let out;
-    if(String(user.role||'').trim()==='לקוח') out=BH13_4_applyCustomerDomainIfNeeded_(null,token,'openingShell');
-    else out=BH_FAST_shellForAuthorizedUser_(user);
-    if(out&&out.auth&&out.auth.allowed===true&&!out.domainSelectionRequired){ out.schemaVersion=1; out.payloadType='openingShell'; out.calendarTasks=out.calendarTasks||out.tasks||[]; }
+    const role=String(user.role||'').trim(), forced=String(requestedMode||'').toLowerCase()==='on';
+    const eligible=user.isOwner===true||role==='מנהל ראשי'||(forced&&role==='לקוח');
+    if(!eligible){
+      const full=BH_perf_originalCoreFinal_(token);full.payloadType='fullCore';
+      return BH_attachPerformanceDiagnostics_(full);
+    }
+    let out=role==='לקוח'?BH13_4_applyCustomerDomainIfNeeded_(null,token,'openingShell'):BH_FAST_shellForPrivilegedUser_(user);
+    if(out&&out.auth&&out.auth.allowed===true&&!(out.auth&&out.auth.domainSelectionRequired)){out.schemaVersion=1;out.payloadType='openingShell';out.calendarTasks=out.calendarTasks||out.tasks||[];}
     return BH_attachPerformanceDiagnostics_(out);
   },requestId);
 };
@@ -6661,29 +6707,20 @@ function BH_FAST_moduleForAuthorizedUser_(token,module){
   const currentUser=BH_FAST_currentUser_(user), actions=פעולות_מותרות_Build11_2_(currentUser);
   if(module==='settings'&&!actions.canSeeSettings) throw new Error('אין לך הרשאה להגדרות');
   let data={auth:{allowed:true},currentUser:currentUser,system:מיתוג_מערכת_Build7_(),projects:[],contacts:[],links:[],tasks:[],notes:[]};
-  if(module==='projects'){ data.projects=readSheet_(SHEETS.PROJECTS); if(!BH_coreAllowedAdmin_(currentUser)) data.links=readSheet_(SHEETS.LINKS); }
-  else if(module==='contacts'){ data.projects=readSheet_(SHEETS.PROJECTS); data.contacts=readSheet_(SHEETS.CONTACTS); data.links=readSheet_(SHEETS.LINKS); }
-  else if(module==='tasks'){ data.projects=readSheet_(SHEETS.PROJECTS); data.contacts=readSheet_(SHEETS.CONTACTS); data.links=readSheet_(SHEETS.LINKS); data.tasks=readSheet_(SHEETS.TASKS); }
-  else if(module==='archive'){ data.projects=readSheet_(SHEETS.PROJECTS); data.contacts=readSheet_(SHEETS.CONTACTS); data.links=readSheet_(SHEETS.LINKS); data.tasks=readSheet_(SHEETS.TASKS); }
-  else if(module==='settings'){
-    data.categories=קבלת_קטגוריות_לבחירה_Build4_4(); data.realSettings=קבלת_הגדרות_לממשק_Build4_3();
-    data.fields=readSheet_('הגדרות_שדות'); data.permissions=קבלת_הרשאות_Build6();
-  } else throw new Error('מודול לא מוכר');
-  let filtered=סינון_נתונים_לפי_משתמש_Build7_(data,currentUser);
-  let out={auth:{allowed:true},currentUser:currentUser,system:data.system,module:module,actionPermissions:filtered.actionPermissions,
-    canSeeSettings:filtered.canSeeSettings,canSeeDashboard:filtered.canSeeDashboard,canSeeArchive:filtered.canSeeArchive,
-    canSeeTimeline:filtered.canSeeTimeline,canCreate:filtered.canCreate,canEdit:filtered.canEdit,canDelete:filtered.canDelete,readOnly:filtered.readOnly};
+  if(module==='projects'){data.projects=readSheet_(SHEETS.PROJECTS);if(!BH_coreAllowedAdmin_(currentUser))data.links=readSheet_(SHEETS.LINKS);}
+  else if(module==='contacts'){data.projects=readSheet_(SHEETS.PROJECTS);data.contacts=readSheet_(SHEETS.CONTACTS);data.links=readSheet_(SHEETS.LINKS);}
+  else if(module==='tasks'){data.projects=readSheet_(SHEETS.PROJECTS);data.contacts=readSheet_(SHEETS.CONTACTS);data.links=readSheet_(SHEETS.LINKS);data.tasks=readSheet_(SHEETS.TASKS);}
+  else if(module==='archive'){data.projects=readSheet_(SHEETS.PROJECTS);data.contacts=readSheet_(SHEETS.CONTACTS);data.links=readSheet_(SHEETS.LINKS);data.tasks=readSheet_(SHEETS.TASKS);}
+  else if(module==='settings'){data.categories=קבלת_קטגוריות_לבחירה_Build4_4();data.realSettings=קבלת_הגדרות_לממשק_Build4_3();data.fields=readSheet_('הגדרות_שדות');data.permissions=קבלת_הרשאות_Build6();}
+  else throw new Error('מודול לא מוכר');
+  const filtered=סינון_נתונים_לפי_משתמש_Build7_(data,currentUser);
+  let out={auth:{allowed:true},currentUser:currentUser,system:data.system,module:module,actionPermissions:filtered.actionPermissions,canSeeSettings:filtered.canSeeSettings,canSeeDashboard:filtered.canSeeDashboard,canSeeArchive:filtered.canSeeArchive,canSeeTimeline:filtered.canSeeTimeline,canCreate:filtered.canCreate,canEdit:filtered.canEdit,canDelete:filtered.canDelete,readOnly:filtered.readOnly};
   if(module==='projects'){out.projects=filtered.projects||[];out.categories=קבלת_קטגוריות_לבחירה_Build4_4();out.realSettings=קבלת_הגדרות_לממשק_Build4_3();}
   if(module==='contacts'){out.contacts=filtered.contacts||[];out.categories=קבלת_קטגוריות_לבחירה_Build4_4();out.realSettings=קבלת_הגדרות_לממשק_Build4_3();}
   if(module==='tasks'){out.tasks=filtered.tasks||[];out.projects=filtered.projects||[];out.contacts=filtered.contacts||[];out.links=filtered.links||[];out.categories=קבלת_קטגוריות_לבחירה_Build4_4();out.realSettings=קבלת_הגדרות_לממשק_Build4_3();}
   if(module==='settings'){out.categories=data.categories;out.realSettings=data.realSettings;out.fields=data.fields;out.permissions=data.permissions;}
-  if(module==='archive') out=BH13_4_archivePayloadFromCanonical_(out,filtered,currentUser);
+  if(module==='archive')out=BH13_4_archivePayloadFromCanonical_(out,filtered,currentUser);
   out.loadedModules=out.loadedModules||{};out.loadedModules[module]=true;
   return BH13_4_applyCustomerDomainIfNeeded_(out,token,module);
 }
-
-קבלת_מודול_Build13_2=function(token,moduleName,requestId){
-  return BH_withRequestRows_('moduleLoad.'+moduleName,function(){
-    return BH_attachPerformanceDiagnostics_(BH_FAST_moduleForAuthorizedUser_(token,String(moduleName||'').trim()));
-  },requestId);
-};
+קבלת_מודול_Build13_2=function(token,moduleName,requestId){return BH_withRequestRows_('moduleLoad.'+moduleName,function(){return BH_attachPerformanceDiagnostics_(BH_FAST_moduleForAuthorizedUser_(token,String(moduleName||'').trim()));},requestId);};

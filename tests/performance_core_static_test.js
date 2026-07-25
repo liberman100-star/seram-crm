@@ -19,7 +19,7 @@ has(html, /renderCalendarDashboard[\s\S]*?const waiters =/, 'callbacks execute o
 has(html, /waiters\.forEach\(cb=>\{\s*try\{ cb\(\); \}catch\(err\)\{ console\.log\(err\); \}\s*\}\)/, 'callback errors are isolated');
 has(html, /withFailureHandler\(e=>\{\s*window\.__BH_CORE_REFRESHING__ = false;\s*window\.__BH_CORE_REFRESH_WAITERS__ = \[\];\s*alert\(e\.message\);/, 'failure clears queue and permits later refresh');
 has(html, /BH_isCustomerDomainSelectionRequired[\s\S]*?window\.__BH_CORE_REFRESH_WAITERS__ = \[\];[\s\S]*?BH_showCustomerDomainDialog/, 'domain selection clears refresh queue before dialog');
-has(html, /function load\(forceDashboard=true, after\)\{[\s\S]*?\.קבלת_נתוני_פתיחה_Build13_2\(token,perf\.requestId\);/, 'initial production load uses fast opening endpoint');
+has(html, /function load\(forceDashboard=true, after\)\{[\s\S]*?\.קבלת_נתוני_פתיחה_Build13_2\(token,perf\.requestId,CRM_fastShellMode_\(\)\);/, 'initial production load uses fast opening endpoint');
 has(html, /function CRM_loadFullCoreFallback_[\s\S]*?\.קבלת_נתוני_ליבה_Build13\(token,perf\.requestId\);/, 'canonical full core remains the safe fallback');
 has(html, /\.קבלת_מודול_Build13_2\(token, module\)/, 'lazy module loading uses existing module endpoint');
 has(html, /function markLoadedModulesFromFullCore_Build13_2\(d\)\{[\s\S]*?__BH_LOADED_MODULES__\.settings = true;[\s\S]*?\}/, 'full core payload initializes loaded module state');

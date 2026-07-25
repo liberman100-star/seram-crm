@@ -3207,14 +3207,9 @@ window.__BH_CORE_LOAD_WAITERS__ = window.__BH_CORE_LOAD_WAITERS__ || [];
 // Production-safe rollout: only owners / primary admins use the shell by default.
 // Set window.CRM_FAST_SHELL_MODE to "on" or "off" before load() for staged rollout/diagnostics.
 const CRM_FAST_SHELL_DEFAULT_MODE = 'privileged';
-function CRM_fastShellEnabled_(){
-  const mode = String(window.CRM_FAST_SHELL_MODE || CRM_FAST_SHELL_DEFAULT_MODE).toLowerCase();
-  if(mode === 'on') return true;
-  if(mode === 'off') return false;
-  let user = {};
-  try{ user = JSON.parse(localStorage.getItem('CRM_USER_INFO') || '{}') || {}; }catch(e){}
-  return user.isOwner === true || String(user.role || '').trim() === 'מנהל ראשי';
-}
+function CRM_fastShellMode_(){ return String(window.CRM_FAST_SHELL_MODE || CRM_FAST_SHELL_DEFAULT_MODE).toLowerCase(); }
+function CRM_fastShellEnabled_(){ return CRM_fastShellMode_() !== 'off'; }
+
 function CRM_fastShellPayloadValid_(d){
   return !!(d && d.schemaVersion === 1 && d.payloadType === 'openingShell' &&
     d.auth && d.auth.allowed === true && d.currentUser && d.system &&
@@ -3276,11 +3271,12 @@ function load(forceDashboard=true, after){
     CRM_perfLog_(perf.requestId,'fastShell.recordsReturned',CRM_recordCount_(d));
     CRM_logServerDiagnostics_(perf.requestId,d);
     if(window.BH_isCustomerDomainSelectionRequired && window.BH_isCustomerDomainSelectionRequired(d)){ window.__BH_CORE_LOADING__=false; window.__BH_CORE_LOAD_WAITERS__=[]; window.BH_showCustomerDomainDialog(d); return; }
+    if(d && d.payloadType === 'fullCore' && d.auth && d.auth.allowed === true){ CRM_finishInitialLoad_(d,forceDashboard,after,perf,false); return; }
     if(!CRM_fastShellPayloadValid_(d)){ CRM_loadFullCoreFallback_(token,forceDashboard,after,perf,'invalid opening payload'); return; }
     CRM_perfLog_(perf.requestId,'fastShell.sheetReads',JSON.stringify((d.performanceDiagnostics&&d.performanceDiagnostics.reads)||{}));
     CRM_finishInitialLoad_(d,forceDashboard,after,perf,true);
   }).withFailureHandler(e=>CRM_loadFullCoreFallback_(token,forceDashboard,after,perf,'opening endpoint failed: '+(e&&e.message||e)))
-    .קבלת_נתוני_פתיחה_Build13_2(token,perf.requestId);
+    .קבלת_נתוני_פתיחה_Build13_2(token,perf.requestId,CRM_fastShellMode_());
 }
 
 function firstAllowedTab_Build13_2(){
