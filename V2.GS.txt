@@ -2083,37 +2083,41 @@ function שמירת_טלפון_כטקסט_(phone) {
 
 function קבלת_נתוני_מערכת_מלאים_Build10_(options) {
   options = options || {};
-  try { התקנת_תחום_שיוך_BuildAD(); } catch(e) { Logger.log(e); }
-  const projects = readSheet_(SHEETS.PROJECTS);
-  const contacts = readSheet_(SHEETS.CONTACTS);
-  const links = readSheet_(SHEETS.LINKS);
-  const tasks = readSheet_(SHEETS.TASKS);
-  // Task notes are card-only data. Opening requests skip this sheet and the
-  // existing task-card endpoint reads the notes only when a card is opened.
-  const notes = options.includeTaskNotes === false ? [] : readSheet_(SHEETS.TASK_NOTES);
-  const settingsRows = readSheet_(SHEETS.SETTINGS);
-  const settings = activeSettings_(settingsRows);
+  return BH_perfMeasure_("core.buildFullData", function(){
+    BH_perfMeasure_("core.buildFullData.assignmentDomainInstall", function(){
+      BH_perfMeasure_("core.services.spreadsheet.assignmentDomainInstall", function(){
+        try { התקנת_תחום_שיוך_BuildAD(); } catch(e) { Logger.log(e); }
+      });
+    });
+    const coreRows = BH_perfMeasure_("core.readCoreSheets", function(){
+      return {
+        projects: BH_perfMeasure_("core.readCoreSheets.projects", function(){ return readSheet_(SHEETS.PROJECTS); }),
+        contacts: BH_perfMeasure_("core.readCoreSheets.contacts", function(){ return readSheet_(SHEETS.CONTACTS); }),
+        links: BH_perfMeasure_("core.readCoreSheets.links", function(){ return readSheet_(SHEETS.LINKS); }),
+        tasks: BH_perfMeasure_("core.readCoreSheets.tasks", function(){ return readSheet_(SHEETS.TASKS); }),
+        notes: options.includeTaskNotes === false ? [] : readSheet_(SHEETS.TASK_NOTES),
+        settingsRows: BH_perfMeasure_("core.readCoreSheets.settings", function(){ return readSheet_(SHEETS.SETTINGS); })
+      };
+    });
+    const projects = coreRows.projects, contacts = coreRows.contacts, links = coreRows.links;
+    const tasks = coreRows.tasks, notes = coreRows.notes;
+    const settings = BH_perfMeasure_("core.settings.activeSettings", function(){ return activeSettings_(coreRows.settingsRows); });
 
-  let categories = [], realSettings = {}, fields = [], permissions = {};
-  try { categories = קבלת_קטגוריות_לבחירה_Build4_4(); } catch(e) { Logger.log(e); }
-  try { realSettings = קבלת_הגדרות_לממשק_Build4_3(); } catch(e) { Logger.log(e); }
-  try { fields = readSheet_("הגדרות_שדות"); } catch(e) { Logger.log(e); }
-  try { permissions = קבלת_הרשאות_Build6(); } catch(e) { Logger.log(e); }
+    const configured = BH_perfMeasure_("core.settingsAndCategories", function(){
+      let categories = [], realSettings = {}, fields = [], permissions = {};
+      try { categories = BH_perfMeasure_("core.settingsAndCategories.categories", function(){ return קבלת_קטגוריות_לבחירה_Build4_4(); }); } catch(e) { Logger.log(e); }
+      try { realSettings = BH_perfMeasure_("core.settingsAndCategories.interfaceSettings", function(){ return קבלת_הגדרות_לממשק_Build4_3(); }); } catch(e) { Logger.log(e); }
+      try { fields = BH_perfMeasure_("core.settingsAndCategories.fields", function(){ return readSheet_("הגדרות_שדות"); }); } catch(e) { Logger.log(e); }
+      try { permissions = BH_perfMeasure_("core.settingsAndCategories.permissions", function(){ return קבלת_הרשאות_Build6(); }); } catch(e) { Logger.log(e); }
+      return { categories:categories, realSettings:realSettings, fields:fields, permissions:permissions };
+    });
 
-  return {
-    system: מיתוג_מערכת_Build7_(),
-    projects,
-    contacts,
-    links,
-    tasks,
-    notes,
-    settings,
-    categories,
-    realSettings,
-    fields,
-    permissions,
-    dashboard: calcDashboard_(projects, contacts, tasks)
-  };
+    const system = BH_perfMeasure_("core.branding.system", function(){ return מיתוג_מערכת_Build7_(); });
+    const dashboard = BH_perfMeasure_("core.dashboardCalculation.initial", function(){ return calcDashboard_(projects, contacts, tasks); });
+    return { system:system, projects:projects, contacts:contacts, links:links, tasks:tasks, notes:notes,
+      settings:settings, categories:configured.categories, realSettings:configured.realSettings,
+      fields:configured.fields, permissions:configured.permissions, dashboard:dashboard };
+  });
 }
 
 function קבלת_נתונים_Build3() {
@@ -3802,13 +3806,16 @@ function BH14_יוצרי_יומן_מותרים_(user, tasks){
 }
 
 function קבלת_נתונים_Build7(token, options) {
-  const user = קבלת_משתמש_מסשן_Build7_(token);
+  const payloadStart = __BH_REQUEST_PERF__ ? BH_perfStart_("core.payloadBuild") : null;
+  const user = BH_perfMeasure_("core.auth", function(){ return קבלת_משתמש_מסשן_Build7_(token); });
 
   if (!user.allowed) {
-    return {
+    const denied = {
       auth: { allowed: false, reason: user.reason || "אין הרשאה" },
-      system: מיתוג_מערכת_Build7_()
+      system: BH_perfMeasure_("core.branding.system", function(){ return מיתוג_מערכת_Build7_(); })
     };
+    if(payloadStart !== null) BH_perfEnd_("core.payloadBuild", payloadStart);
+    return denied;
   }
 
   const role = String(
@@ -3820,7 +3827,7 @@ function קבלת_נתונים_Build7(token, options) {
 
   const data = קבלת_נתוני_מערכת_מלאים_Build10_(options);
 
-  data.system = מיתוג_מערכת_Build7_();
+  data.system = BH_perfMeasure_("core.branding.systemRefresh", function(){ return מיתוג_מערכת_Build7_(); });
   data.auth = { allowed: true };
   data.currentUser = {
     email: user.email || "",
@@ -3839,8 +3846,8 @@ function קבלת_נתונים_Build7(token, options) {
     user.isOwner === true ||
     role === "מנהל ראשי";
 
-  const filtered = סינון_נתונים_לפי_משתמש_Build7_(data, data.currentUser);
-  const enriched = BH14_העשרת_נתוני_יומן_(filtered, data.currentUser);
+  const filtered = BH_perfMeasure_("core.permissionFiltering", function(){ return סינון_נתונים_לפי_משתמש_Build7_(data, data.currentUser); });
+  const enriched = BH_perfMeasure_("core.calendarEnrichment", function(){ return BH14_העשרת_נתוני_יומן_(filtered, data.currentUser); });
 
   enriched.system = data.system;
   enriched.auth = data.auth;
@@ -3848,13 +3855,12 @@ function קבלת_נתונים_Build7(token, options) {
   enriched.canSeeSettings = data.canSeeSettings;
 
   if (!enriched.dashboard) {
-    enriched.dashboard = calcDashboard_(
-      enriched.projects || [],
-      enriched.contacts || [],
-      enriched.tasks || []
-    );
+    enriched.dashboard = BH_perfMeasure_("core.dashboardCalculation.fallback", function(){
+      return calcDashboard_(enriched.projects || [], enriched.contacts || [], enriched.tasks || []);
+    });
   }
 
+  if(payloadStart !== null) BH_perfEnd_("core.payloadBuild", payloadStart);
   return enriched;
 }
 
@@ -5816,6 +5822,7 @@ function שחזור_מיתוג_תחום_שיוך(data){
 }
 
 function BH_DB_attachCoreBranding_(data){
+  const brandingStart = __BH_REQUEST_PERF__ ? BH_perfStart_("core.branding") : null;
   if(data && data.auth && data.auth.allowed === true){
     data.defaultBranding = BH_DB_defaultBranding_();
     data.rootBranding = BH_DB_rootBranding_(data.currentUser, data.projects || []);
@@ -5825,6 +5832,7 @@ function BH_DB_attachCoreBranding_(data){
       data.domainBrandingAdmin = admin;
     }
   }
+  if(brandingStart !== null) BH_perfEnd_("core.branding", brandingStart);
   return data;
 }
 
@@ -6005,12 +6013,14 @@ const BH_CAD_originalLogout_ = התנתקות_Build7;
 
 const BH_CAD_originalCore_ = קבלת_נתוני_ליבה_Build13;
 קבלת_נתוני_ליבה_Build13 = function(token){
-  const baseUser = קבלת_משתמש_מסשן_Build7_(token);
-  if(!baseUser.allowed || String(baseUser.role || "").trim() !== "לקוח") return BH_CAD_originalCore_(token);
+  const baseUser = BH_perfMeasure_("core.customerDomain.auth", function(){ return קבלת_משתמש_מסשן_Build7_(token); });
+  if(!baseUser.allowed || String(baseUser.role || "").trim() !== "לקוח"){
+    return BH_perfMeasure_("core.canonicalCore", function(){ return BH_CAD_originalCore_(token); });
+  }
 
-  const full = קבלת_נתוני_מערכת_מלאים_Build10_({includeTaskNotes:false});
-  const domains = BH_CAD_availableDomainsForCustomer_(full, baseUser.contactId || "");
-  const session = BH_CAD_session_(token);
+  const full = BH_perfMeasure_("core.customerDomain.preflightFullData", function(){ return קבלת_נתוני_מערכת_מלאים_Build10_({includeTaskNotes:false}); });
+  const domains = BH_perfMeasure_("core.customerDomain.availableDomains", function(){ return BH_CAD_availableDomainsForCustomer_(full, baseUser.contactId || ""); });
+  const session = BH_perfMeasure_("core.customerDomain.session", function(){ return BH_CAD_session_(token); });
   let selected = session ? String(session[BH_CAD_SESSION_FIELD] || "").trim() : "";
 
   if(domains.length === 1){
@@ -6025,9 +6035,11 @@ const BH_CAD_originalCore_ = קבלת_נתוני_ליבה_Build13;
     return BH_CAD_domainRequiredPayload_(baseUser, domains);
   }
 
-  const canonicalPayload = BH_CAD_originalCore_(token);
+  const canonicalPayload = BH_perfMeasure_("core.canonicalCore", function(){ return BH_CAD_originalCore_(token); });
   if(selected && canonicalPayload && canonicalPayload.auth && canonicalPayload.auth.allowed === true){
-    return BH_CAD_applySelectedDomainFilter_(canonicalPayload, canonicalPayload.currentUser || baseUser, selected);
+    return BH_perfMeasure_("core.customerDomain.selectedDomainFiltering", function(){
+      return BH_CAD_applySelectedDomainFilter_(canonicalPayload, canonicalPayload.currentUser || baseUser, selected);
+    });
   }
   return canonicalPayload;
 };
@@ -6249,10 +6261,22 @@ function BH_perfEnd_(label, start){
   if(!__BH_REQUEST_PERF__) return;
   __BH_REQUEST_PERF__.timings[label] = (__BH_REQUEST_PERF__.timings[label] || 0) + (Date.now() - start);
 }
+function BH_perfMeasure_(label, fn){
+  if(!__BH_REQUEST_PERF__) return fn();
+  const start = BH_perfStart_(label);
+  try { return fn(); }
+  finally { BH_perfEnd_(label, start); }
+}
 function BH_perfLog_(label, payload){
   if(!__BH_REQUEST_PERF__) return;
   try{
+    const serializationStart = BH_perfStart_('core.serializePayload');
     __BH_REQUEST_PERF__.payloadBytes = payload ? JSON.stringify(payload).length : 0;
+    BH_perfEnd_('core.serializePayload', serializationStart);
+    if(payload && payload.performanceDiagnostics){
+      payload.performanceDiagnostics.payloadBytes = __BH_REQUEST_PERF__.payloadBytes;
+      payload.performanceDiagnostics.timings = Object.assign({}, __BH_REQUEST_PERF__.timings);
+    }
     Logger.log('[CRM_PERFORMANCE] requestId=' + (__BH_REQUEST_PERF__.requestId || '') + ' server ' + label + ' ' + JSON.stringify(__BH_REQUEST_PERF__));
   }catch(e){}
 }
@@ -6292,14 +6316,24 @@ readSheet_ = function(sheetName){
 
 function BH_attachPerformanceDiagnostics_(payload){
   if(!__BH_REQUEST_PERF__ || !payload || typeof payload !== 'object') return payload;
+  const attachStart = BH_perfStart_('core.attachDiagnostics');
+  const countsStart = BH_perfStart_('core.recordCounts');
   const counts = {};
   ['projects','contacts','tasks','calendarTasks','users','links','settings'].forEach(function(k){
     const v = payload[k] || (payload.realSettings && payload.realSettings[k]);
     counts[k] = Array.isArray(v) ? v.length : 0;
   });
   __BH_REQUEST_PERF__.recordCounts = counts;
+  BH_perfEnd_('core.recordCounts', countsStart);
+  const bytesStart = BH_perfStart_('core.payloadBytes.beforeDiagnostics');
   try { __BH_REQUEST_PERF__.payloadBytes = JSON.stringify(payload || {}).length; } catch(e){}
-  payload.performanceDiagnostics = JSON.parse(JSON.stringify(__BH_REQUEST_PERF__));
+  BH_perfEnd_('core.payloadBytes.beforeDiagnostics', bytesStart);
+  const snapshotStart = BH_perfStart_('core.attachDiagnostics.snapshotSerialization');
+  const diagnostics = JSON.parse(JSON.stringify(__BH_REQUEST_PERF__));
+  BH_perfEnd_('core.attachDiagnostics.snapshotSerialization', snapshotStart);
+  BH_perfEnd_('core.attachDiagnostics', attachStart);
+  diagnostics.timings = Object.assign({}, __BH_REQUEST_PERF__.timings);
+  payload.performanceDiagnostics = diagnostics;
   return payload;
 }
 
@@ -6311,10 +6345,13 @@ function BH_coreAllowedAdmin_(user){
 var BH_perf_originalCoreFinal_ = קבלת_נתוני_ליבה_Build13;
 קבלת_נתוני_ליבה_Build13 = function(token, requestId){
   return BH_withRequestRows_('קבלת_נתוני_ליבה_Build13', function(){
+    const coreStart = BH_perfStart_('core.total');
     const authStart = BH_perfStart_('authentication/session validation');
-    const data = BH_perf_originalCoreFinal_(token);
+    const data = BH_perfMeasure_('core.routeAndWrappers', function(){ return BH_perf_originalCoreFinal_(token); });
     BH_perfEnd_('authentication/session validation', authStart);
     BH_attachPerformanceDiagnostics_(data);
+    BH_perfEnd_('core.total', coreStart);
+    if(data && data.performanceDiagnostics) data.performanceDiagnostics.timings = Object.assign({}, __BH_REQUEST_PERF__.timings);
     return data;
   }, requestId);
 };
