@@ -5,10 +5,15 @@ const runner = fs.readFileSync('PerformanceAuditRunner.GS.txt', 'utf8');
 const gs = fs.readFileSync('V2.GS.txt', 'utf8');
 
 assert(/function BH_PERF_RUN_EXISTING_AUDIT\(\)/.test(runner), 'manual audit runner must exist');
+assert(/function BH_PERF_RUN_ASSIGNMENT_SCHEMA_AUDIT\(\)/.test(runner), 'assignment-domain schema audit runner must exist');
 assert(/BH13_4_מדידת_ליבה_מול_פתיחה\(token\)/.test(runner), 'runner must reuse the existing canonical diagnostic');
 assert(/קבלת_משתמש_מסשן_Build7_\(token\)/.test(runner), 'runner must validate the selected session token');
 assert(/BH_coreAllowedAdmin_\(user\)/.test(runner), 'runner must require owner or super-admin access');
 assert(/readSheet_\("סשנים"\)/.test(runner), 'runner must resolve a stored active session');
+assert(/BH_AD_ensureAssignmentDomainSchema_\(\)/.test(runner), 'schema audit must exercise the production guard');
+assert(/core\.assignmentDomainSchemaCheck/.test(runner), 'schema audit must report the schema-check timing');
+assert(/core\.assignmentDomainInstallTriggered/.test(runner), 'schema audit must report whether installation was triggered');
+assert(/core\.buildFullData\.assignmentDomainInstall/.test(runner), 'schema audit must report the full-installer timing');
 assert(/דו״ח ביצועים/.test(runner), 'runner must write the requested report sheet');
 
 assert(!/readSheet_\s*=/.test(runner), 'runner must not replace readSheet_');

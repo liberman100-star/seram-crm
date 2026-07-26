@@ -141,3 +141,29 @@ function BH_PERF_RUN_EXISTING_AUDIT() {
 
   return report;
 }
+
+/**
+ * Measures the assignment-domain schema guard on the deployed spreadsheet.
+ * Returns aggregate timings only; no sheet contents or user identifiers.
+ */
+function BH_PERF_RUN_ASSIGNMENT_SCHEMA_AUDIT() {
+  var token = BH_PERF_activeSessionTokenForCurrentUser_();
+  var user = קבלת_משתמש_מסשן_Build7_(token);
+  if (!user || user.allowed !== true || !BH_coreAllowedAdmin_(user)) {
+    throw new Error("הבדיקה זמינה למנהל ראשי בלבד");
+  }
+
+  return BH_withRequestRows_("assignmentDomainSchemaAudit", function() {
+    var schemaReady = BH_AD_ensureAssignmentDomainSchema_();
+    var timings = Object.assign({}, (__BH_REQUEST_PERF__ && __BH_REQUEST_PERF__.timings) || {});
+    return {
+      schemaReady: schemaReady,
+      assignmentDomainSchemaCheckMs: Number(timings["core.assignmentDomainSchemaCheck"] || 0),
+      assignmentDomainInstallTriggered: Object.prototype.hasOwnProperty.call(timings, "core.assignmentDomainInstallTriggered"),
+      assignmentDomainInstallTriggeredMs: Object.prototype.hasOwnProperty.call(timings, "core.assignmentDomainInstallTriggered")
+        ? Number(timings["core.assignmentDomainInstallTriggered"] || 0) : null,
+      buildFullDataAssignmentDomainInstallMs: Object.prototype.hasOwnProperty.call(timings, "core.buildFullData.assignmentDomainInstall")
+        ? Number(timings["core.buildFullData.assignmentDomainInstall"] || 0) : null
+    };
+  }, "assignment-domain-schema-audit");
+}
