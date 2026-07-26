@@ -5664,6 +5664,29 @@ function התקנת_מיתוג_תחומי_שיוך_BuildADBranding(){
   return true;
 }
 
+function BH_DB_brandingSchemaReady_(){
+  const sh = getSS_().getSheetByName(BH_DB_SHEET);
+  if(!sh || sh.getLastColumn() < 1) return false;
+  const headers = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0].map(h => String(h || "").trim());
+  return BH_DB_HEADERS.every(h => headers.indexOf(h) !== -1);
+}
+
+function BH_DB_ensureBrandingSchema_(){
+  const memoKey = "__BH_DB_BRANDING_SCHEMA_READY__";
+  if(__BH_REQUEST_ROWS__ && __BH_REQUEST_ROWS__[memoKey] === true) return true;
+
+  let ready = false;
+  try { ready = BH_DB_brandingSchemaReady_(); } catch(e) {}
+  if(!ready){
+    BH_perfMeasure_("core.branding.assignmentDomain.install", function(){
+      התקנת_מיתוג_תחומי_שיוך_BuildADBranding();
+    });
+    ready = true;
+  }
+  if(__BH_REQUEST_ROWS__) __BH_REQUEST_ROWS__[memoKey] = ready;
+  return ready;
+}
+
 function BH_DB_defaultBranding_(){
   const b = BH_perfMeasure_("core.branding.default.sheetRead", function(){ return מיתוג_מערכת_Build7_(); });
   b.source = "default";
@@ -5694,28 +5717,31 @@ function BH_DB_activeDomains_(){
 function BH_DB_domainMap_(){
   const out = {};
   const duplicates = {};
-  try { התקנת_מיתוג_תחומי_שיוך_BuildADBranding(); } catch(e) {}
+  try { BH_DB_ensureBrandingSchema_(); } catch(e) {}
   try {
-    BH_perfMeasure_("core.branding.assignmentDomain.sheetRead", function(){ return readSheet_(BH_DB_SHEET); }).forEach(r => {
-      const domain = String(r["תחום שיוך"] || "").trim();
-      if(!domain || domain === BH_AD_DEFAULT || String(r["פעיל"] || "כן").trim() === "לא") return;
-      const branding = {
-        id: r["מזהה מיתוג"] || "",
-        name: r["שם מערכת"] || "",
-        logo: r["לוגו"] || "",
-        primaryColor: r["צבע ראשי"] || "",
-        secondaryColor: r["צבע משני"] || "",
-        logoHeight: r["גובה לוגו"] || "40",
-        logoPosition: "ימין",
-        assignmentDomain: domain,
-        source: "assignmentDomain"
-      };
-      if(out[domain]){
-        if(!duplicates[domain]) duplicates[domain] = [out[domain].id].filter(Boolean);
-        if(branding.id) duplicates[domain].push(branding.id);
-        return;
-      }
-      out[domain] = branding;
+    const rows = BH_perfMeasure_("core.branding.assignmentDomain.sheetRead", function(){ return readSheet_(BH_DB_SHEET); });
+    BH_perfMeasure_("core.branding.assignmentDomain.domainMapProcessing", function(){
+      rows.forEach(r => {
+        const domain = String(r["תחום שיוך"] || "").trim();
+        if(!domain || domain === BH_AD_DEFAULT || String(r["פעיל"] || "כן").trim() === "לא") return;
+        const branding = {
+          id: r["מזהה מיתוג"] || "",
+          name: r["שם מערכת"] || "",
+          logo: r["לוגו"] || "",
+          primaryColor: r["צבע ראשי"] || "",
+          secondaryColor: r["צבע משני"] || "",
+          logoHeight: r["גובה לוגו"] || "40",
+          logoPosition: "ימין",
+          assignmentDomain: domain,
+          source: "assignmentDomain"
+        };
+        if(out[domain]){
+          if(!duplicates[domain]) duplicates[domain] = [out[domain].id].filter(Boolean);
+          if(branding.id) duplicates[domain].push(branding.id);
+          return;
+        }
+        out[domain] = branding;
+      });
     });
   } catch(e) {}
   out.__duplicates = duplicates;
@@ -5723,7 +5749,6 @@ function BH_DB_domainMap_(){
 }
 
 function BH_DB_adminPayload_(){
-  try { התקנת_מיתוג_תחומי_שיוך_BuildADBranding(); } catch(e) {}
   const map = BH_perfMeasure_("core.branding.admin.domainMap", function(){ return BH_DB_domainMap_(); });
   return {
     domains: BH_perfMeasure_("core.branding.admin.activeDomains", function(){ return BH_DB_activeDomains_(); }),

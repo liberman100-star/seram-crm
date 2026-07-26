@@ -33,7 +33,9 @@ assert.strictEqual(context.result.domainBrandingAdmin, adminPayload, 'admin bran
   'core.branding.root.default',
   'core.branding.root.contactsSheetRead',
   'core.branding.root.assignmentDomain',
+  'core.branding.assignmentDomain.install',
   'core.branding.assignmentDomain.sheetRead',
+  'core.branding.assignmentDomain.domainMapProcessing',
   'core.branding.admin.domainMap',
   'core.branding.admin.activeDomains',
   'core.branding.admin.sheetRead'
