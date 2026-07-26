@@ -2081,13 +2081,16 @@ function שמירת_טלפון_כטקסט_(phone) {
   return p;
 }
 
-function קבלת_נתוני_מערכת_מלאים_Build10_() {
+function קבלת_נתוני_מערכת_מלאים_Build10_(options) {
+  options = options || {};
   try { התקנת_תחום_שיוך_BuildAD(); } catch(e) { Logger.log(e); }
   const projects = readSheet_(SHEETS.PROJECTS);
   const contacts = readSheet_(SHEETS.CONTACTS);
   const links = readSheet_(SHEETS.LINKS);
   const tasks = readSheet_(SHEETS.TASKS);
-  const notes = readSheet_(SHEETS.TASK_NOTES);
+  // Task notes are card-only data. Opening requests skip this sheet and the
+  // existing task-card endpoint reads the notes only when a card is opened.
+  const notes = options.includeTaskNotes === false ? [] : readSheet_(SHEETS.TASK_NOTES);
   const settingsRows = readSheet_(SHEETS.SETTINGS);
   const settings = activeSettings_(settingsRows);
 
@@ -3433,7 +3436,7 @@ function קבלת_מודול_Build13_2(token, moduleName) {
 }
 
 function קבלת_נתוני_ליבה_Build13(token) {
-  const data = קבלת_נתונים_Build7(token);
+  const data = קבלת_נתונים_Build7(token, {includeTaskNotes:false});
   return BH_DB_attachCoreBranding_(data);
 }
 
@@ -3798,7 +3801,7 @@ function BH14_יוצרי_יומן_מותרים_(user, tasks){
   return { mode:"mine", creators: [...new Set([name, email])] };
 }
 
-function קבלת_נתונים_Build7(token) {
+function קבלת_נתונים_Build7(token, options) {
   const user = קבלת_משתמש_מסשן_Build7_(token);
 
   if (!user.allowed) {
@@ -3815,7 +3818,7 @@ function קבלת_נתונים_Build7(token) {
     ""
   ).trim();
 
-  const data = קבלת_נתוני_מערכת_מלאים_Build10_();
+  const data = קבלת_נתוני_מערכת_מלאים_Build10_(options);
 
   data.system = מיתוג_מערכת_Build7_();
   data.auth = { allowed: true };
@@ -6005,7 +6008,7 @@ const BH_CAD_originalCore_ = קבלת_נתוני_ליבה_Build13;
   const baseUser = קבלת_משתמש_מסשן_Build7_(token);
   if(!baseUser.allowed || String(baseUser.role || "").trim() !== "לקוח") return BH_CAD_originalCore_(token);
 
-  const full = קבלת_נתוני_מערכת_מלאים_Build10_();
+  const full = קבלת_נתוני_מערכת_מלאים_Build10_({includeTaskNotes:false});
   const domains = BH_CAD_availableDomainsForCustomer_(full, baseUser.contactId || "");
   const session = BH_CAD_session_(token);
   let selected = session ? String(session[BH_CAD_SESSION_FIELD] || "").trim() : "";

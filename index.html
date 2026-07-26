@@ -2576,7 +2576,15 @@ openContactCard = function(contactOrId){
   if(!id) return alert('איש הקשר לא נמצא לאחר הרענון');
   google.script.run.withSuccessHandler(renderContactCard).withFailureHandler(e=>alert(e.message)).כרטיס_איש_קשר({id,authToken:currentToken()});
 }
-openTaskCard = function(id){ google.script.run.withSuccessHandler(renderTaskCard).withFailureHandler(e=>alert(e.message)).קבלת_כרטיס_משימה_Build10({id,authToken:currentToken()}); }
+openTaskCard = function(id){
+  modalBox.className='box small';
+  modalBox.innerHTML='<h2>פרטי משימה</h2><div class="card task-card-loading">טוען הערות...</div>';
+  modal.classList.remove('hidden');
+  google.script.run
+    .withSuccessHandler(renderTaskCard)
+    .withFailureHandler(e=>{ closeM(); alert(e.message); })
+    .קבלת_כרטיס_משימה_Build10({id,authToken:currentToken()});
+}
 
 saveProject = function(id){
   if(!canEdit() && id) return alert('אין לך הרשאה לעריכה');
