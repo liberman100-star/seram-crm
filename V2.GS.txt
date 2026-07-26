@@ -2084,11 +2084,7 @@ function שמירת_טלפון_כטקסט_(phone) {
 function קבלת_נתוני_מערכת_מלאים_Build10_(options) {
   options = options || {};
   return BH_perfMeasure_("core.buildFullData", function(){
-    BH_perfMeasure_("core.buildFullData.assignmentDomainInstall", function(){
-      BH_perfMeasure_("core.services.spreadsheet.assignmentDomainInstall", function(){
-        try { התקנת_תחום_שיוך_BuildAD(); } catch(e) { Logger.log(e); }
-      });
-    });
+    BH_AD_ensureAssignmentDomainSchema_();
     const coreRows = BH_perfMeasure_("core.readCoreSheets", function(){
       return {
         projects: BH_perfMeasure_("core.readCoreSheets.projects", function(){ return readSheet_(SHEETS.PROJECTS); }),
@@ -4439,6 +4435,54 @@ function התקנת_תחום_שיוך_BuildAD(){
   return true;
 }
 
+function BH_AD_assignmentDomainSchemaReady_(){
+  const ss = getSS_();
+  const requiredHeaders = {};
+  requiredHeaders[SHEETS.PROJECTS] = [BH_AD_CATEGORY];
+  requiredHeaders[SHEETS.CONTACTS] = ["תחומי שיוך", BH_AD_CENTRAL];
+  requiredHeaders[SHEETS.LINKS] = ["יוצר"];
+  requiredHeaders[SHEETS.TASK_NOTES] = ["יוצר"];
+
+  const sheetNames = Object.keys(requiredHeaders);
+  for(let i = 0; i < sheetNames.length; i++){
+    const sheetName = sheetNames[i];
+    const sh = ss.getSheetByName(sheetName);
+    if(!sh || sh.getLastColumn() < 1) return false;
+    const headers = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0].map(h => String(h || "").trim());
+    if(requiredHeaders[sheetName].some(h => headers.indexOf(h) === -1)) return false;
+  }
+
+  const valuesSheet = ss.getSheetByName("הגדרות_ערכים");
+  if(!valuesSheet || valuesSheet.getLastRow() < 2 || valuesSheet.getLastColumn() < 1) return false;
+  const values = valuesSheet.getDataRange().getValues();
+  const valuesHeaders = values[0].map(h => String(h || "").trim());
+  const typeCol = valuesHeaders.indexOf("סוג ערך"), valueCol = valuesHeaders.indexOf("ערך");
+  if(typeCol < 0 || valueCol < 0 || !values.slice(1).some(r => String(r[typeCol] || "").trim() === BH_AD_CATEGORY && String(r[valueCol] || "").trim() === BH_AD_DEFAULT)) return false;
+
+  const fieldsSheet = ss.getSheetByName("הגדרות_שדות");
+  if(!fieldsSheet || fieldsSheet.getLastRow() < 2 || fieldsSheet.getLastColumn() < 1) return false;
+  const fields = fieldsSheet.getDataRange().getValues();
+  const fieldHeaders = fields[0].map(h => String(h || "").trim());
+  const entityCol = fieldHeaders.indexOf("ישות"), fieldCol = fieldHeaders.indexOf("שם שדה");
+  return entityCol >= 0 && fieldCol >= 0 && fields.slice(1).some(r => String(r[entityCol] || "").trim() === "פרויקט" && String(r[fieldCol] || "").trim() === BH_AD_CATEGORY);
+}
+
+function BH_AD_ensureAssignmentDomainSchema_(){
+  const ready = BH_perfMeasure_("core.assignmentDomainSchemaCheck", function(){
+    try { return BH_AD_assignmentDomainSchemaReady_(); }
+    catch(e) { Logger.log(e); return false; }
+  });
+  if(ready) return true;
+  BH_perfMeasure_("core.assignmentDomainInstallTriggered", function(){
+    BH_perfMeasure_("core.buildFullData.assignmentDomainInstall", function(){
+      BH_perfMeasure_("core.services.spreadsheet.assignmentDomainInstall", function(){
+        try { התקנת_תחום_שיוך_BuildAD(); } catch(e) { Logger.log(e); }
+      });
+    });
+  });
+  return false;
+}
+
 
 /***********************
  * Project responsible user candidates – אחראי פרויקט
@@ -5621,7 +5665,7 @@ function התקנת_מיתוג_תחומי_שיוך_BuildADBranding(){
 }
 
 function BH_DB_defaultBranding_(){
-  const b = מיתוג_מערכת_Build7_();
+  const b = BH_perfMeasure_("core.branding.default.sheetRead", function(){ return מיתוג_מערכת_Build7_(); });
   b.source = "default";
   b.assignmentDomain = "";
   return b;
@@ -5652,7 +5696,7 @@ function BH_DB_domainMap_(){
   const duplicates = {};
   try { התקנת_מיתוג_תחומי_שיוך_BuildADBranding(); } catch(e) {}
   try {
-    readSheet_(BH_DB_SHEET).forEach(r => {
+    BH_perfMeasure_("core.branding.assignmentDomain.sheetRead", function(){ return readSheet_(BH_DB_SHEET); }).forEach(r => {
       const domain = String(r["תחום שיוך"] || "").trim();
       if(!domain || domain === BH_AD_DEFAULT || String(r["פעיל"] || "כן").trim() === "לא") return;
       const branding = {
@@ -5680,10 +5724,10 @@ function BH_DB_domainMap_(){
 
 function BH_DB_adminPayload_(){
   try { התקנת_מיתוג_תחומי_שיוך_BuildADBranding(); } catch(e) {}
-  const map = BH_DB_domainMap_();
+  const map = BH_perfMeasure_("core.branding.admin.domainMap", function(){ return BH_DB_domainMap_(); });
   return {
-    domains: BH_DB_activeDomains_(),
-    rows: readSheet_(BH_DB_SHEET),
+    domains: BH_perfMeasure_("core.branding.admin.activeDomains", function(){ return BH_DB_activeDomains_(); }),
+    rows: BH_perfMeasure_("core.branding.admin.sheetRead", function(){ return readSheet_(BH_DB_SHEET); }),
     effectiveByDomain: map,
     duplicateDomains: map.__duplicates || {},
     isSuperAdmin: true
@@ -5704,8 +5748,8 @@ function BH_DB_findContact_(contacts, user){
 }
 
 function BH_DB_rootBranding_(user, visibleProjects){
-  const def = BH_DB_defaultBranding_();
-  const contacts = readSheet_(SHEETS.CONTACTS);
+  const def = BH_perfMeasure_("core.branding.root.default", function(){ return BH_DB_defaultBranding_(); });
+  const contacts = BH_perfMeasure_("core.branding.root.contactsSheetRead", function(){ return readSheet_(SHEETS.CONTACTS); });
   const role = String(user && (user.role || user["הרשאת מערכת"] || user.permission) || "").trim();
   const me = BH_DB_findContact_(contacts, user);
   let domain = user && (user.assignmentCentralDomain || user["תחום שיוך מרכזי"]) || me[BH_AD_CENTRAL] || "";
@@ -5721,7 +5765,7 @@ function BH_DB_rootBranding_(user, visibleProjects){
     domain = domains.length === 1 ? domains[0] : "";
   }
 
-  return BH_DB_brandingForDomain_(domain) || def;
+  return BH_perfMeasure_("core.branding.root.assignmentDomain", function(){ return BH_DB_brandingForDomain_(domain); }) || def;
 }
 
 function BH_DB_projectBranding_(project){
@@ -5824,11 +5868,11 @@ function שחזור_מיתוג_תחום_שיוך(data){
 function BH_DB_attachCoreBranding_(data){
   const brandingStart = __BH_REQUEST_PERF__ ? BH_perfStart_("core.branding") : null;
   if(data && data.auth && data.auth.allowed === true){
-    data.defaultBranding = BH_DB_defaultBranding_();
-    data.rootBranding = BH_DB_rootBranding_(data.currentUser, data.projects || []);
+    data.defaultBranding = BH_perfMeasure_("core.branding.default", function(){ return BH_DB_defaultBranding_(); });
+    data.rootBranding = BH_perfMeasure_("core.branding.root", function(){ return BH_DB_rootBranding_(data.currentUser, data.projects || []); });
     data.system = data.rootBranding;
     if(data.currentUser && (data.currentUser.isOwner === true || String(data.currentUser.role||"").trim() === "מנהל ראשי")){
-      const admin = BH_DB_adminPayload_();
+      const admin = BH_perfMeasure_("core.branding.admin", function(){ return BH_DB_adminPayload_(); });
       data.domainBrandingAdmin = admin;
     }
   }
