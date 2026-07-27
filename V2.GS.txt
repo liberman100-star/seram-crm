@@ -2936,8 +2936,60 @@ function מחיקת_משימה(arg) {
   return BH20_העברה_לארכיון_(SHEETS.TASKS, "מזהה משימה", x.id, user, "משימה");
 }
 
-function סימון_משימה_בוצעה(arg) { const x = חילוץ_מזהה_וטוקן_Build11_2_(arg); const user = דרוש_כתיבה_Build11_2_(x.token); const task = readSheet_(SHEETS.TASKS).find(t => t["מזהה משימה"] === x.id); if (!task) throw new Error("המשימה לא נמצאה"); BH_AD_assertCreatorWrite_(user, task, "משימה"); task["סטטוס"] = "בוצע"; task["עדכון אחרון"] = new Date(); upsert_(SHEETS.TASKS, "מזהה משימה", x.id, task); log_("סימון משימה בוצעה", x.id); return true; }
-function החזרת_משימה_לפעילה(arg) { const x = חילוץ_מזהה_וטוקן_Build11_2_(arg); const user = דרוש_כתיבה_Build11_2_(x.token); const task = readSheet_(SHEETS.TASKS).find(t => t["מזהה משימה"] === x.id); if (!task) throw new Error("המשימה לא נמצאה"); BH_AD_assertCreatorWrite_(user, task, "משימה"); task["סטטוס"] = "פתוח"; task["עדכון אחרון"] = new Date(); upsert_(SHEETS.TASKS, "מזהה משימה", x.id, task); log_("החזרת משימה לפעילה", x.id); return true; }
+function BH_taskStatusMutationResult_(user, task, action) {
+  // Re-apply the read permission after the write; a mutation response must never
+  // become a shortcut around the normal task visibility rules.
+  if (!משימה_מותרת_לפתיחה_Build11_2_(user, task)) {
+    throw new Error("אין הרשאה לצפייה במשימה זו");
+  }
+  const calendarData = BH14_העשרת_נתוני_יומן_({tasks:[task]}, user);
+  const record = (calendarData.tasks || [])[0];
+  if (!record) throw new Error("לא ניתן להחזיר את המשימה המעודכנת");
+  const calendarRecord = (calendarData.calendarTasks || [])
+    .find(t => String(t["מזהה משימה"] || "") === String(task["מזהה משימה"] || "")) || null;
+  return {
+    ok: true,
+    entity: "task",
+    action: action,
+    taskId: String(task["מזהה משימה"] || ""),
+    record: record,
+    updatedAt: task["עדכון אחרון"] || null,
+    affected: {
+      tasks: true,
+      dashboard: true,
+      calendar: true,
+      taskCard: true,
+      calendarVisible: !!calendarRecord
+    },
+    calendarRecord: calendarRecord,
+    invalidations: []
+  };
+}
+
+function סימון_משימה_בוצעה(arg) {
+  const x = חילוץ_מזהה_וטוקן_Build11_2_(arg);
+  const user = דרוש_כתיבה_Build11_2_(x.token);
+  const task = readSheet_(SHEETS.TASKS).find(t => String(t["מזהה משימה"]) === String(x.id));
+  if (!task) throw new Error("המשימה לא נמצאה");
+  BH_AD_assertCreatorWrite_(user, task, "משימה");
+  task["סטטוס"] = "בוצע";
+  task["עדכון אחרון"] = new Date();
+  upsert_(SHEETS.TASKS, "מזהה משימה", x.id, task);
+  log_("סימון משימה בוצעה", x.id);
+  return BH_taskStatusMutationResult_(user, task, "done");
+}
+function החזרת_משימה_לפעילה(arg) {
+  const x = חילוץ_מזהה_וטוקן_Build11_2_(arg);
+  const user = דרוש_כתיבה_Build11_2_(x.token);
+  const task = readSheet_(SHEETS.TASKS).find(t => String(t["מזהה משימה"]) === String(x.id));
+  if (!task) throw new Error("המשימה לא נמצאה");
+  BH_AD_assertCreatorWrite_(user, task, "משימה");
+  task["סטטוס"] = "פתוח";
+  task["עדכון אחרון"] = new Date();
+  upsert_(SHEETS.TASKS, "מזהה משימה", x.id, task);
+  log_("החזרת משימה לפעילה", x.id);
+  return BH_taskStatusMutationResult_(user, task, "reactivate");
+}
 
 function קבלת_כרטיס_משימה_Build10(arg) {
   const x = חילוץ_מזהה_וטוקן_Build11_2_(arg);

@@ -7071,5 +7071,138 @@ window.calendarTasksForDate = function(d){
 .meeting-contact-chip{display:inline-flex;gap:6px;align-items:center;margin:4px;padding:5px 10px;border-radius:999px;background:#e0f2fe;color:#075985}.meeting-contact-chip button{border:0;background:transparent;font-weight:800;cursor:pointer}.warn{color:#b45309}.meeting-dialog-backdrop{position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:9999;display:flex;align-items:center;justify-content:center}.meeting-dialog{background:#fff;max-width:720px;width:92%;max-height:85vh;overflow:auto;border-radius:14px;padding:18px;box-shadow:0 20px 60px rgba(0,0,0,.25)}.meeting-contact-list{max-height:420px;overflow:auto;margin:12px 0}.meeting-contact-row{display:flex;gap:10px;align-items:flex-start;padding:8px;border-bottom:1px solid #e5e7eb}.meeting-contact-row input{width:auto}
 </style>
 
+<script id="BH_TASK_STATUS_PATCH">
+/* A deliberately small patch coordinator for done/reactivate only. */
+(function(){
+  const pending = Object.create(null);
+  let lastTaskCard = null;
+  const previousRenderTaskCard = window.renderTaskCard;
+
+  window.renderTaskCard = function(payload){
+    lastTaskCard = payload || null;
+    return previousRenderTaskCard.apply(this, arguments);
+  };
+
+  function mutationNow(){ return (window.performance && performance.now) ? performance.now() : Date.now(); }
+  function mutationElapsed(start){ return Math.round((mutationNow() - start) * 10) / 10; }
+  function validRecord(record, id){
+    return !!record && typeof record === 'object' && !Array.isArray(record) &&
+      String(record['מזהה משימה'] || '') === String(id || '');
+  }
+  function hasFullInvalidation(result){
+    return Array.isArray(result.invalidations) && result.invalidations.some(x=>
+      ['fullCore','security','permissions','assignmentDomain'].includes(String(x)));
+  }
+  function replaceTask(collection, id, record, required){
+    if(!Array.isArray(collection)) return !required;
+    const index = collection.findIndex(t=>String(t['מזהה משימה'] || '') === String(id));
+    if(index < 0) return !required;
+    collection[index] = Object.assign({}, collection[index], record);
+    return true;
+  }
+  function updateDashboardTaskBuckets(){
+    if(!DATA.dashboard || !Array.isArray(DATA.tasks)) return;
+    const today = new Date(); today.setHours(0,0,0,0);
+    const week = new Date(today); week.setDate(week.getDate()+7);
+    const open = DATA.tasks.filter(t=>String(t['בארכיון'] || '') !== 'כן' && !['בוצע','בוטל'].includes(t['סטטוס']));
+    const dateOf = t=>{ if(!t['תאריך']) return null; const d=parseDateOnly(t['תאריך']); return d && !isNaN(d.getTime()) ? d : null; };
+    DATA.dashboard.lateTasks = open.filter(t=>{ const d=dateOf(t); return d && d<today; });
+    DATA.dashboard.todayTasks = open.filter(t=>{ const d=dateOf(t); return d && d.getTime()===today.getTime(); });
+    DATA.dashboard.weekTasks = open.filter(t=>{ const d=dateOf(t); return d && d>today && d<=week; });
+  }
+  function patchOpenTaskCard(id, record){
+    if(!modal || modal.classList.contains('hidden')) return;
+    const openId = modalBox && modalBox.getAttribute('data-open-task-id');
+    if(String(openId || '') !== String(id)) return;
+    const payload = Object.assign({}, lastTaskCard || {});
+    payload.task = Object.assign({}, payload.task || {}, record);
+    lastTaskCard = payload;
+    renderTaskCard(payload);
+  }
+
+  window.applyTaskStatusMutationPatch = function(result){
+    if(!result || result.ok !== true || result.entity !== 'task' ||
+       !result.taskId || !validRecord(result.record, result.taskId) || hasFullInvalidation(result)) return false;
+    const id = String(result.taskId);
+    try{
+      if(!replaceTask(DATA.tasks, id, result.record, Array.isArray(DATA.tasks))) return false;
+      if(Array.isArray(DATA.calendarTasks)){
+        const calendarIndex = DATA.calendarTasks.findIndex(t=>String(t['מזהה משימה'] || '') === id);
+        if(result.affected && result.affected.calendarVisible === true){
+          const calendarRecord = validRecord(result.calendarRecord, id) ? result.calendarRecord : result.record;
+          if(calendarIndex < 0) DATA.calendarTasks.push(calendarRecord);
+          else DATA.calendarTasks[calendarIndex] = Object.assign({}, DATA.calendarTasks[calendarIndex], calendarRecord);
+        }else if(calendarIndex >= 0){
+          DATA.calendarTasks.splice(calendarIndex, 1);
+        }
+      }
+      updateDashboardTaskBuckets();
+      const scrollX=window.scrollX, scrollY=window.scrollY;
+      if(typeof tableTasks === 'function' && document.getElementById('tasksTable')) tableTasks();
+      if(typeof renderDashboard === 'function' && document.getElementById('dashboard')) renderDashboard();
+      // Calendar renderers use the existing CAL_VIEW/CAL_DATE/filter globals, so this
+      // redraw does not reset view, date, or owner selection.
+      if(typeof renderCalendarDashboard === 'function' && document.getElementById('calendarBox')) renderCalendarDashboard();
+      patchOpenTaskCard(id, result.record);
+      window.scrollTo(scrollX, scrollY);
+      return true;
+    }catch(e){
+      return false;
+    }
+  };
+
+  function setTaskStatusBusy(id, busy){
+    document.querySelectorAll('button[onclick]').forEach(button=>{
+      const call=String(button.getAttribute('onclick') || '');
+      if(call.includes("Task('" + id + "')")){
+        button.disabled=busy;
+        button.setAttribute('aria-busy', busy ? 'true' : 'false');
+      }
+    });
+  }
+  function logMutation(action, serverStart, patchMs, totalStart, fallbackUsed){
+    console.info('taskStatusMutation', {
+      'taskStatusMutation.action': action,
+      'taskStatusMutation.serverRoundTrip': mutationElapsed(serverStart),
+      'taskStatusMutation.patchClient': patchMs,
+      'taskStatusMutation.totalToInteractive': mutationElapsed(totalStart),
+      'taskStatusMutation.fallbackUsed': fallbackUsed
+    });
+  }
+  function mutateStatus(id, action, endpoint){
+    id=String(id || '');
+    if(!canEdit()) return alert('אין לך הרשאה לעריכה');
+    if(!id || pending[id]) return;
+    pending[id]=true; setTaskStatusBusy(id, true);
+    const totalStart=mutationNow(), serverStart=mutationNow();
+    const runner = google.script.run
+      .withSuccessHandler(result=>{
+        const patchStart=mutationNow();
+        const patched=window.applyTaskStatusMutationPatch(result);
+        const patchMs=mutationElapsed(patchStart);
+        if(patched){
+          delete pending[id]; setTaskStatusBusy(id, false);
+          logMutation(action, serverStart, patchMs, totalStart, false);
+          return;
+        }
+        // Explicit safety fallback: malformed/missing/stale-security responses or
+        // any local patch failure return to the already-established full refresh.
+        refreshCore(()=>{
+          delete pending[id]; setTaskStatusBusy(id, false);
+          logMutation(action, serverStart, patchMs, totalStart, true);
+        });
+      })
+      .withFailureHandler(error=>{
+        delete pending[id]; setTaskStatusBusy(id, false);
+        alert(error && error.message ? error.message : 'הפעולה נכשלה');
+      });
+    if(endpoint === 'סימון_משימה_בוצעה') runner.סימון_משימה_בוצעה({id:id, authToken:currentToken()});
+    else runner.החזרת_משימה_לפעילה({id:id, authToken:currentToken()});
+  }
+  window.doneTask = id=>mutateStatus(id, 'done', 'סימון_משימה_בוצעה');
+  window.reactivateTask = id=>mutateStatus(id, 'reactivate', 'החזרת_משימה_לפעילה');
+})();
+</script>
+
 </body>
 </html>
