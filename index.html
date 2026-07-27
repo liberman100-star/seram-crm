@@ -7048,28 +7048,43 @@ window.calendarTasksForDate = function(d){
   }
   function validResponse(response, id, expectedSequence){
     return !!(response && response.ok === true && response.authenticated === true &&
-      response.route === route && response.fullInvalidation !== true && response.task &&
-      String(response.task['מזהה משימה'] || '') === String(id) &&
-      response.updatedAt && Number(response.sequence) === expectedSequence);
+      response.route === route && response.fullInvalidation !== true && response.updatedAt &&
+      ['insert','replace','remove','unchanged'].includes(response.taskDecision) &&
+      ['insert','replace','remove','unchanged'].includes(response.calendarDecision) &&
+      response.taskVisible === (response.taskDecision !== 'remove') &&
+      response.calendarVisible === (response.calendarDecision !== 'remove') &&
+      (!response.taskVisible || (response.canonicalTask && String(response.canonicalTask['מזהה משימה'] || '') === String(id))) &&
+      (!response.calendarVisible || (response.canonicalCalendarRecord && String(response.canonicalCalendarRecord['מזהה משימה'] || '') === String(id))) &&
+      Array.isArray(response.calendarCreatorsAllowed) && response.calendarCreatorPermission &&
+      response.dashboard && Array.isArray(response.invalidations) &&
+      Number(response.sequence) === expectedSequence);
   }
-  function replaceById(rows, task){
-    if(!Array.isArray(rows)) return false;
-    const id = String(task['מזהה משימה'] || '');
-    const index = rows.findIndex(row=>String((row||{})['מזהה משימה']||'')===id);
-    if(index < 0) return false;
-    rows.splice(index, 1, task);
-    return true;
+  function applyDecision(rows, decision, record, id){
+    if(!Array.isArray(rows)) throw new Error('collection-missing');
+    const index = rows.findIndex(row=>String((row||{})['מזהה משימה']||'')===String(id));
+    if(decision === 'remove') return rows.filter((row,rowIndex)=>rowIndex!==index);
+    if(decision === 'unchanged') return rows.slice();
+    if(decision === 'insert' && record && index < 0) return rows.concat([record]);
+    if(decision === 'replace' && record && index >= 0) return rows.map((row,rowIndex)=>rowIndex===index ? record : row);
+    throw new Error('invalid-collection-decision');
   }
   function patch(response){
-    const task = response.task;
-    if(!replaceById(DATA.tasks, task)) throw new Error('task-not-in-local-data');
-    if(Array.isArray(DATA.calendarTasks)) replaceById(DATA.calendarTasks, task);
+    // Apply the server decisions to copies first, so a later validation failure cannot
+    // leave DATA half-patched.
+    const nextTasks = applyDecision(DATA.tasks, response.taskDecision, response.canonicalTask, response.taskId);
+    const nextCalendarTasks = applyDecision(DATA.calendarTasks, response.calendarDecision, response.canonicalCalendarRecord, response.taskId);
+    DATA.tasks = nextTasks;
+    DATA.calendarTasks = nextCalendarTasks;
+    DATA.calendarCreatorsAllowed = response.calendarCreatorsAllowed.slice();
+    DATA.calendarCreatorPermission = Object.assign({}, response.calendarCreatorPermission);
+    DATA.dashboard = response.dashboard;
 
     // Only task-dependent surfaces render; projects, contacts, settings and shell do not.
     tableTasks();
     renderDashboard();
     if(typeof renderCalendarDashboard === 'function') renderCalendarDashboard();
-    renderTaskCard(taskCardPayloadFromTask(task, false));
+    if(response.taskVisible) renderTaskCard(taskCardPayloadFromTask(response.canonicalTask, false));
+    else closeM();
   }
 
   window.BH_saveTaskEditLocal = function(id, request){
@@ -7078,6 +7093,8 @@ window.calendarTasksForDate = function(d){
     const state = {sequence:++sequence, fallback:false};
     pending[key] = state;
     request.clientSequence = state.sequence;
+    request.clientTaskPresent = Array.isArray(DATA.tasks) && DATA.tasks.some(task=>String((task||{})['מזהה משימה']||'')===key);
+    request.clientCalendarPresent = Array.isArray(DATA.calendarTasks) && DATA.calendarTasks.some(task=>String((task||{})['מזהה משימה']||'')===key);
     const started = Date.now();
     setBusy(true);
 
@@ -7108,7 +7125,7 @@ window.calendarTasksForDate = function(d){
       .שמירת_משימה(request);
     return true;
   };
-  window.__BH_TASK_EDIT_TEST_HOOKS__ = {pending:pending, latestApplied:latestApplied, validResponse:validResponse, replaceById:replaceById};
+  window.__BH_TASK_EDIT_TEST_HOOKS__ = {pending:pending, latestApplied:latestApplied, validResponse:validResponse, applyDecision:applyDecision};
 })();
 </script>
 

@@ -5087,20 +5087,45 @@ function שמירת_משימה(data) {
 
   if (!data.clientSequence) return id;
 
-  // The edit-task client patches from this authorized, canonical row. Format every
-  // sheet value before returning so Apps Script never serializes a raw Date.
-  const canonicalTask = {};
-  Object.keys(row).forEach(function(header){
-    canonicalTask[header] = formatValue_(row[header], header);
-  });
+  // Reuse the effective Full Core pipeline so visibility, calendar enrichment and
+  // derived collections have exactly the same semantics as refreshCore.
+  const canonicalCore = קבלת_נתוני_ליבה_Build13(data.authToken);
+  if(!canonicalCore || !canonicalCore.auth || canonicalCore.auth.allowed !== true ||
+      !Array.isArray(canonicalCore.tasks) || !Array.isArray(canonicalCore.calendarTasks) ||
+      !canonicalCore.dashboard){
+    return {
+      ok:true, authenticated:true, route:"task-edit", sequence:Number(data.clientSequence || 0),
+      updatedAt:formatValue_(row["עדכון אחרון"], "עדכון אחרון"), invalidations:["core-contract"],
+      fullInvalidation:true
+    };
+  }
+  const canonicalTask = canonicalCore.tasks.find(function(task){
+    return String(task["מזהה משימה"] || "") === String(id);
+  }) || null;
+  const canonicalCalendarRecord = canonicalCore.calendarTasks.find(function(task){
+    return String(task["מזהה משימה"] || "") === String(id);
+  }) || null;
+  const taskVisible = !!canonicalTask;
+  const calendarVisible = !!canonicalCalendarRecord;
+  const taskWasPresent = data.clientTaskPresent === true;
+  const calendarWasPresent = data.clientCalendarPresent === true;
   return {
     ok: true,
     authenticated: true,
     route: "task-edit",
-    task: canonicalTask,
+    canonicalTask: canonicalTask,
     taskId: id,
-    updatedAt: String(canonicalTask["עדכון אחרון"] || ""),
+    updatedAt: String((canonicalTask && canonicalTask["עדכון אחרון"]) || formatValue_(row["עדכון אחרון"], "עדכון אחרון") || ""),
     sequence: Number(data.clientSequence || 0),
+    taskVisible: taskVisible,
+    taskDecision: taskVisible ? (taskWasPresent ? "replace" : "insert") : "remove",
+    calendarVisible: calendarVisible,
+    canonicalCalendarRecord: canonicalCalendarRecord,
+    calendarDecision: calendarVisible ? (calendarWasPresent ? "replace" : "insert") : "remove",
+    calendarCreatorsAllowed: (canonicalCore.calendarCreatorsAllowed || []).slice(),
+    calendarCreatorPermission: canonicalCore.calendarCreatorPermission || {mode:"allowed", creators:[]},
+    dashboard: canonicalCore.dashboard,
+    invalidations: ["tasks", "calendarTasks", "dashboard", "calendarCreatorsAllowed"],
     fullInvalidation: false
   };
 }

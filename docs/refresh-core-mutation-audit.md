@@ -46,12 +46,14 @@ Late assignments were treated as authoritative.
 
 ## Selected local patch map and contract
 
-The authenticated server response is
-`{ok, authenticated, route, task, taskId, updatedAt, sequence, fullInvalidation}`.
-`task` is the complete persisted and authorized row, formatted through the existing
-sheet formatter so no raw `Date` crosses the boundary. The client replaces the row in
-`DATA.tasks` and, when present, `DATA.calendarTasks`; it does not mutate projects,
-contacts, links, permissions, notes, filters or settings.
+The authenticated server response reuses the effective Full Core pipeline and returns
+`canonicalTask`, `canonicalCalendarRecord`, explicit task/calendar visibility and
+insert/replace/remove decisions, canonical dashboard buckets, calendar creator state,
+invalidations, sequence/version and `fullInvalidation`. The client executes those
+decisions without calculating visibility or calendar ownership. This preserves the
+Core enrichment fields and supports membership changes in both `DATA.tasks` and
+`DATA.calendarTasks`; it does not mutate projects, contacts, links, permissions, notes,
+filters or settings.
 
 The task table, dashboard, calendar and open task card render. No shell, project,
 contact or settings render runs. Existing calendar date/view/filter state and active

@@ -5,8 +5,10 @@ const gs = fs.readFileSync('V2.GS.txt', 'utf8');
 
 function has(re, message){ assert(re.test(html), message); }
 has(/if\(!id\)\{[\s\S]*?refreshCore[\s\S]*?return;[\s\S]*?BH_saveTaskEditLocal\(id, request\)/, 'only create retains full refresh; edit uses local route');
-has(/if\(!replaceById\(DATA\.tasks, task\)\) throw/, 'canonical task replaces the local task');
-has(/Array\.isArray\(DATA\.calendarTasks\).*replaceById/, 'calendar projection is patched when present');
+has(/applyDecision\(DATA\.tasks, response\.taskDecision, response\.canonicalTask/, 'server task decision drives the task collection');
+has(/applyDecision\(DATA\.calendarTasks, response\.calendarDecision, response\.canonicalCalendarRecord/, 'server calendar decision drives the calendar collection');
+has(/DATA\.calendarCreatorsAllowed = response\.calendarCreatorsAllowed\.slice\(\)/, 'canonical creator list replaces local derived state');
+has(/DATA\.dashboard = response\.dashboard/, 'canonical dashboard replaces stale buckets');
 has(/tableTasks\(\);[\s\S]*?renderDashboard\(\);[\s\S]*?renderCalendarDashboard[\s\S]*?renderTaskCard/, 'task-dependent views render');
 has(/pending\[key\]\) return false/, 'duplicate in-flight edit is blocked');
 has(/state\.sequence < \(latestApplied\[key\] \|\| 0\)/, 'late response cannot overwrite a newer result');
@@ -17,8 +19,14 @@ has(/sessionExpired\(error\)[\s\S]*?canonicalLogout[\s\S]*?return;[\s\S]*?fallba
 has(/console\.info\('CRM_MUTATION_PERF'/, 'safe focused instrumentation exists');
 assert(!/function BH_saveTaskEditLocal[\s\S]*?tableProjects\(\)/.test(html), 'project view is not rendered by local patch');
 assert(!/function BH_saveTaskEditLocal[\s\S]*?tableContacts\(\)/.test(html), 'contact view is not rendered by local patch');
-assert(/if \(!data\.clientSequence\) return id;[\s\S]*?canonicalTask[\s\S]*?formatValue_/.test(gs), 'server returns formatted canonical task only for optimized contract');
-assert(/updatedAt: String\(canonicalTask\["עדכון אחרון"\]/.test(gs), 'contract exposes canonical updatedAt');
+assert(/const canonicalCore = קבלת_נתוני_ליבה_Build13\(data\.authToken\)/.test(gs), 'server reuses the effective Full Core pipeline');
+assert(/taskDecision: taskVisible \? \(taskWasPresent \? "replace" : "insert"\) : "remove"/.test(gs), 'server decides task membership');
+assert(/calendarDecision: calendarVisible \? \(calendarWasPresent \? "replace" : "insert"\) : "remove"/.test(gs), 'server decides calendar membership');
+assert(/canonicalCalendarRecord: canonicalCalendarRecord/.test(gs), 'server returns enriched canonical calendar record');
+assert(/calendarCreatorsAllowed: \(canonicalCore\.calendarCreatorsAllowed/.test(gs), 'server returns canonical creator list');
 assert(/sequence: Number\(data\.clientSequence/.test(gs), 'contract echoes sequence');
+assert(/fullInvalidation:true/.test(gs), 'uncertain canonical core contract forces full invalidation');
+assert(/function סימון_משימה_בוצעה[^{]*\{[^\n]*return true; \}/.test(gs), 'done route remains unchanged');
+assert(/function החזרת_משימה_לפעילה[^{]*\{[^\n]*return true; \}/.test(gs), 'reactivate route remains unchanged');
 assert(!/\.github\/workflows/.test(require('child_process').execSync('git diff --name-only').toString()), 'workflow files are unchanged');
 console.log('task_edit_local_patch_test: OK');
