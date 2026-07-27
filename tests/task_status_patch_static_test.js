@@ -34,5 +34,8 @@ assert.match(patch, /localVersion\.comparable>responseVersion\.comparable/, 'new
 assert.match(patch, /sequence\)<Number\(requestContext\.latestSequence/, 'local request sequencing must reject reversed responses');
 assert.match(patch, /fallback\('transportFailure'/, 'transport failures must reconcile through fallback');
 assert.match(patch, /if\(fallbackStarted\) return/, 'fallback must be single-shot');
+assert.match(patch, /sessionExpiredMessage\(/, 'status mutations must classify expired sessions');
+assert.match(patch, /BH_IDLE\.handleSessionExpired/, 'expired sessions must use the canonical idle/logout path');
+assert.doesNotMatch(patch, /clearTimeout|setTimeout/, 'done/reactivate coordinator must not cancel or replace idle timers');
 
 console.log('task status patch static assertions passed');

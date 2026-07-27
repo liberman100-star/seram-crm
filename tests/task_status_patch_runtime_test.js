@@ -57,6 +57,8 @@ for (const action of ['done', 'reactivate']) {
 function buildClient() {
   const runners = [];
   let refreshes = 0;
+  let sessionLogouts = 0;
+  let alerts = 0;
   const button = {
     disabled: false,
     getAttribute: () => "doneTask('T1')",
@@ -82,16 +84,17 @@ function buildClient() {
     parseDateOnly: value => new Date(value),
     canEdit: () => true,
     currentToken: () => 'token',
-    alert(message) { this.lastAlert = message; },
+    alert(message) { alerts++; this.lastAlert = message; },
     scrollX: 0, scrollY: 0, scrollTo() {},
     refreshCore(callback) { refreshes++; if (callback) callback(); },
-    google: {script:{run}}
+    google: {script:{run}},
+    BH_IDLE: {handleSessionExpired(message) { sessionLogouts++; sandbox.sessionMessage = message; }}
   };
   sandbox.window = sandbox;
   vm.createContext(sandbox);
   const patch = (html.match(/<script id="BH_TASK_STATUS_PATCH">([\s\S]*?)<\/script>/) || [])[1];
   vm.runInContext(patch, sandbox);
-  return {sandbox, runners, button, refreshes:() => refreshes};
+  return {sandbox, runners, button, refreshes:() => refreshes, sessionLogouts:() => sessionLogouts, alerts:() => alerts};
 }
 
 function result(updatedAt, status='בוצע') {
@@ -136,6 +139,36 @@ for (const invalid of [null, 'not-a-date']) {
   client.runners[0].success(result('2026-07-27 13:42'));
   assert.strictEqual(client.refreshes(), 0, 'valid success must not trigger fallback');
   assert.strictEqual(client.sandbox.DATA.tasks[0]['סטטוס'], 'בוצע');
+}
+{
+  const client = buildClient();
+  client.sandbox.DATA = {dashboard:{}, tasks:[{'מזהה משימה':'T1','סטטוס':'בוצע','עדכון אחרון':'2026-07-27 13:40'}], calendarTasks:[]};
+  client.sandbox.reactivateTask('T1');
+  client.runners[0].success(result('2026-07-27 13:42', 'פתוח'));
+  assert.strictEqual(client.refreshes(), 0, 'active reactivate must not trigger fallback');
+  assert.strictEqual(client.sandbox.DATA.tasks[0]['סטטוס'], 'פתוח');
+}
+for (const action of ['doneTask', 'reactivateTask']) {
+  const client = buildClient();
+  client.sandbox.DATA = {dashboard:{}, tasks:[{'מזהה משימה':'T1','סטטוס':'פתוח','עדכון אחרון':'2026-07-27 13:40'}], calendarTasks:[]};
+  client.sandbox[action]('T1');
+  client.runners[0].success({ok:false, auth:{allowed:false, reason:'Session לא פעיל או לא קיים'}});
+  assert.strictEqual(client.sessionLogouts(), 1, `${action} expired success must use canonical logout`);
+  assert.strictEqual(client.refreshes(), 0, `${action} expired success must not refresh`);
+  assert.strictEqual(client.alerts(), 0, `${action} expired success must not alert only`);
+  assert.strictEqual(client.button.disabled, false, `${action} expired success must clear busy`);
+}
+{
+  const client = buildClient();
+  client.sandbox.DATA = {dashboard:{}, tasks:[{'מזהה משימה':'T1','סטטוס':'פתוח','עדכון אחרון':'2026-07-27 13:40'}], calendarTasks:[]};
+  client.sandbox.doneTask('T1');
+  client.runners[0].failure(new Error('אין הרשאה או שהחיבור פג. יש להתחבר מחדש.'));
+  assert.strictEqual(client.sessionLogouts(), 1, 'expired failure must use canonical logout');
+  assert.strictEqual(client.refreshes(), 0, 'expired failure must not enter refresh loop');
+  assert.strictEqual(client.alerts(), 0, 'expired failure must not alert only');
+  assert.strictEqual(client.button.disabled, false, 'expired failure must clear busy');
+  client.sandbox.doneTask('T1');
+  assert.strictEqual(client.runners.length, 2, 'expired failure must clear pending before logout');
 }
 {
   const client = buildClient();

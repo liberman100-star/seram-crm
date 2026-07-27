@@ -674,7 +674,7 @@ function render(d){
   if(typeof renderModernKpis === 'function') renderModernKpis();
   if(typeof updateCalendarViewButtons === 'function') updateCalendarViewButtons();
   if(typeof applySecurityUI === 'function') applySecurityUI();
-  if(typeof resetIdleTimer === 'function') resetIdleTimer();
+  if(window.BH_IDLE && typeof window.BH_IDLE.markUserActivity === 'function') window.BH_IDLE.markUserActivity();
 
   if(typeof canSeeDashboard === 'function' && !canSeeDashboard()){
     const dashboardEl = document.getElementById('dashboard');
@@ -2933,7 +2933,8 @@ renderContactCard = function(d){
     continueWorking: continueWorkingFromWarning,
     logoutNow: idleLogoutNow,
     getLimitMinutes: idleLimitMinutes,
-    forceLogoutByIdle: forceLogoutByIdle
+    forceLogoutByIdle: forceLogoutByIdle,
+    handleSessionExpired: message=>performClientLogout(message || 'אין הרשאה או שהחיבור פג. יש להתחבר מחדש.')
   };
 
   ['click','keydown','wheel','scroll','touchstart','pointerdown'].forEach(ev=>{
@@ -2971,6 +2972,9 @@ renderContactCard = function(d){
   };
 
   decorateNav();
+  // Start the idle clock even when the user performs no event after initial load.
+  // render() resets it once settings are available through the public BH_IDLE API.
+  resetIdleTimer();
 })();
 
 
@@ -7110,6 +7114,13 @@ window.calendarTasksForDate = function(d){
     window.__BH_TASK_PATCH_LAST_REASON__=reason;
     return false;
   }
+  function sessionExpiredMessage(value){
+    if(value && value.auth && value.auth.allowed === false){
+      return String(value.auth.reason || value.message || 'אין הרשאה או שהחיבור פג. יש להתחבר מחדש.');
+    }
+    const message=String(value && (value.message || value.reason) || '');
+    return /(Session[^\n]*(?:לא פעיל|לא קיים)|לא נמצא Session|החיבור פג|להתחבר מחדש)/i.test(message) ? message : '';
+  }
   function replaceTask(collection, id, record, required){
     if(!Array.isArray(collection)) return !required;
     const index = collection.findIndex(t=>String(t['מזהה משימה'] || '') === String(id));
@@ -7208,6 +7219,17 @@ window.calendarTasksForDate = function(d){
     latestStartedSequenceByTask[id]=requestSequence;
     const totalStart=mutationNow(), serverStart=mutationNow();
     let fallbackStarted=false;
+    function sessionExpired(message){
+      if(fallbackStarted) return;
+      fallbackStarted=true;
+      delete pending[id]; setTaskStatusBusy(id, false);
+      logMutation(action, serverStart, 0, totalStart, false, 'sessionExpired');
+      if(window.BH_IDLE && typeof window.BH_IDLE.handleSessionExpired === 'function'){
+        window.BH_IDLE.handleSessionExpired(message);
+      }else{
+        clearToken(); showLogin(message || 'אין הרשאה או שהחיבור פג. יש להתחבר מחדש.');
+      }
+    }
     function fallback(reason, error, patchMs){
       if(fallbackStarted) return;
       fallbackStarted=true;
@@ -7219,6 +7241,8 @@ window.calendarTasksForDate = function(d){
     }
     const runner = google.script.run
       .withSuccessHandler(result=>{
+        const expired=sessionExpiredMessage(result);
+        if(expired){ sessionExpired(expired); return; }
         const patchStart=mutationNow();
         const patched=window.applyTaskStatusMutationPatch(result, {
           sequence:requestSequence,
@@ -7235,6 +7259,8 @@ window.calendarTasksForDate = function(d){
         fallback(window.__BH_TASK_PATCH_LAST_REASON__ || 'invalidResponse', null, patchMs);
       })
       .withFailureHandler(error=>{
+        const expired=sessionExpiredMessage(error);
+        if(expired){ sessionExpired(expired); return; }
         // The write may have committed before transport failed. Reconcile first,
         // then clear busy state and report the error; fallback() is single-shot.
         fallback('transportFailure', error, 0);
