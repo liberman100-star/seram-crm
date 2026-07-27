@@ -12,6 +12,8 @@ assert(!/resetIdleTimer|clearTimeout|scheduleIdleTimers/.test(warnIdleBody), 'op
 assert(/function continueWorkingFromWarning\(\)\{[\s\S]*resetIdleTimer\(\)/.test(html), 'continue working starts a full new idle period');
 assert(/function performClientLogout\(message\)[\s\S]*clearToken\(\)[\s\S]*window\.DATA = \{\}[\s\S]*התנתקות_Build7\(token\)/.test(html), 'client logout clears local state and invalidates server session');
 assert(/\['click','keydown','wheel','scroll','touchstart','pointerdown'\]/.test(html), 'user activity events reset idle timer');
+assert(/decorateNav\(\);\s*\/\/ Start the idle clock[\s\S]*resetIdleTimer\(\);/.test(html), 'idle timers start even before the first user event');
+assert(html.includes("window.BH_IDLE && typeof window.BH_IDLE.markUserActivity === 'function'"), 'render resets timers through the public idle API');
 assert(!/setInterval[\s\S]{0,80}resetIdleTimer/.test(html), 'background intervals do not reset idle timer');
 
 assert(gs.includes('"ניתוק אוטומטי לאחר אי־פעילות", "ערך": "30"'), 'default idle setting is persisted as 30 minutes');

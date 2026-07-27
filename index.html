@@ -674,7 +674,7 @@ function render(d){
   if(typeof renderModernKpis === 'function') renderModernKpis();
   if(typeof updateCalendarViewButtons === 'function') updateCalendarViewButtons();
   if(typeof applySecurityUI === 'function') applySecurityUI();
-  if(typeof resetIdleTimer === 'function') resetIdleTimer();
+  if(window.BH_IDLE && typeof window.BH_IDLE.markUserActivity === 'function') window.BH_IDLE.markUserActivity();
 
   if(typeof canSeeDashboard === 'function' && !canSeeDashboard()){
     const dashboardEl = document.getElementById('dashboard');
@@ -2933,7 +2933,8 @@ renderContactCard = function(d){
     continueWorking: continueWorkingFromWarning,
     logoutNow: idleLogoutNow,
     getLimitMinutes: idleLimitMinutes,
-    forceLogoutByIdle: forceLogoutByIdle
+    forceLogoutByIdle: forceLogoutByIdle,
+    handleSessionExpired: message=>performClientLogout(message || 'אין הרשאה או שהחיבור פג. יש להתחבר מחדש.')
   };
 
   ['click','keydown','wheel','scroll','touchstart','pointerdown'].forEach(ev=>{
@@ -2971,6 +2972,9 @@ renderContactCard = function(d){
   };
 
   decorateNav();
+  // Start the idle clock even when the user performs no event after initial load.
+  // render() resets it once settings are available through the public BH_IDLE API.
+  resetIdleTimer();
 })();
 
 
@@ -7070,6 +7074,204 @@ window.calendarTasksForDate = function(d){
 <style>
 .meeting-contact-chip{display:inline-flex;gap:6px;align-items:center;margin:4px;padding:5px 10px;border-radius:999px;background:#e0f2fe;color:#075985}.meeting-contact-chip button{border:0;background:transparent;font-weight:800;cursor:pointer}.warn{color:#b45309}.meeting-dialog-backdrop{position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:9999;display:flex;align-items:center;justify-content:center}.meeting-dialog{background:#fff;max-width:720px;width:92%;max-height:85vh;overflow:auto;border-radius:14px;padding:18px;box-shadow:0 20px 60px rgba(0,0,0,.25)}.meeting-contact-list{max-height:420px;overflow:auto;margin:12px 0}.meeting-contact-row{display:flex;gap:10px;align-items:flex-start;padding:8px;border-bottom:1px solid #e5e7eb}.meeting-contact-row input{width:auto}
 </style>
+
+<script id="BH_TASK_STATUS_PATCH">
+/* A deliberately small patch coordinator for done/reactivate only. */
+(function(){
+  const pending = Object.create(null);
+  const latestStartedSequenceByTask = Object.create(null);
+  let mutationSequence = 0;
+  let lastTaskCard = null;
+  const previousRenderTaskCard = window.renderTaskCard;
+
+  window.renderTaskCard = function(payload){
+    lastTaskCard = payload || null;
+    return previousRenderTaskCard.apply(this, arguments);
+  };
+
+  function mutationNow(){ return (window.performance && performance.now) ? performance.now() : Date.now(); }
+  function mutationElapsed(start){ return Math.round((mutationNow() - start) * 10) / 10; }
+  function validRecord(record, id){
+    return !!record && typeof record === 'object' && !Array.isArray(record) &&
+      String(record['מזהה משימה'] || '') === String(id || '');
+  }
+  function hasFullInvalidation(result){
+    return Array.isArray(result.invalidations) && result.invalidations.some(x=>
+      ['fullCore','security','permissions','assignmentDomain'].includes(String(x)));
+  }
+  function canonicalUpdatedAt(value){
+    const text=String(value || '').trim();
+    const match=text.match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})$/);
+    if(!match) return null;
+    const parts=match.slice(1).map(Number);
+    const comparable=Date.UTC(parts[0], parts[1]-1, parts[2], parts[3], parts[4]);
+    const check=new Date(comparable);
+    if(check.getUTCFullYear()!==parts[0] || check.getUTCMonth()!==parts[1]-1 ||
+       check.getUTCDate()!==parts[2] || check.getUTCHours()!==parts[3] || check.getUTCMinutes()!==parts[4]) return null;
+    return {text:text, comparable:comparable};
+  }
+  function rejectPatch(reason){
+    window.__BH_TASK_PATCH_LAST_REASON__=reason;
+    return false;
+  }
+  function sessionExpiredMessage(value){
+    if(value && value.auth && value.auth.allowed === false){
+      return String(value.auth.reason || value.message || 'אין הרשאה או שהחיבור פג. יש להתחבר מחדש.');
+    }
+    const message=String(value && (value.message || value.reason) || '');
+    return /(Session[^\n]*(?:לא פעיל|לא קיים)|לא נמצא Session|החיבור פג|להתחבר מחדש)/i.test(message) ? message : '';
+  }
+  function replaceTask(collection, id, record, required){
+    if(!Array.isArray(collection)) return !required;
+    const index = collection.findIndex(t=>String(t['מזהה משימה'] || '') === String(id));
+    if(index < 0) return !required;
+    // The server returns the complete canonical sheet row plus calendar enrichments;
+    // replace it so removed/non-canonical local fields cannot survive indefinitely.
+    collection[index] = record;
+    return true;
+  }
+  function updateDashboardTaskBuckets(){
+    if(!DATA.dashboard || !Array.isArray(DATA.tasks)) return;
+    const today = new Date(); today.setHours(0,0,0,0);
+    const week = new Date(today); week.setDate(week.getDate()+7);
+    const open = DATA.tasks.filter(t=>String(t['בארכיון'] || '') !== 'כן' && !['בוצע','בוטל'].includes(t['סטטוס']));
+    const dateOf = t=>{ if(!t['תאריך']) return null; const d=parseDateOnly(t['תאריך']); return d && !isNaN(d.getTime()) ? d : null; };
+    DATA.dashboard.lateTasks = open.filter(t=>{ const d=dateOf(t); return d && d<today; });
+    DATA.dashboard.todayTasks = open.filter(t=>{ const d=dateOf(t); return d && d.getTime()===today.getTime(); });
+    DATA.dashboard.weekTasks = open.filter(t=>{ const d=dateOf(t); return d && d>today && d<=week; });
+  }
+  function patchOpenTaskCard(id, record){
+    if(!modal || modal.classList.contains('hidden')) return;
+    const openId = modalBox && modalBox.getAttribute('data-open-task-id');
+    if(String(openId || '') !== String(id)) return;
+    const payload = Object.assign({}, lastTaskCard || {});
+    payload.task = Object.assign({}, payload.task || {}, record);
+    lastTaskCard = payload;
+    renderTaskCard(payload);
+  }
+
+  window.applyTaskStatusMutationPatch = function(result, requestContext){
+    window.__BH_TASK_PATCH_LAST_REASON__='';
+    if(!result || result.ok !== true || result.entity !== 'task' ||
+       !result.taskId || !validRecord(result.record, result.taskId)) return rejectPatch('invalidResponse');
+    if(hasFullInvalidation(result)) return rejectPatch('securityInvalidation');
+    const id = String(result.taskId);
+    try{
+      const responseVersion=canonicalUpdatedAt(result.updatedAt);
+      const recordVersion=canonicalUpdatedAt(result.record['עדכון אחרון']);
+      if(!responseVersion || !recordVersion || responseVersion.text!==recordVersion.text) return rejectPatch('invalidUpdatedAt');
+      const localTask=Array.isArray(DATA.tasks) ? DATA.tasks.find(t=>String(t['מזהה משימה'] || '')===id) : null;
+      const localVersion=localTask && canonicalUpdatedAt(localTask['עדכון אחרון']);
+      if(!localVersion) return rejectPatch('invalidUpdatedAt');
+      if(localVersion.comparable>responseVersion.comparable) return rejectPatch('staleResponse');
+      if(requestContext && Number(requestContext.sequence)<Number(requestContext.latestSequence)) return rejectPatch('staleResponse');
+      if(!replaceTask(DATA.tasks, id, result.record, Array.isArray(DATA.tasks))) return rejectPatch('patchError');
+      if(Array.isArray(DATA.calendarTasks)){
+        const calendarIndex = DATA.calendarTasks.findIndex(t=>String(t['מזהה משימה'] || '') === id);
+        if(result.affected && result.affected.calendarVisible === true){
+          const calendarRecord = validRecord(result.calendarRecord, id) ? result.calendarRecord : result.record;
+          if(calendarIndex < 0) DATA.calendarTasks.push(calendarRecord);
+          else DATA.calendarTasks[calendarIndex] = calendarRecord;
+        }else if(calendarIndex >= 0){
+          DATA.calendarTasks.splice(calendarIndex, 1);
+        }
+      }
+      updateDashboardTaskBuckets();
+      const scrollX=window.scrollX, scrollY=window.scrollY;
+      if(typeof tableTasks === 'function' && document.getElementById('tasksTable')) tableTasks();
+      if(typeof renderDashboard === 'function' && document.getElementById('dashboard')) renderDashboard();
+      // Calendar renderers use the existing CAL_VIEW/CAL_DATE/filter globals, so this
+      // redraw does not reset view, date, or owner selection.
+      if(typeof renderCalendarDashboard === 'function' && document.getElementById('calendarBox')) renderCalendarDashboard();
+      patchOpenTaskCard(id, result.record);
+      window.scrollTo(scrollX, scrollY);
+      return true;
+    }catch(e){
+      return rejectPatch('patchError');
+    }
+  };
+
+  function setTaskStatusBusy(id, busy){
+    document.querySelectorAll('button[onclick]').forEach(button=>{
+      const call=String(button.getAttribute('onclick') || '');
+      if(call.includes("Task('" + id + "')")){
+        button.disabled=busy;
+        button.setAttribute('aria-busy', busy ? 'true' : 'false');
+      }
+    });
+  }
+  function logMutation(action, serverStart, patchMs, totalStart, fallbackUsed, fallbackReason){
+    console.info('taskStatusMutation', {
+      'taskStatusMutation.action': action,
+      'taskStatusMutation.serverRoundTrip': mutationElapsed(serverStart),
+      'taskStatusMutation.patchClient': patchMs,
+      'taskStatusMutation.totalToInteractive': mutationElapsed(totalStart),
+      'taskStatusMutation.fallbackUsed': fallbackUsed,
+      'taskStatusMutation.fallbackReason': fallbackReason || ''
+    });
+  }
+  function mutateStatus(id, action, endpoint){
+    id=String(id || '');
+    if(!canEdit()) return alert('אין לך הרשאה לעריכה');
+    if(!id || pending[id]) return;
+    pending[id]=true; setTaskStatusBusy(id, true);
+    const requestSequence=++mutationSequence;
+    latestStartedSequenceByTask[id]=requestSequence;
+    const totalStart=mutationNow(), serverStart=mutationNow();
+    let fallbackStarted=false;
+    function sessionExpired(message){
+      if(fallbackStarted) return;
+      fallbackStarted=true;
+      delete pending[id]; setTaskStatusBusy(id, false);
+      logMutation(action, serverStart, 0, totalStart, false, 'sessionExpired');
+      if(window.BH_IDLE && typeof window.BH_IDLE.handleSessionExpired === 'function'){
+        window.BH_IDLE.handleSessionExpired(message);
+      }else{
+        clearToken(); showLogin(message || 'אין הרשאה או שהחיבור פג. יש להתחבר מחדש.');
+      }
+    }
+    function fallback(reason, error, patchMs){
+      if(fallbackStarted) return;
+      fallbackStarted=true;
+      delete pending[id]; setTaskStatusBusy(id, false);
+      refreshCore(()=>{
+        logMutation(action, serverStart, patchMs || 0, totalStart, true, reason);
+        if(error) alert(error && error.message ? error.message : 'הפעולה נכשלה');
+      });
+    }
+    const runner = google.script.run
+      .withSuccessHandler(result=>{
+        const expired=sessionExpiredMessage(result);
+        if(expired){ sessionExpired(expired); return; }
+        const patchStart=mutationNow();
+        const patched=window.applyTaskStatusMutationPatch(result, {
+          sequence:requestSequence,
+          latestSequence:latestStartedSequenceByTask[id]
+        });
+        const patchMs=mutationElapsed(patchStart);
+        if(patched){
+          delete pending[id]; setTaskStatusBusy(id, false);
+          logMutation(action, serverStart, patchMs, totalStart, false, '');
+          return;
+        }
+        // Explicit safety fallback: malformed/missing/stale-security responses or
+        // any local patch failure return to the already-established full refresh.
+        fallback(window.__BH_TASK_PATCH_LAST_REASON__ || 'invalidResponse', null, patchMs);
+      })
+      .withFailureHandler(error=>{
+        const expired=sessionExpiredMessage(error);
+        if(expired){ sessionExpired(expired); return; }
+        // The write may have committed before transport failed. Reconcile first,
+        // then clear busy state and report the error; fallback() is single-shot.
+        fallback('transportFailure', error, 0);
+      });
+    if(endpoint === 'סימון_משימה_בוצעה') runner.סימון_משימה_בוצעה({id:id, authToken:currentToken()});
+    else runner.החזרת_משימה_לפעילה({id:id, authToken:currentToken()});
+  }
+  window.doneTask = id=>mutateStatus(id, 'done', 'סימון_משימה_בוצעה');
+  window.reactivateTask = id=>mutateStatus(id, 'reactivate', 'החזרת_משימה_לפעילה');
+})();
+</script>
 
 </body>
 </html>
