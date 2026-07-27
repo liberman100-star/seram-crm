@@ -7075,6 +7075,8 @@ window.calendarTasksForDate = function(d){
 /* A deliberately small patch coordinator for done/reactivate only. */
 (function(){
   const pending = Object.create(null);
+  const latestStartedSequenceByTask = Object.create(null);
+  let mutationSequence = 0;
   let lastTaskCard = null;
   const previousRenderTaskCard = window.renderTaskCard;
 
@@ -7093,11 +7095,28 @@ window.calendarTasksForDate = function(d){
     return Array.isArray(result.invalidations) && result.invalidations.some(x=>
       ['fullCore','security','permissions','assignmentDomain'].includes(String(x)));
   }
+  function canonicalUpdatedAt(value){
+    const text=String(value || '').trim();
+    const match=text.match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})$/);
+    if(!match) return null;
+    const parts=match.slice(1).map(Number);
+    const comparable=Date.UTC(parts[0], parts[1]-1, parts[2], parts[3], parts[4]);
+    const check=new Date(comparable);
+    if(check.getUTCFullYear()!==parts[0] || check.getUTCMonth()!==parts[1]-1 ||
+       check.getUTCDate()!==parts[2] || check.getUTCHours()!==parts[3] || check.getUTCMinutes()!==parts[4]) return null;
+    return {text:text, comparable:comparable};
+  }
+  function rejectPatch(reason){
+    window.__BH_TASK_PATCH_LAST_REASON__=reason;
+    return false;
+  }
   function replaceTask(collection, id, record, required){
     if(!Array.isArray(collection)) return !required;
     const index = collection.findIndex(t=>String(t['מזהה משימה'] || '') === String(id));
     if(index < 0) return !required;
-    collection[index] = Object.assign({}, collection[index], record);
+    // The server returns the complete canonical sheet row plus calendar enrichments;
+    // replace it so removed/non-canonical local fields cannot survive indefinitely.
+    collection[index] = record;
     return true;
   }
   function updateDashboardTaskBuckets(){
@@ -7120,18 +7139,28 @@ window.calendarTasksForDate = function(d){
     renderTaskCard(payload);
   }
 
-  window.applyTaskStatusMutationPatch = function(result){
+  window.applyTaskStatusMutationPatch = function(result, requestContext){
+    window.__BH_TASK_PATCH_LAST_REASON__='';
     if(!result || result.ok !== true || result.entity !== 'task' ||
-       !result.taskId || !validRecord(result.record, result.taskId) || hasFullInvalidation(result)) return false;
+       !result.taskId || !validRecord(result.record, result.taskId)) return rejectPatch('invalidResponse');
+    if(hasFullInvalidation(result)) return rejectPatch('securityInvalidation');
     const id = String(result.taskId);
     try{
-      if(!replaceTask(DATA.tasks, id, result.record, Array.isArray(DATA.tasks))) return false;
+      const responseVersion=canonicalUpdatedAt(result.updatedAt);
+      const recordVersion=canonicalUpdatedAt(result.record['עדכון אחרון']);
+      if(!responseVersion || !recordVersion || responseVersion.text!==recordVersion.text) return rejectPatch('invalidUpdatedAt');
+      const localTask=Array.isArray(DATA.tasks) ? DATA.tasks.find(t=>String(t['מזהה משימה'] || '')===id) : null;
+      const localVersion=localTask && canonicalUpdatedAt(localTask['עדכון אחרון']);
+      if(!localVersion) return rejectPatch('invalidUpdatedAt');
+      if(localVersion.comparable>responseVersion.comparable) return rejectPatch('staleResponse');
+      if(requestContext && Number(requestContext.sequence)<Number(requestContext.latestSequence)) return rejectPatch('staleResponse');
+      if(!replaceTask(DATA.tasks, id, result.record, Array.isArray(DATA.tasks))) return rejectPatch('patchError');
       if(Array.isArray(DATA.calendarTasks)){
         const calendarIndex = DATA.calendarTasks.findIndex(t=>String(t['מזהה משימה'] || '') === id);
         if(result.affected && result.affected.calendarVisible === true){
           const calendarRecord = validRecord(result.calendarRecord, id) ? result.calendarRecord : result.record;
           if(calendarIndex < 0) DATA.calendarTasks.push(calendarRecord);
-          else DATA.calendarTasks[calendarIndex] = Object.assign({}, DATA.calendarTasks[calendarIndex], calendarRecord);
+          else DATA.calendarTasks[calendarIndex] = calendarRecord;
         }else if(calendarIndex >= 0){
           DATA.calendarTasks.splice(calendarIndex, 1);
         }
@@ -7147,7 +7176,7 @@ window.calendarTasksForDate = function(d){
       window.scrollTo(scrollX, scrollY);
       return true;
     }catch(e){
-      return false;
+      return rejectPatch('patchError');
     }
   };
 
@@ -7160,13 +7189,14 @@ window.calendarTasksForDate = function(d){
       }
     });
   }
-  function logMutation(action, serverStart, patchMs, totalStart, fallbackUsed){
+  function logMutation(action, serverStart, patchMs, totalStart, fallbackUsed, fallbackReason){
     console.info('taskStatusMutation', {
       'taskStatusMutation.action': action,
       'taskStatusMutation.serverRoundTrip': mutationElapsed(serverStart),
       'taskStatusMutation.patchClient': patchMs,
       'taskStatusMutation.totalToInteractive': mutationElapsed(totalStart),
-      'taskStatusMutation.fallbackUsed': fallbackUsed
+      'taskStatusMutation.fallbackUsed': fallbackUsed,
+      'taskStatusMutation.fallbackReason': fallbackReason || ''
     });
   }
   function mutateStatus(id, action, endpoint){
@@ -7174,27 +7204,40 @@ window.calendarTasksForDate = function(d){
     if(!canEdit()) return alert('אין לך הרשאה לעריכה');
     if(!id || pending[id]) return;
     pending[id]=true; setTaskStatusBusy(id, true);
+    const requestSequence=++mutationSequence;
+    latestStartedSequenceByTask[id]=requestSequence;
     const totalStart=mutationNow(), serverStart=mutationNow();
+    let fallbackStarted=false;
+    function fallback(reason, error, patchMs){
+      if(fallbackStarted) return;
+      fallbackStarted=true;
+      delete pending[id]; setTaskStatusBusy(id, false);
+      refreshCore(()=>{
+        logMutation(action, serverStart, patchMs || 0, totalStart, true, reason);
+        if(error) alert(error && error.message ? error.message : 'הפעולה נכשלה');
+      });
+    }
     const runner = google.script.run
       .withSuccessHandler(result=>{
         const patchStart=mutationNow();
-        const patched=window.applyTaskStatusMutationPatch(result);
+        const patched=window.applyTaskStatusMutationPatch(result, {
+          sequence:requestSequence,
+          latestSequence:latestStartedSequenceByTask[id]
+        });
         const patchMs=mutationElapsed(patchStart);
         if(patched){
           delete pending[id]; setTaskStatusBusy(id, false);
-          logMutation(action, serverStart, patchMs, totalStart, false);
+          logMutation(action, serverStart, patchMs, totalStart, false, '');
           return;
         }
         // Explicit safety fallback: malformed/missing/stale-security responses or
         // any local patch failure return to the already-established full refresh.
-        refreshCore(()=>{
-          delete pending[id]; setTaskStatusBusy(id, false);
-          logMutation(action, serverStart, patchMs, totalStart, true);
-        });
+        fallback(window.__BH_TASK_PATCH_LAST_REASON__ || 'invalidResponse', null, patchMs);
       })
       .withFailureHandler(error=>{
-        delete pending[id]; setTaskStatusBusy(id, false);
-        alert(error && error.message ? error.message : 'הפעולה נכשלה');
+        // The write may have committed before transport failed. Reconcile first,
+        // then clear busy state and report the error; fallback() is single-shot.
+        fallback('transportFailure', error, 0);
       });
     if(endpoint === 'סימון_משימה_בוצעה') runner.סימון_משימה_בוצעה({id:id, authToken:currentToken()});
     else runner.החזרת_משימה_לפעילה({id:id, authToken:currentToken()});
