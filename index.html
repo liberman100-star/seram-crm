@@ -3726,10 +3726,7 @@ function refreshCore(after){
     if(!canCreate() && !id) return alert('אין לך הרשאה להוספה');
 
     const normalized = window.BH_normalizeCalendarParticipants ? window.BH_normalizeCalendarParticipants(selectedCalendarGuests()) : selectedCalendarGuests();
-    google.script.run
-      .withSuccessHandler(savedId=>{refreshCore(()=>openTaskCard(savedId||id));})
-      .withFailureHandler(e=>alert(e.message))
-      .שמירת_משימה({
+    const request = {
         authToken:currentToken(),
         id,
         title:tTitle.value,
@@ -3751,7 +3748,17 @@ function refreshCore(after){
         contactId:tContact.value,
         owner:tOwner.value,
         taskNotes:tTaskNotes.value
-      });
+      };
+
+    // Creation remains deliberately unchanged; this PR optimizes one route only.
+    if(!id){
+      google.script.run
+        .withSuccessHandler(saved=>{refreshCore(()=>openTaskCard((saved&&saved.taskId)||saved||id));})
+        .withFailureHandler(e=>alert(e.message))
+        .שמירת_משימה(request);
+      return;
+    }
+    BH_saveTaskEditLocal(id, request);
   };
 
   window.renderTaskCard = function(d){
@@ -6999,6 +7006,111 @@ window.calendarTasksForDate = function(d){
 <style>
 .meeting-contact-chip{display:inline-flex;gap:6px;align-items:center;margin:4px;padding:5px 10px;border-radius:999px;background:#e0f2fe;color:#075985}.meeting-contact-chip button{border:0;background:transparent;font-weight:800;cursor:pointer}.warn{color:#b45309}.meeting-dialog-backdrop{position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:9999;display:flex;align-items:center;justify-content:center}.meeting-dialog{background:#fff;max-width:720px;width:92%;max-height:85vh;overflow:auto;border-radius:14px;padding:18px;box-shadow:0 20px 60px rgba(0,0,0,.25)}.meeting-contact-list{max-height:420px;overflow:auto;margin:12px 0}.meeting-contact-row{display:flex;gap:10px;align-items:flex-start;padding:8px;border-bottom:1px solid #e5e7eb}.meeting-contact-row input{width:auto}
 </style>
+
+<!-- Task-edit local patch: intentionally scoped to the edit mutation only. -->
+<script>
+(function(){
+  const route = 'task-edit';
+  const pending = Object.create(null);
+  const latestApplied = Object.create(null);
+  let sequence = 0;
+
+  function metric(fields){
+    // Operational metadata only: never include task fields, identities, or auth data.
+    try{ console.info('CRM_MUTATION_PERF', Object.assign({route:route}, fields)); }catch(ignore){}
+  }
+  function sessionExpired(error){
+    const message = String((error && error.message) || error || '').toLowerCase();
+    return /session|token|חיבור פג|סשן|התחבר/.test(message);
+  }
+  function canonicalLogout(reason){
+    clearToken();
+    showLogin(reason || 'החיבור פג, יש להתחבר מחדש');
+  }
+  function setBusy(busy){
+    const button = modalBox && modalBox.querySelector('button.primary');
+    if(!button) return;
+    if(busy){
+      button.dataset.taskEditLabel = button.textContent;
+      button.disabled = true;
+      button.textContent = 'שומר…';
+    }else{
+      button.disabled = false;
+      if(button.dataset.taskEditLabel) button.textContent = button.dataset.taskEditLabel;
+      delete button.dataset.taskEditLabel;
+    }
+  }
+  function fallbackOnce(state, reason, id, started){
+    if(state.fallback) return;
+    state.fallback = true;
+    metric({serverMs:Date.now()-started,patchMs:0,fallback:true,fallbackReason:reason,sequence:state.sequence,success:false});
+    refreshCore(function(){ openTaskCard(id); });
+  }
+  function validResponse(response, id, expectedSequence){
+    return !!(response && response.ok === true && response.authenticated === true &&
+      response.route === route && response.fullInvalidation !== true && response.task &&
+      String(response.task['מזהה משימה'] || '') === String(id) &&
+      response.updatedAt && Number(response.sequence) === expectedSequence);
+  }
+  function replaceById(rows, task){
+    if(!Array.isArray(rows)) return false;
+    const id = String(task['מזהה משימה'] || '');
+    const index = rows.findIndex(row=>String((row||{})['מזהה משימה']||'')===id);
+    if(index < 0) return false;
+    rows.splice(index, 1, task);
+    return true;
+  }
+  function patch(response){
+    const task = response.task;
+    if(!replaceById(DATA.tasks, task)) throw new Error('task-not-in-local-data');
+    if(Array.isArray(DATA.calendarTasks)) replaceById(DATA.calendarTasks, task);
+
+    // Only task-dependent surfaces render; projects, contacts, settings and shell do not.
+    tableTasks();
+    renderDashboard();
+    if(typeof renderCalendarDashboard === 'function') renderCalendarDashboard();
+    renderTaskCard(taskCardPayloadFromTask(task, false));
+  }
+
+  window.BH_saveTaskEditLocal = function(id, request){
+    const key = String(id || '');
+    if(!key || pending[key]) return false;
+    const state = {sequence:++sequence, fallback:false};
+    pending[key] = state;
+    request.clientSequence = state.sequence;
+    const started = Date.now();
+    setBusy(true);
+
+    google.script.run
+      .withSuccessHandler(function(response){
+        const serverMs = Date.now()-started;
+        try{
+          if(response.fullInvalidation === true) return fallbackOnce(state, 'full-invalidation', key, started);
+          if(!validResponse(response, key, state.sequence)) return fallbackOnce(state, 'invalid-response', key, started);
+          if(state.sequence < (latestApplied[key] || 0)) return fallbackOnce(state, 'stale-response', key, started);
+          const patchStarted = Date.now();
+          patch(response);
+          latestApplied[key] = state.sequence;
+          metric({serverMs:serverMs,patchMs:Date.now()-patchStarted,fallback:false,fallbackReason:'',sequence:state.sequence,version:response.updatedAt,success:true});
+        }catch(error){ fallbackOnce(state, 'local-patch-failed', key, started); }
+        finally{ delete pending[key]; setBusy(false); }
+      })
+      .withFailureHandler(function(error){
+        delete pending[key];
+        setBusy(false);
+        if(sessionExpired(error)){
+          metric({serverMs:Date.now()-started,patchMs:0,fallback:false,fallbackReason:'session-expired',sequence:state.sequence,success:false});
+          canonicalLogout((error && error.message) || 'החיבור פג');
+          return;
+        }
+        fallbackOnce(state, 'transport-failure', key, started);
+      })
+      .שמירת_משימה(request);
+    return true;
+  };
+  window.__BH_TASK_EDIT_TEST_HOOKS__ = {pending:pending, latestApplied:latestApplied, validResponse:validResponse, replaceById:replaceById};
+})();
+</script>
 
 </body>
 </html>

@@ -5085,7 +5085,24 @@ function שמירת_משימה(data) {
 
   log_("שמירת משימה", row["כותרת"]);
 
-  return id;
+  if (!data.clientSequence) return id;
+
+  // The edit-task client patches from this authorized, canonical row. Format every
+  // sheet value before returning so Apps Script never serializes a raw Date.
+  const canonicalTask = {};
+  Object.keys(row).forEach(function(header){
+    canonicalTask[header] = formatValue_(row[header], header);
+  });
+  return {
+    ok: true,
+    authenticated: true,
+    route: "task-edit",
+    task: canonicalTask,
+    taskId: id,
+    updatedAt: String(canonicalTask["עדכון אחרון"] || ""),
+    sequence: Number(data.clientSequence || 0),
+    fullInvalidation: false
+  };
 }
 
 function BH15_הרשאות_יומן_(){
