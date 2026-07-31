@@ -1,0 +1,32 @@
+const fs = require('fs');
+const assert = require('assert');
+const html = fs.readFileSync('index.html', 'utf8');
+const gs = fs.readFileSync('V2.GS.txt', 'utf8');
+
+function has(re, message){ assert(re.test(html), message); }
+has(/if\(!id\)\{[\s\S]*?refreshCore[\s\S]*?return;[\s\S]*?BH_saveTaskEditLocal\(id, request\)/, 'only create retains full refresh; edit uses local route');
+has(/applyDecision\(DATA\.tasks, response\.taskDecision, response\.canonicalTask/, 'server task decision drives the task collection');
+has(/applyDecision\(DATA\.calendarTasks, response\.calendarDecision, response\.canonicalCalendarRecord/, 'server calendar decision drives the calendar collection');
+has(/DATA\.calendarCreatorsAllowed = response\.calendarCreatorsAllowed\.slice\(\)/, 'canonical creator list replaces local derived state');
+has(/DATA\.dashboard = response\.dashboard/, 'canonical dashboard replaces stale buckets');
+has(/tableTasks\(\);[\s\S]*?renderDashboard\(\);[\s\S]*?renderCalendarDashboard[\s\S]*?renderTaskCard/, 'task-dependent views render');
+has(/pending\[key\]\) return false/, 'duplicate in-flight edit is blocked');
+has(/state\.sequence < \(latestApplied\[key\] \|\| 0\)/, 'late response cannot overwrite a newer result');
+has(/finally\{ delete pending\[key\]; setBusy\(false\); \}/, 'success and patch failures clear pending and busy state');
+has(/withFailureHandler[\s\S]*?delete pending\[key\];[\s\S]*?setBusy\(false\)/, 'transport failure clears pending and busy state');
+has(/if\(state\.fallback\) return;[\s\S]*?refreshCore/, 'fallback is single-shot');
+has(/sessionExpired\(error\)[\s\S]*?canonicalLogout[\s\S]*?return;[\s\S]*?fallbackOnce/, 'session expiry logs out and never falls into refresh');
+has(/console\.info\('CRM_MUTATION_PERF'/, 'safe focused instrumentation exists');
+assert(!/function BH_saveTaskEditLocal[\s\S]*?tableProjects\(\)/.test(html), 'project view is not rendered by local patch');
+assert(!/function BH_saveTaskEditLocal[\s\S]*?tableContacts\(\)/.test(html), 'contact view is not rendered by local patch');
+assert(/const canonicalCore = קבלת_נתוני_ליבה_Build13\(data\.authToken\)/.test(gs), 'server reuses the effective Full Core pipeline');
+assert(/taskDecision: taskVisible \? \(taskWasPresent \? "replace" : "insert"\) : "remove"/.test(gs), 'server decides task membership');
+assert(/calendarDecision: calendarVisible \? \(calendarWasPresent \? "replace" : "insert"\) : "remove"/.test(gs), 'server decides calendar membership');
+assert(/canonicalCalendarRecord: canonicalCalendarRecord/.test(gs), 'server returns enriched canonical calendar record');
+assert(/calendarCreatorsAllowed: \(canonicalCore\.calendarCreatorsAllowed/.test(gs), 'server returns canonical creator list');
+assert(/sequence: Number\(data\.clientSequence/.test(gs), 'contract echoes sequence');
+assert(/fullInvalidation:true/.test(gs), 'uncertain canonical core contract forces full invalidation');
+assert(/function סימון_משימה_בוצעה[^{]*\{[^\n]*return true; \}/.test(gs), 'done route remains unchanged');
+assert(/function החזרת_משימה_לפעילה[^{]*\{[^\n]*return true; \}/.test(gs), 'reactivate route remains unchanged');
+assert(!/\.github\/workflows/.test(require('child_process').execSync('git diff --name-only').toString()), 'workflow files are unchanged');
+console.log('task_edit_local_patch_test: OK');
