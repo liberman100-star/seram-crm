@@ -1,0 +1,1 @@
+Apply the refresh behavior directly to the source index.html, deploy it, and commit the source change back to production.

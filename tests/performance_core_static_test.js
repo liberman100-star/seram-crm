@@ -7,6 +7,7 @@ function has(src, re, msg){ assert(re.test(src), msg); }
 function notHas(src, re, msg){ assert(!re.test(src), msg); }
 has(gs, /var __BH_REQUEST_ROWS__ = null/, 'request-scoped sheet cache exists');
 has(gs, /Object\.prototype\.hasOwnProperty\.call\(__BH_REQUEST_ROWS__, name\)/, 'readSheet_ reuses request rows');
+has(gs, /if\(!__BH_REQUEST_PERF__\.timings\) __BH_REQUEST_PERF__\.timings = \{\};[\s\S]*?if\(!__BH_REQUEST_PERF__\.authentication\) __BH_REQUEST_PERF__\.authentication = \{\};/, 'auth performance timers tolerate existing perf contexts without auth timing maps');
 has(gs, /BH_PERF_AUDIT_ENABLED = false/, 'performance audit logging is disabled by default');
 has(gs, /Build 13\.4 – production lazy shell hardening/, 'server contains production lazy shell hardening');
 has(gs, /קבלת_נתוני_פתיחה_Build13_2 = function\(token\)/, 'initial shell endpoint is wrapped and instrumented');
@@ -18,12 +19,15 @@ has(html, /renderCalendarDashboard[\s\S]*?const waiters =/, 'callbacks execute o
 has(html, /waiters\.forEach\(cb=>\{\s*try\{ cb\(\); \}catch\(err\)\{ console\.log\(err\); \}\s*\}\)/, 'callback errors are isolated');
 has(html, /withFailureHandler\(e=>\{\s*window\.__BH_CORE_REFRESHING__ = false;\s*window\.__BH_CORE_REFRESH_WAITERS__ = \[\];\s*alert\(e\.message\);/, 'failure clears queue and permits later refresh');
 has(html, /BH_isCustomerDomainSelectionRequired[\s\S]*?window\.__BH_CORE_REFRESH_WAITERS__ = \[\];[\s\S]*?BH_showCustomerDomainDialog/, 'domain selection clears refresh queue before dialog');
-has(html, /function load\(forceDashboard=true, after\)\{[\s\S]*?\.קבלת_נתוני_ליבה_Build13\(token\);/, 'initial production load uses canonical full core endpoint');
+has(html, /function load\(forceDashboard=true, after\)\{[\s\S]*?\.קבלת_נתוני_פתיחה_Build13_2\(token,perf\.requestId,CRM_fastShellMode_\(\)\);/, 'initial production load uses fast opening endpoint');
+has(html, /function CRM_loadFullCoreFallback_[\s\S]*?\.קבלת_נתוני_ליבה_Build13\(token,perf\.requestId\);/, 'canonical full core remains the safe fallback');
 has(html, /\.קבלת_מודול_Build13_2\(token, module\)/, 'lazy module loading uses existing module endpoint');
 has(html, /function markLoadedModulesFromFullCore_Build13_2\(d\)\{[\s\S]*?__BH_LOADED_MODULES__\.settings = true;[\s\S]*?\}/, 'full core payload initializes loaded module state');
 has(html, /d\.loadedModules\[moduleName\] === true && hasRealModuleData_Build13_2\(moduleName, d\)/, 'shell loadedModules flags are ignored unless real module data is present');
 has(html, /mergeData_Build13_2\(d\);\s*renderShell_Build13_2\(d\);[\s\S]*?__BH_LOADED_MODULES__\[module\] = true;/, 'module endpoint response shape remains compatible with existing handler');
-has(html, /function load\(forceDashboard=true, after\)\{[\s\S]*?__BH_CORE_LOADING__ = true[\s\S]*?if\(!token\)\{\s*window\.__BH_CORE_LOADING__ = false;[\s\S]*?withSuccessHandler\(d=>\{\s*window\.__BH_CORE_LOADING__ = false;[\s\S]*?withFailureHandler\(e=>\{\s*window\.__BH_CORE_LOADING__ = false;/, 'load guard clears on token, success/domain/unauthorized, and failure paths');
+has(html, /function load\(forceDashboard=true, after\)\{[\s\S]*?__BH_CORE_LOADING__=true;[\s\S]*?if\(!token\)\{\s*window\.__BH_CORE_LOADING__ = false;/, 'load guard clears when the token is missing');
+has(html, /function CRM_finishInitialLoad_[\s\S]*?window\.__BH_CORE_LOADING__ = false;/, 'successful load clears the guard');
+has(html, /function CRM_loadFullCoreFallback_[\s\S]*?withFailureHandler\(e=>\{ window\.__BH_CORE_LOADING__=false;/, 'fallback failure clears the guard');
 has(html, /__BH_CORE_LOADING__/, 'duplicate initial core request guard exists');
 has(html, /__BH_CORE_REFRESHING__/, 'duplicate refresh guard exists');
 has(audit, /Stage 1 fast initial shell/, 'audit documents fast initial shell');
