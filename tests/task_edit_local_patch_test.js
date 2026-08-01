@@ -2,6 +2,8 @@ const fs = require('fs');
 const assert = require('assert');
 const html = fs.readFileSync('index.html', 'utf8');
 const gs = fs.readFileSync('V2.GS.txt', 'utf8');
+const statusPatchMatch = /<script id="BH_TASK_STATUS_PATCH">([\s\S]*?)<\/script>/.exec(html);
+const statusPatch = statusPatchMatch ? statusPatchMatch[1] : '';
 
 function has(re, message){ assert(re.test(html), message); }
 has(/if\(!id\)\{[\s\S]*?refreshCore[\s\S]*?return;[\s\S]*?BH_saveTaskEditLocal\(id, request\)/, 'only create retains full refresh; edit uses local route');
@@ -26,7 +28,12 @@ assert(/canonicalCalendarRecord: canonicalCalendarRecord/.test(gs), 'server retu
 assert(/calendarCreatorsAllowed: \(canonicalCore\.calendarCreatorsAllowed/.test(gs), 'server returns canonical creator list');
 assert(/sequence: Number\(data\.clientSequence/.test(gs), 'contract echoes sequence');
 assert(/fullInvalidation:true/.test(gs), 'uncertain canonical core contract forces full invalidation');
-assert(/function סימון_משימה_בוצעה[^{]*\{[^\n]*return true; \}/.test(gs), 'done route remains unchanged');
-assert(/function החזרת_משימה_לפעילה[^{]*\{[^\n]*return true; \}/.test(gs), 'reactivate route remains unchanged');
+assert(statusPatch, 'effective Done/Reactivate local patch exists');
+assert(/window\.doneTask\s*=.*mutateStatus/.test(statusPatch), 'done uses the effective local patch route');
+assert(/window\.reactivateTask\s*=.*mutateStatus/.test(statusPatch), 'reactivate uses the effective local patch route');
+assert(/if\(patched\)[\s\S]*?return;[\s\S]*?fallback\(/.test(statusPatch), 'Done/Reactivate refresh only after a rejected local patch');
+const afterStatusPatch = html.slice(statusPatchMatch.index + statusPatchMatch[0].length);
+assert(!/(?:window\.)?doneTask\s*=|function\s+doneTask\s*\(/.test(afterStatusPatch), 'no later done override restores full refresh');
+assert(!/(?:window\.)?reactivateTask\s*=|function\s+reactivateTask\s*\(/.test(afterStatusPatch), 'no later reactivate override restores full refresh');
 assert(!/\.github\/workflows/.test(require('child_process').execSync('git diff --name-only').toString()), 'workflow files are unchanged');
 console.log('task_edit_local_patch_test: OK');
