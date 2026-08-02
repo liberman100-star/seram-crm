@@ -34,6 +34,7 @@ const sandbox = {
   setToken(token){ calls.push('setToken:' + token); },
   hardRefresh(){ calls.push('hardRefresh'); }
 };
+sandbox.BH_UI_withBusy = (_button, _text, operation) => operation(callback => (...args) => callback && callback(...args));
 vm.createContext(sandbox);
 vm.runInContext(verifyCode, sandbox);
 

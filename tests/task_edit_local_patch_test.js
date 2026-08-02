@@ -14,8 +14,8 @@ has(/DATA\.dashboard = response\.dashboard/, 'canonical dashboard replaces stale
 has(/tableTasks\(\);[\s\S]*?renderDashboard\(\);[\s\S]*?renderCalendarDashboard[\s\S]*?renderTaskCard/, 'task-dependent views render');
 has(/pending\[key\]\) return false/, 'duplicate in-flight edit is blocked');
 has(/state\.sequence < \(latestApplied\[key\] \|\| 0\)/, 'late response cannot overwrite a newer result');
-has(/finally\{ delete pending\[key\]; setBusy\(false\); \}/, 'success and patch failures clear pending and busy state');
-has(/withFailureHandler[\s\S]*?delete pending\[key\];[\s\S]*?setBusy\(false\)/, 'transport failure clears pending and busy state');
+has(/finally\{ delete pending\[key\]; clearBusy\(\); \}/, 'success and patch failures clear pending and central busy state');
+has(/withFailureHandler[\s\S]*?delete pending\[key\];[\s\S]*?clearBusy\(\)/, 'transport failure clears pending and central busy state');
 has(/if\(state\.fallback\) return;[\s\S]*?refreshCore/, 'fallback is single-shot');
 has(/sessionExpired\(error\)[\s\S]*?canonicalLogout[\s\S]*?return;[\s\S]*?fallbackOnce/, 'session expiry logs out and never falls into refresh');
 has(/console\.info\('CRM_MUTATION_PERF'/, 'safe focused instrumentation exists');

@@ -87,6 +87,7 @@ function buildClient() {
     alert(message) { alerts++; this.lastAlert = message; },
     scrollX: 0, scrollY: 0, scrollTo() {},
     refreshCore(callback) { refreshes++; if (callback) callback(); },
+    BH_UI_setBusy(){ button.disabled=true; return ()=>{button.disabled=false;}; },
     google: {script:{run}},
     BH_IDLE: {handleSessionExpired(message) { sessionLogouts++; sandbox.sessionMessage = message; }}
   };
