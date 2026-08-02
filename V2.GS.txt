@@ -6568,6 +6568,91 @@ if(BH_perf_originalModuleFinal_){
  ***********************/
 var BH_DIAG_originalSaveProject_ = שמירת_פרויקט;
 שמירת_פרויקט = function(data, requestId){ return BH_mutationPerf_('saveProject', function(){ return BH_DIAG_originalSaveProject_(data); }, requestId || (data && data.requestId)); };
+
+/**
+ * Canonical response for editing an existing project.  The mutation is still
+ * performed by the established save route; afterwards the established Core
+ * route is used as the sole source of authorization, visibility and derived
+ * collections.  Create deliberately keeps the historical response/refresh
+ * path in the browser.
+ */
+function BH_saveExistingProjectCanonical_(data){
+  data = data || {};
+  const projectId = String(data.id || "").trim();
+  if(!projectId) return שמירת_פרויקט(data, data.requestId);
+
+  const sequence = Number(data.sequence || 0);
+  const clientProjectPresent = data.clientProjectPresent === true;
+  const savedProjectId = שמירת_פרויקט(data, data.requestId);
+  const core = קבלת_נתוני_ליבה_Build13(data.authToken, data.requestId);
+
+  if(!core || !core.auth || core.auth.allowed !== true){
+    return {
+      ok:false,
+      authenticated:false,
+      route:"project-edit-canonical-v1",
+      projectId:String(savedProjectId || projectId),
+      sequence:sequence,
+      fullInvalidation:false,
+      auth:core && core.auth ? core.auth : null
+    };
+  }
+
+  // A customer-domain chooser is a canonical routing decision, not something
+  // that can safely be reconstructed by the local patch.
+  if(core.auth.domainSelectionRequired === true || core.domainSelectionRequired === true){
+    return {
+      ok:true,
+      authenticated:true,
+      route:"project-edit-canonical-v1",
+      projectId:String(savedProjectId || projectId),
+      sequence:sequence,
+      updatedAt:new Date().toISOString(),
+      invalidations:["customerDomainSelection"],
+      fullInvalidation:true
+    };
+  }
+
+  const id = String(savedProjectId || projectId);
+  const canonicalProject = (core.projects || []).find(function(project){
+    return String((project || {})["מזהה פרויקט"] || "") === id;
+  }) || null;
+  const projectVisible = !!canonicalProject;
+  const projectDecision = projectVisible
+    ? (clientProjectPresent ? "replace" : "insert")
+    : (clientProjectPresent ? "remove" : "unchanged");
+
+  return {
+    ok:true,
+    authenticated:true,
+    route:"project-edit-canonical-v1",
+    projectId:id,
+    sequence:sequence,
+    updatedAt:canonicalProject && canonicalProject["עדכון אחרון"] || new Date().toISOString(),
+    canonicalProject:canonicalProject,
+    projectVisible:projectVisible,
+    projectDecision:projectDecision,
+    // These are canonical replacement sets, never open merges. Project owner,
+    // assignment-domain and visibility changes can affect every one of them.
+    affectedTasks:core.tasks || [],
+    tasksDecision:"replaceAll",
+    affectedCalendarTasks:core.calendarTasks || [],
+    calendarTasksDecision:"replaceAll",
+    contacts:core.contacts || [],
+    contactsDecision:"replaceAll",
+    links:core.links || [],
+    linksDecision:"replaceAll",
+    dashboard:core.dashboard || {},
+    calendarCreatorsAllowed:core.calendarCreatorsAllowed || [],
+    calendarCreatorPermission:core.calendarCreatorPermission || {},
+    invalidations:["projects","tasks","calendarTasks","contacts","links","dashboard","calendarCreatorsAllowed","calendarCreatorPermission"],
+    fullInvalidation:false
+  };
+}
+
+function שמירת_פרויקט_קנונית_Build16(data){
+  return BH_saveExistingProjectCanonical_(data);
+}
 var BH_DIAG_originalSaveContact_ = שמירת_איש_קשר;
 שמירת_איש_קשר = function(data, requestId){ return BH_mutationPerf_('saveContact', function(){ return BH_DIAG_originalSaveContact_(data); }, requestId || (data && data.requestId)); };
 var BH_DIAG_originalSaveTask_ = שמירת_משימה;

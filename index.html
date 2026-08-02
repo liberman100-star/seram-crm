@@ -7509,5 +7509,167 @@ window.calendarTasksForDate = function(d){
 })();
 </script>
 
+<!-- Build 16: canonical local patch for editing an existing project only. -->
+<script>
+(function(global){
+  'use strict';
+  const previousSaveProject = global.saveProject;
+  const pendingByProject = Object.create(null);
+  const latestSequenceByProject = Object.create(null);
+  let projectEditSequence = 0;
+
+  function projectIdOf(row){
+    return String((row || {})['מזהה פרויקט'] || '');
+  }
+  function canonicalArray(value, label){
+    if(!Array.isArray(value)) throw new Error('invalid ' + label);
+    return value.slice();
+  }
+  function applyProjectDecision(rows, decision, canonicalProject, projectId){
+    const next = canonicalArray(rows, 'projects');
+    const index = next.findIndex(row=>projectIdOf(row) === projectId);
+    if(decision === 'replace'){
+      if(index < 0 || !canonicalProject || projectIdOf(canonicalProject) !== projectId) throw new Error('invalid project replace');
+      next[index] = canonicalProject;
+    }else if(decision === 'insert'){
+      if(index >= 0 || !canonicalProject || projectIdOf(canonicalProject) !== projectId) throw new Error('invalid project insert');
+      next.push(canonicalProject);
+    }else if(decision === 'remove'){
+      if(index >= 0) next.splice(index, 1);
+      if(canonicalProject) throw new Error('invalid project remove');
+    }else if(decision === 'unchanged'){
+      if(canonicalProject) throw new Error('invalid unchanged project');
+    }else{
+      throw new Error('invalid project decision');
+    }
+    return next;
+  }
+
+  function validateProjectPatch(response, expected){
+    if(!response || response.ok !== true || response.authenticated !== true ||
+       response.route !== 'project-edit-canonical-v1' || response.fullInvalidation !== false ||
+       String(response.projectId || '') !== expected.projectId ||
+       Number(response.sequence) !== expected.sequence ||
+       typeof response.updatedAt === 'undefined' || !Array.isArray(response.invalidations)){
+      throw new Error('invalid canonical project response');
+    }
+    if(response.tasksDecision !== 'replaceAll' || response.calendarTasksDecision !== 'replaceAll' ||
+       response.contactsDecision !== 'replaceAll' || response.linksDecision !== 'replaceAll' ||
+       !response.dashboard || typeof response.dashboard !== 'object'){
+      throw new Error('incomplete canonical project response');
+    }
+    const visible = response.projectDecision === 'insert' || response.projectDecision === 'replace';
+    if(response.projectVisible !== visible) throw new Error('inconsistent project visibility');
+  }
+
+  global.BH_applyProjectEditCanonicalPatch = function(response, expected){
+    validateProjectPatch(response, expected);
+    const next = Object.assign({}, DATA);
+    next.projects = applyProjectDecision(DATA.projects, response.projectDecision, response.canonicalProject, expected.projectId);
+    next.tasks = canonicalArray(response.affectedTasks, 'tasks');
+    next.calendarTasks = canonicalArray(response.affectedCalendarTasks, 'calendarTasks');
+    next.contacts = canonicalArray(response.contacts, 'contacts');
+    next.links = canonicalArray(response.links, 'links');
+    next.dashboard = response.dashboard;
+    next.calendarCreatorsAllowed = canonicalArray(response.calendarCreatorsAllowed, 'calendarCreatorsAllowed');
+    if(!response.calendarCreatorPermission || typeof response.calendarCreatorPermission !== 'object') throw new Error('invalid calendar permission');
+    next.calendarCreatorPermission = response.calendarCreatorPermission;
+
+    // Publish only after every collection and decision has been validated.
+    DATA = next;
+    global.DATA = next;
+    return true;
+  };
+
+  function renderProjectDependencies(response, scrollState){
+    if(typeof tableProjects === 'function') tableProjects();
+    if(typeof renderDashboard === 'function') renderDashboard();
+    if(typeof tableTasks === 'function') tableTasks();
+    if(typeof renderCalendarDashboard === 'function') renderCalendarDashboard();
+    if(typeof updateCalendarViewButtons === 'function') updateCalendarViewButtons();
+    const restore = ()=>global.scrollTo(scrollState.x, scrollState.y);
+    if(typeof global.requestAnimationFrame === 'function') global.requestAnimationFrame(restore);
+    else setTimeout(restore, 0);
+    if(response.projectVisible && typeof openProjectCard === 'function') openProjectCard(response.projectId);
+    else if(typeof closeM === 'function') closeM();
+  }
+
+  function expireProjectSession(response){
+    const message = response && response.auth && response.auth.reason || 'אין הרשאה או שהחיבור פג. יש להתחבר מחדש.';
+    if(global.BH_IDLE && typeof global.BH_IDLE.handleSessionExpired === 'function') global.BH_IDLE.handleSessionExpired(message);
+    else { clearToken(); showLogin(message); }
+  }
+
+  global.saveProject = function(id){
+    id = String(id || '').trim();
+    // Creation is intentionally untouched and retains the historical refresh.
+    if(!id) return previousSaveProject.apply(this, arguments);
+    if(pendingByProject[id]) return;
+
+    const sequence = ++projectEditSequence;
+    latestSequenceByProject[id] = sequence;
+    pendingByProject[id] = true;
+    const clearBusy = BH_UI_setBusy(null, 'שומר...');
+    const scrollState = {x:global.scrollX || 0, y:global.scrollY || 0};
+    let completed = false;
+    let fallbackStarted = false;
+    function finish(){
+      if(completed) return false;
+      completed = true;
+      delete pendingByProject[id];
+      clearBusy();
+      return true;
+    }
+    function fallback(){
+      if(fallbackStarted) return;
+      fallbackStarted = true;
+      finish();
+      refreshCore();
+    }
+
+    const payload = {
+      authToken:currentToken(), id:id, sequence:sequence,
+      clientProjectPresent:Array.isArray(DATA.projects) && DATA.projects.some(row=>projectIdOf(row) === id),
+      name:pName.value,
+      projectDescription:(typeof pDescription !== 'undefined' ? pDescription.value : ''),
+      city:pCity.value, type:pType.value, status:pStatus.value,
+      assignmentDomain:(typeof pAssignmentDomain !== 'undefined' ? pAssignmentDomain.value : ''),
+      owner:pOwner.value, tags:pTags.value, drive:pDrive.value
+    };
+
+    google.script.run
+      .withSuccessHandler(response=>{
+        if(completed) return; // protects against a duplicate Apps Script callback
+        if(!response || response.authenticated === false){ finish(); expireProjectSession(response); return; }
+        if(sequence !== latestSequenceByProject[id] || Number(response.sequence) < latestSequenceByProject[id]){
+          finish();
+          return; // a newer canonical response owns this entity
+        }
+        if(response.fullInvalidation === true){ fallback(); return; }
+        try{
+          global.BH_applyProjectEditCanonicalPatch(response, {projectId:id, sequence:sequence});
+          if(!finish()) return;
+          renderProjectDependencies(response, scrollState);
+        }catch(error){
+          fallback();
+        }
+      })
+      .withFailureHandler(error=>{
+        if(completed) return;
+        const text = String(error && (error.message || error) || '');
+        if(/session|חיבור פג|אין הרשאה/i.test(text)){ finish(); expireProjectSession({auth:{reason:text}}); return; }
+        fallback();
+      })
+      .שמירת_פרויקט_קנונית_Build16(payload);
+  };
+
+  global.__BH_PROJECT_EDIT_PATCH_TEST__ = {
+    pendingByProject:pendingByProject,
+    latestSequenceByProject:latestSequenceByProject,
+    applyProjectDecision:applyProjectDecision
+  };
+})(window);
+</script>
+
 </body>
 </html>
