@@ -41,6 +41,11 @@
     .settings-tabs{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 16px}
     .settings-tabs button.active{background:var(--primary);color:#fff}
     .pill{display:inline-block;padding:3px 9px;border-radius:999px;background:#eef3f8;margin:2px;font-size:12px}
+    .bh-ui-busy{cursor:wait!important}
+    .bh-ui-busy-content{display:inline-flex;align-items:center;justify-content:center;gap:7px;white-space:nowrap;line-height:inherit}
+    .bh-ui-spinner{display:inline-block;width:12px;height:12px;flex:0 0 12px;border:2px solid currentColor;border-left-color:transparent;border-radius:50%;animation:bh-ui-spin .75s linear infinite}
+    @keyframes bh-ui-spin{to{transform:rotate(360deg)}}
+    @media (prefers-reduced-motion:reduce){.bh-ui-spinner{animation:none}}
   
     .login-screen{position:fixed;inset:0;background:#f4f6f8;z-index:2000;display:flex;align-items:center;justify-content:center;padding:20px}
     .login-card{background:#fff;border-radius:16px;box-shadow:0 4px 20px #0002;width:420px;max-width:95vw;padding:28px;text-align:right}
@@ -318,6 +323,82 @@ nav button::first-letter{font-size:22px!important}
 </style>
 </head>
 <body>
+<script id="BH_UI_BUSY_HELPER">
+/* One source of truth for delayed, element-scoped mutation feedback. */
+(function(global){
+  const states = new WeakMap();
+  const DELAY_MS = 175;
+  function resolveButton(button){
+    if(button && button.nodeType === 1) return button;
+    const active = document.activeElement;
+    return active && active.tagName === 'BUTTON' ? active : null;
+  }
+  function setBusy(button, text){
+    button = resolveButton(button);
+    if(!button) return function(){};
+    let state = states.get(button);
+    if(state){ state.refs++; return makeRelease(button, state); }
+    state = {
+      refs:1, shown:false, released:false, html:button.innerHTML,
+      disabled:button.disabled, aria:button.getAttribute('aria-busy'), timer:null
+    };
+    states.set(button, state);
+    button.disabled = true;
+    button.setAttribute('aria-busy','true');
+    state.timer = setTimeout(function(){
+      state.timer = null;
+      if(state.released || states.get(button) !== state || !button.isConnected) return;
+      state.shown = true;
+      button.classList.add('bh-ui-busy');
+      button.innerHTML = '<span class="bh-ui-busy-content"><span class="bh-ui-spinner" aria-hidden="true"></span><span></span></span>';
+      button.querySelector('.bh-ui-busy-content span:last-child').textContent = text || 'טוען...';
+    }, DELAY_MS);
+    return makeRelease(button, state);
+  }
+  function makeRelease(button, state){
+    let called=false;
+    return function(){
+      if(called) return;
+      called=true;
+      if(states.get(button)!==state || --state.refs>0) return;
+      state.released=true;
+      if(state.timer!==null){ clearTimeout(state.timer); state.timer=null; }
+      states.delete(button);
+      if(!button.isConnected) return;
+      button.classList.remove('bh-ui-busy');
+      button.innerHTML=state.html;
+      button.disabled=state.disabled;
+      if(state.aria===null) button.removeAttribute('aria-busy'); else button.setAttribute('aria-busy',state.aria);
+    };
+  }
+  function mutation(button, text, operation){
+    const release=setBusy(button,text);
+    let settled=false;
+    function finish(callback){
+      return function(){
+        if(settled) return;
+        settled=true;
+        release();
+        return typeof callback==='function' ? callback.apply(this,arguments) : undefined;
+      };
+    }
+    try{ return operation(finish, release); }
+    catch(error){ finish()(); throw error; }
+  }
+  function run(text, send, button){
+    return mutation(button, text, function(finish){
+      return send(finish(), finish(function(error){
+        if(error) alert(error.message || error);
+      }));
+    });
+  }
+  global.BH_UI_setBusy=setBusy;
+  global.BH_UI_clearBusy=function(release){ if(typeof release==='function') release(); };
+  global.BH_UI_withBusy=mutation;
+  global.BH_UI_run=run;
+  global.__BH_UI_BUSY_TEST__={delay:DELAY_MS,states:states};
+})(window);
+</script>
 <header id="systemTitle">
   <div id="brandArea" onclick="goDashboard()">
     <img id="systemLogoImg" src="" alt="לוגו">
@@ -500,15 +581,15 @@ function clearToken(){ localStorage.removeItem('CRM_SESSION_TOKEN'); }
 function sendLoginCode(){
   const email = (loginEmail.value || '').trim();
   loginMessage.textContent = 'שולח קוד...';
-  google.script.run
-    .withSuccessHandler(res=>{
+  BH_UI_withBusy(null,'שולח...',finish=>google.script.run
+    .withSuccessHandler(finish(res=>{
       if(!res || !res.ok){ loginMessage.textContent = (res && res.message) || 'לא ניתן לשלוח קוד'; return; }
       loginStepEmail.classList.add('hidden');
       loginStepCode.classList.remove('hidden');
       loginMessage.textContent = res.message || 'קוד נשלח';
-    })
-    .withFailureHandler(e=> loginMessage.textContent = e.message)
-    .שליחת_קוד_כניסה_Build7(email);
+    }))
+    .withFailureHandler(finish(e=> loginMessage.textContent = e.message))
+    .שליחת_קוד_כניסה_Build7(email));
 }
 
 function verifyLoginCode(){
@@ -517,8 +598,8 @@ function verifyLoginCode(){
 
   loginMessage.textContent = 'בודק קוד...';
 
-  google.script.run
-    .withSuccessHandler(res=>{
+  BH_UI_withBusy(null,'מתחבר...',finish=>google.script.run
+    .withSuccessHandler(finish(res=>{
       if(!res || !res.ok){
         loginMessage.textContent = (res && res.message) || 'קוד שגוי';
         return;
@@ -534,9 +615,9 @@ function verifyLoginCode(){
 
       loginMessage.textContent = '';
       window.location.replace(CRM_WEB_APP_URL + "?refresh=" + Date.now());
-    })
-    .withFailureHandler(e=> loginMessage.textContent = e.message)
-    .אימות_קוד_כניסה_Build7(email, code);
+    }))
+    .withFailureHandler(finish(e=> loginMessage.textContent = e.message))
+    .אימות_קוד_כניסה_Build7(email, code));
 }
 
 function backToEmailLogin(){
@@ -558,10 +639,10 @@ function logout(){
     sessionStorage.removeItem('crmLastTab');
   }catch(e){}
 
-  google.script.run
-    .withSuccessHandler(()=>showLogin('התנתקת מהמערכת'))
-    .withFailureHandler(()=>showLogin('התנתקת מהמערכת'))
-    .התנתקות_Build7(token);
+  BH_UI_withBusy(null,'מתנתק...',finish=>google.script.run
+    .withSuccessHandler(finish(()=>showLogin('התנתקת מהמערכת')))
+    .withFailureHandler(finish(()=>showLogin('התנתקת מהמערכת')))
+    .התנתקות_Build7(token));
 }
 
 function greetingByHour(){
@@ -1270,16 +1351,16 @@ function saveTaskNote(taskId){
   }
 
   const __perf=CRM_mutationStart_('saveTaskNote'), __server=CRM_perfNow_();
-  google.script.run
-    .withSuccessHandler(()=>{
+  BH_UI_withBusy(null,'שומר...',finish=>google.script.run
+    .withSuccessHandler(finish(()=>{
       CRM_mutationSuccess_(__perf,__server,function(done){ openTaskCard(taskId); if(typeof done==='function') done(); });
-    })
-    .withFailureHandler(e=>alert(e.message))
+    }))
+    .withFailureHandler(finish(e=>alert(e.message)))
     .שמירת_הערת_משימה(CRM_mutationPayload_({
       authToken: currentToken(),
       taskId: taskId,
       note: note
-    }, __perf));
+    }, __perf)));
 }
 
 function reactivateTask(id){
@@ -1389,16 +1470,16 @@ function openLinkPermissionEditor(linkId, returnId, mode){
 function saveEditedLinkPermission(linkId, returnId, mode){
   const link = (DATA.links||[]).find(l => l['מזהה שיוך'] === linkId);
   if(!link){ alert('השיוך לא נמצא'); return; }
-  google.script.run
-    .withSuccessHandler(()=>{load(); mode==='project'?openProjectCard(returnId):openContactCard(returnId);})
-    .withFailureHandler(e=>alert(e.message))
+  BH_UI_withBusy(null,'שומר...',finish=>google.script.run
+    .withSuccessHandler(finish(()=>{load(); mode==='project'?openProjectCard(returnId):openContactCard(returnId);}))
+    .withFailureHandler(finish(e=>alert(e.message)))
     .שמירת_שיוך({
       id: linkId,
       projectId: link['מזהה פרויקט'],
       contactId: link['מזהה איש קשר'],
       role: editLinkRole.value,
       portal: editLinkPortal.value
-    });
+    }));
 }
 function deleteLink(id,cb){
   if(!confirm('להסיר שיוך?'))return;
@@ -1445,27 +1526,18 @@ function saveProjectNote(projectId){
     return;
   }
 
-  if(btn){
-    btn.disabled = true;
-    btn.textContent = 'שומר...';
-  }
-
-  google.script.run
-    .withSuccessHandler(()=>{
+  BH_UI_withBusy(btn,'שומר...',finish=>google.script.run
+    .withSuccessHandler(finish(()=>{
       openProjectCard(projectId);
-    })
-    .withFailureHandler(e=>{
+    }))
+    .withFailureHandler(finish(e=>{
       alert(e && e.message ? e.message : 'שגיאה בשמירת הערה');
-      if(btn){
-        btn.disabled = false;
-        btn.textContent = 'שמור הערה';
-      }
-    })
+    }))
     .שמירת_הערה_לפרויקט_Build5({
       authToken: currentToken(),
       projectId: projectId,
       note: note
-    });
+    }));
 }
 
 /* Settings */
@@ -1529,8 +1601,8 @@ function openCategoryOnly(name='', order=''){
   modal.classList.remove('hidden');
 }
 function saveCategoryOnly(){
-  google.script.run.withSuccessHandler(()=>{closeM();refreshCore();}).withFailureHandler(e=>alert(e.message))
-    .שמירת_קטגוריה_Build6_1({authToken:currentToken(),oldName:catOldName.value, category:catType.value, categoryOrder:catOrder.value, firstItem:(typeof catValue==='undefined'?'':catValue.value), order:(typeof catValueOrder==='undefined'?1:catValueOrder.value)});
+  BH_UI_withBusy(null,'שומר...',finish=>google.script.run.withSuccessHandler(finish(()=>{closeM();refreshCore();})).withFailureHandler(finish(e=>alert(e.message)))
+    .שמירת_קטגוריה_Build6_1({authToken:currentToken(),oldName:catOldName.value, category:catType.value, categoryOrder:catOrder.value, firstItem:(typeof catValue==='undefined'?'':catValue.value), order:(typeof catValueOrder==='undefined'?1:catValueOrder.value)}));
 }
 function deleteCategory(name){
   if(!confirm('למחוק את הקטגוריה וכל האפשרויות שבתוכה?')) return;
@@ -1551,8 +1623,8 @@ function openCategoryValue(r={}){
 }
 function saveCategoryValue(id=''){
   const cat = categories().find(c=>c.name===optCategory.value);
-  google.script.run.withSuccessHandler(()=>{closeM();refreshCore();}).withFailureHandler(e=>alert(e.message))
-    .שמירת_פריט_קטגוריה_Build4_5({authToken:currentToken(),id,category:optCategory.value,categoryOrder:cat?cat.categoryOrder:'',item:optItem.value,order:optOrder.value,active:optActive.value});
+  BH_UI_withBusy(null,id?'מעדכן...':'יוצר...',finish=>google.script.run.withSuccessHandler(finish(()=>{closeM();refreshCore();})).withFailureHandler(finish(e=>alert(e.message)))
+    .שמירת_פריט_קטגוריה_Build4_5({authToken:currentToken(),id,category:optCategory.value,categoryOrder:cat?cat.categoryOrder:'',item:optItem.value,order:optOrder.value,active:optActive.value}));
 }
 function toggleCategoryValue(id){ google.script.run.withSuccessHandler(()=>refreshCore()).withFailureHandler(e=>alert(e.message)).החלפת_מצב_אפשרות_בחירה_Build6_1({authToken:currentToken(),id}); }
 function deleteCategoryValue(id){ if(!confirm('למחוק אפשרות בחירה?')) return; google.script.run.withSuccessHandler(()=>refreshCore()).withFailureHandler(e=>alert(e.message)).מחיקת_אפשרות_בחירה_Build6_1({authToken:currentToken(),id}); }
@@ -1588,8 +1660,8 @@ function openSystemField(r={}){
   modal.classList.remove('hidden');
 }
 function saveSystemField(id=''){
-  google.script.run.withSuccessHandler(()=>{closeM();refreshCore();}).withFailureHandler(e=>alert(e.message))
-    .שמירת_שדה_הגדרה_Build4_4({authToken:currentToken(),id,entity:sfEntity.value,name:sfName.value,fieldType:sfType.value,settingType:sfSetting.value,required:sfRequired.value,active:sfActive.value,showList:sfList.value,showCard:sfCard.value,searchable:sfSearch.value,filterable:sfFilter.value,order:sfOrder.value});
+  BH_UI_withBusy(null,id?'מעדכן...':'יוצר...',finish=>google.script.run.withSuccessHandler(finish(()=>{closeM();refreshCore();})).withFailureHandler(finish(e=>alert(e.message)))
+    .שמירת_שדה_הגדרה_Build4_4({authToken:currentToken(),id,entity:sfEntity.value,name:sfName.value,fieldType:sfType.value,settingType:sfSetting.value,required:sfRequired.value,active:sfActive.value,showList:sfList.value,showCard:sfCard.value,searchable:sfSearch.value,filterable:sfFilter.value,order:sfOrder.value}));
 }
 function toggleSystemField(id){ google.script.run.withSuccessHandler(()=>refreshCore()).withFailureHandler(e=>alert(e.message)).החלפת_מצב_שדה_מערכת_Build6_1({authToken:currentToken(),id}); }
 function deleteSystemField(id){ if(!confirm('למחוק שדה מערכת?')) return; google.script.run.withSuccessHandler(()=>refreshCore()).withFailureHandler(e=>alert(e.message)).מחיקת_שדה_מערכת_Build6_1({authToken:currentToken(),id}); }
@@ -1650,8 +1722,8 @@ function renderBrandingSettings(){
     <button class="primary" onclick="saveBranding()">שמור מיתוג</button></div>`;
 }
 function saveBranding(){
-  google.script.run.withSuccessHandler(()=>{load();alert('המיתוג נשמר')}).withFailureHandler(e=>alert(e.message))
-    .שמירת_מיתוג_Build4_3({systemName:brandName.value,primaryColor:brandPrimary.value,secondaryColor:brandSecondary.value,logo:brandLogoUrl.value,logoHeight:brandLogoHeight.value,logoPosition:brandLogoPosition.value,idleLogoutMinutes:brandIdleLogoutMinutes.value});
+  BH_UI_withBusy(null,'שומר...',finish=>google.script.run.withSuccessHandler(finish(()=>{load();alert('המיתוג נשמר')})).withFailureHandler(finish(e=>alert(e.message)))
+    .שמירת_מיתוג_Build4_3({systemName:brandName.value,primaryColor:brandPrimary.value,secondaryColor:brandSecondary.value,logo:brandLogoUrl.value,logoHeight:brandLogoHeight.value,logoPosition:brandLogoPosition.value,idleLogoutMinutes:brandIdleLogoutMinutes.value}));
 }
 function renderCalendarsSettings(){
   const rows = ((DATA.realSettings||{}).calendars||[]);
@@ -1671,8 +1743,8 @@ function openCalendar(r={}){
   modal.classList.remove('hidden');
 }
 function saveCalendar(id=''){
-  google.script.run.withSuccessHandler(()=>{closeM();refreshCore();}).withFailureHandler(e=>alert(e.message))
-    .שמירת_יומן_Build4_3({id,name:calName.value,calendarId:calId.value,active:calActive.value});
+  BH_UI_withBusy(null,id?'מעדכן...':'יוצר...',finish=>google.script.run.withSuccessHandler(finish(()=>{closeM();refreshCore();})).withFailureHandler(finish(e=>alert(e.message)))
+    .שמירת_יומן_Build4_3({id,name:calName.value,calendarId:calId.value,active:calActive.value}));
 }
 function renderPermissionsSettings(){
   const p = DATA.permissions || {};
@@ -1696,8 +1768,8 @@ function openUserProjectLink(){
   modal.classList.remove('hidden');
 }
 function saveUserProjectLink(){
-  google.script.run.withSuccessHandler(()=>{closeM();refreshCore();}).withFailureHandler(e=>alert(e.message))
-    .שיוך_משתמש_לפרויקט_Build6({userId:permUserId.value,projectId:permProjectId.value,role:permProjectRole.value,active:'כן'});
+  BH_UI_withBusy(null,'שומר...',finish=>google.script.run.withSuccessHandler(finish(()=>{closeM();refreshCore();})).withFailureHandler(finish(e=>alert(e.message)))
+    .שיוך_משתמש_לפרויקט_Build6({userId:permUserId.value,projectId:permProjectId.value,role:permProjectRole.value,active:'כן'}));
 }
 
 
@@ -2029,8 +2101,8 @@ function restoreArchive(type,id){
   const openTaskId = modalBox && modalBox.getAttribute ? modalBox.getAttribute('data-open-task-id') : '';
 
   const __perf=CRM_mutationStart_('restoreArchive'), __server=CRM_perfNow_();
-  google.script.run
-    .withSuccessHandler(()=>{
+  BH_UI_withBusy(null,'משחזר...',finish=>google.script.run
+    .withSuccessHandler(finish(()=>{
       CRM_mutationSuccess_(__perf,__server,function(done,parent){
         refreshCore(()=>{
           if(type === 'tasks' && String(openTaskId || '') === String(id || '')) openTaskCard(id);
@@ -2038,28 +2110,28 @@ function restoreArchive(type,id){
           if(typeof done==='function') done();
         }, parent);
       });
-    })
-    .withFailureHandler(e=>alert(e.message))
+    }))
+    .withFailureHandler(finish(e=>alert(e.message)))
     .שחזור_מארכיון(CRM_mutationPayload_({
       authToken: currentToken(),
       type,
       id
-    }, __perf));
+    }, __perf)));
 }
 
 function deleteForeverArchive(type,id){
   if(!confirm('האם אתה בטוח שברצונך למחוק פריט זה לצמיתות?\n\nפעולה זו אינה ניתנת לשחזור.')) return;
 
-  google.script.run
-    .withSuccessHandler(()=>{
+  BH_UI_withBusy(null,'מוחק...',finish=>google.script.run
+    .withSuccessHandler(finish(()=>{
       refreshCore(()=>renderArchive(type));
-    })
-    .withFailureHandler(e=>alert(e.message))
+    }))
+    .withFailureHandler(finish(e=>alert(e.message)))
     .מחיקה_לצמיתות_מהארכיון({
       authToken: currentToken(),
       type,
       id
-    });
+    }));
 }
 
 function priorityOptions(selected='רגילה'){
@@ -2590,15 +2662,15 @@ saveProject = function(id){
   if(!canEdit() && id) return alert('אין לך הרשאה לעריכה');
   if(!canCreate() && !id) return alert('אין לך הרשאה להוספה');
   const __perf=CRM_mutationStart_('saveProject'), __server=CRM_perfNow_();
-  google.script.run.withSuccessHandler(()=>{closeM();CRM_mutationSuccess_(__perf,__server,refreshCore);}).withFailureHandler(e=>alert(e.message))
-    .שמירת_פרויקט(CRM_mutationPayload_({authToken:currentToken(),id,name:pName.value,city:pCity.value,type:pType.value,status:pStatus.value,assignmentDomain:(typeof pAssignmentDomain !== 'undefined' ? pAssignmentDomain.value : ''),owner:pOwner.value,tags:pTags.value,drive:pDrive.value}, __perf));
+  BH_UI_withBusy(null,id?'מעדכן...':'יוצר...',finish=>google.script.run.withSuccessHandler(finish(()=>{closeM();CRM_mutationSuccess_(__perf,__server,refreshCore);})).withFailureHandler(finish(e=>alert(e.message)))
+    .שמירת_פרויקט(CRM_mutationPayload_({authToken:currentToken(),id,name:pName.value,city:pCity.value,type:pType.value,status:pStatus.value,assignmentDomain:(typeof pAssignmentDomain !== 'undefined' ? pAssignmentDomain.value : ''),owner:pOwner.value,tags:pTags.value,drive:pDrive.value}, __perf)));
 }
 saveContact = function(id){
   if(!canEdit() && id) return alert('אין לך הרשאה לעריכה');
   if(!canCreate() && !id) return alert('אין לך הרשאה להוספה');
   const __perf=CRM_mutationStart_('saveContact'), __server=CRM_perfNow_();
-  google.script.run.withSuccessHandler(()=>{closeM();CRM_mutationSuccess_(__perf,__server,refreshCore);}).withFailureHandler(e=>alert(e.message))
-    .שמירת_איש_קשר(CRM_mutationPayload_({authToken:currentToken(),id,name:cName.value,phone:cPhone.value,email:cEmail.value,address:cAddress.value,source:cSource.value,contactType:cType.value,status:cStatus.value,tags:cTags.value,owner:cOwner.value,systemPermission:cPermission.value,assignmentCentralDomain:(typeof cCentralAssignmentDomain !== 'undefined' ? cCentralAssignmentDomain.value : ''),assignmentAdditionalDomains:selectedAdditionalAssignmentDomains(),assignmentDomains:selectedAdditionalAssignmentDomains()}, __perf));
+  BH_UI_withBusy(null,id?'מעדכן...':'יוצר...',finish=>google.script.run.withSuccessHandler(finish(()=>{closeM();CRM_mutationSuccess_(__perf,__server,refreshCore);})).withFailureHandler(finish(e=>alert(e.message)))
+    .שמירת_איש_קשר(CRM_mutationPayload_({authToken:currentToken(),id,name:cName.value,phone:cPhone.value,email:cEmail.value,address:cAddress.value,source:cSource.value,contactType:cType.value,status:cStatus.value,tags:cTags.value,owner:cOwner.value,systemPermission:cPermission.value,assignmentCentralDomain:(typeof cCentralAssignmentDomain !== 'undefined' ? cCentralAssignmentDomain.value : ''),assignmentAdditionalDomains:selectedAdditionalAssignmentDomains(),assignmentDomains:selectedAdditionalAssignmentDomains()}, __perf)));
 }
 saveTask = function(id){
   if(!canEdit() && id) return alert('אין לך הרשאה לעריכה');
@@ -2610,26 +2682,26 @@ saveTask = function(id){
 saveLink = function(projectId,contactId,role,portal,cb){
   if(!canEdit()) return alert('אין לך הרשאה לעריכת שיוכים');
   const __perf=CRM_mutationStart_('saveLink'), __server=CRM_perfNow_();
-  google.script.run.withSuccessHandler(()=>{CRM_mutationSuccess_(__perf,__server,function(done,parent){ refreshCore(function(){ if(typeof cb==='function') cb(); if(typeof done==='function') done(); }, parent); });}).withFailureHandler(e=>alert(e.message)).שמירת_שיוך(CRM_mutationPayload_({authToken:currentToken(),projectId,contactId,role,portal}, __perf));
+  BH_UI_withBusy(null,'שומר...',finish=>google.script.run.withSuccessHandler(finish(()=>{CRM_mutationSuccess_(__perf,__server,function(done,parent){ refreshCore(function(){ if(typeof cb==='function') cb(); if(typeof done==='function') done(); }, parent); });})).withFailureHandler(finish(e=>alert(e.message))).שמירת_שיוך(CRM_mutationPayload_({authToken:currentToken(),projectId,contactId,role,portal}, __perf)));
 }
 deleteLink = function(id,cb){
   if(confirm('להסיר שיוך?')){
-    google.script.run
-      .withSuccessHandler(()=>{refreshCore(cb);})
-      .withFailureHandler(e=>alert(e.message))
-      .מחיקת_שיוך({id,authToken:currentToken()});
+    BH_UI_withBusy(null,'מוחק...',finish=>google.script.run
+      .withSuccessHandler(finish(()=>{refreshCore(cb);}))
+      .withFailureHandler(finish(e=>alert(e.message)))
+      .מחיקת_שיוך({id,authToken:currentToken()}));
   }
 }
 
 delProject = function(id){
   if(confirm('האם אתה בטוח שברצונך להעביר את הפרויקט לארכיון?')){
-    google.script.run.withSuccessHandler(()=>{closeM();refreshCore();}).withFailureHandler(e=>alert(e.message)).מחיקת_פרויקט({id,authToken:currentToken()});
+    BH_UI_withBusy(null,'מארכב...',finish=>google.script.run.withSuccessHandler(finish(()=>{closeM();refreshCore();})).withFailureHandler(finish(e=>alert(e.message))).מחיקת_פרויקט({id,authToken:currentToken()}));
   }
 }
 
 delContact = function(id){
   if(confirm('האם אתה בטוח שברצונך להעביר את איש הקשר לארכיון?')){
-    google.script.run.withSuccessHandler(()=>{closeM();refreshCore();}).withFailureHandler(e=>alert(e.message)).מחיקת_איש_קשר({id,authToken:currentToken()});
+    BH_UI_withBusy(null,'מארכב...',finish=>google.script.run.withSuccessHandler(finish(()=>{closeM();refreshCore();})).withFailureHandler(finish(e=>alert(e.message))).מחיקת_איש_קשר({id,authToken:currentToken()}));
   }
 }
 
@@ -2692,12 +2764,12 @@ function refreshOpenTaskCardAfterMutation(id, options){
 
 delTask = function(id){
   if(confirm('האם אתה בטוח שברצונך להעביר את המשימה לארכיון?')){
-    google.script.run.withSuccessHandler(()=>{
+    BH_UI_withBusy(null,'מארכב...',finish=>google.script.run.withSuccessHandler(finish(()=>{
       const source = ((window.DATA && Array.isArray(DATA.tasks)) ? DATA.tasks : []).find(t=>String(t['מזהה משימה'])===String(id)) || {};
       const fallbackTask = Object.assign({}, source, {'מזהה משימה':id, 'בארכיון':'כן'});
       renderTaskCard({task:fallbackTask, notes:[], readOnly:true});
       refreshCore(()=>openTaskCard(id));
-    }).withFailureHandler(e=>alert(e.message)).מחיקת_משימה({id,authToken:currentToken()});
+    })).withFailureHandler(finish(e=>alert(e.message))).מחיקת_משימה({id,authToken:currentToken()}));
   }
 }
 
@@ -2719,19 +2791,19 @@ reactivateTask = function(id){
 
 sendCalendarInvite = function(id){
   if(!canEdit()) return alert('אין לך הרשאה לשליחת זימון');
-  google.script.run
-    .withSuccessHandler(res=>{ alert((res&&res.message)||'הזימון נשלח/עודכן'); refreshCore(()=>openTaskCard(id)); })
-    .withFailureHandler(e=>alert(e.message))
-    .שליחת_זימון_יומן_למשימה_Build11({id,authToken:currentToken()});
+  BH_UI_withBusy(null,'שולח...',finish=>google.script.run
+    .withSuccessHandler(finish(res=>{ alert((res&&res.message)||'הזימון נשלח/עודכן'); refreshCore(()=>openTaskCard(id)); }))
+    .withFailureHandler(finish(e=>alert(e.message)))
+    .שליחת_זימון_יומן_למשימה_Build11({id,authToken:currentToken()}));
 }
 
 /***********************
  * Build 11.3 – תיקון שמירת הרשאות עם Session
  ***********************/
 saveRolePermission = function(){
-  google.script.run
-    .withSuccessHandler(()=>{ closeM(); load(); })
-    .withFailureHandler(e=>alert(e.message))
+  BH_UI_withBusy(null,'שומר...',finish=>google.script.run
+    .withSuccessHandler(finish(()=>{ closeM(); load(); }))
+    .withFailureHandler(finish(e=>alert(e.message)))
     .שמירת_הרשאות_תפקיד_Build8({
       authToken: currentToken(),
       role: roleName.value,
@@ -2744,13 +2816,13 @@ saveRolePermission = function(){
       users: roleUsers.value,
       permissions: rolePerms.value,
       deletePermission: roleDelete.value
-    });
+    }));
 }
 
 saveUserPermission = function(id=''){
-  google.script.run
-    .withSuccessHandler(()=>{ closeM(); load(); })
-    .withFailureHandler(e=>alert(e.message))
+  BH_UI_withBusy(null,id?'מעדכן...':'יוצר...',finish=>google.script.run
+    .withSuccessHandler(finish(()=>{ closeM(); load(); }))
+    .withFailureHandler(finish(e=>alert(e.message)))
     .שמירת_הרשאה_פרטנית_לאיש_קשר_Build8({
       authToken: currentToken(),
       id: id,
@@ -2762,7 +2834,7 @@ saveUserPermission = function(id=''){
       settings: upSettings.value,
       onlyAssigned: upOnly.value,
       active: upActive.value
-    });
+    }));
 }
 window.addEventListener('load', function(){
   if (typeof load === 'function') {
@@ -3901,10 +3973,10 @@ function refreshCore(after, parentRequestId){
 
     // Creation remains deliberately unchanged; this PR optimizes one route only.
     if(!id){
-      google.script.run
-        .withSuccessHandler(saved=>{refreshCore(()=>openTaskCard((saved&&saved.taskId)||saved||id));})
-        .withFailureHandler(e=>alert(e.message))
-        .שמירת_משימה(request);
+      BH_UI_withBusy(null,'יוצר...',finish=>google.script.run
+        .withSuccessHandler(finish(saved=>{refreshCore(()=>openTaskCard((saved&&saved.taskId)||saved||id));}))
+        .withFailureHandler(finish(e=>alert(e.message)))
+        .שמירת_משימה(request));
       return;
     }
     BH_saveTaskEditLocal(id, request);
@@ -6300,29 +6372,29 @@ window.saveContact = function(id){
     contactPayload.assignmentDomains = selectedAdditionalAssignmentDomains();
   }
 
-  google.script.run
-    .withSuccessHandler((savedId)=>{
+  BH_UI_withBusy(null,id?'מעדכן...':'יוצר...',finish=>google.script.run
+    .withSuccessHandler(finish((savedId)=>{
       if(id){
         closeM();
         refreshCore();
         return;
       }
       refreshCore(()=>openContactCardById(savedId));
-    })
-    .withFailureHandler(e=>alert(e.message))
-    .שמירת_איש_קשר(contactPayload);
+    }))
+    .withFailureHandler(finish(e=>alert(e.message)))
+    .שמירת_איש_קשר(contactPayload));
 };
 
 window.saveContactPermissionFromPicker = function(){
   const c = (DATA.contacts || []).find(x => x['מזהה איש קשר'] === permContactPick.value);
   if(!c){ alert('לא נבחר איש קשר'); return; }
 
-  google.script.run
-    .withSuccessHandler(()=>{
+  BH_UI_withBusy(null,'שומר...',finish=>google.script.run
+    .withSuccessHandler(finish(()=>{
       closeM();
       refreshCore();
-    })
-    .withFailureHandler(e=>alert(e.message))
+    }))
+    .withFailureHandler(finish(e=>alert(e.message)))
     .שמירת_איש_קשר({
       authToken: currentToken(),
       id: c['מזהה איש קשר'],
@@ -6337,13 +6409,13 @@ window.saveContactPermissionFromPicker = function(){
       manager: "",
       owner: "",
       systemPermission: permContactRole.value
-    });
+    }));
 };
 
 window.saveProject = function(id){
-  google.script.run
-    .withSuccessHandler(savedId=>{refreshCore(()=>openProjectCard(savedId||id));})
-    .withFailureHandler(e=>alert(e.message))
+  BH_UI_withBusy(null,id?'מעדכן...':'יוצר...',finish=>google.script.run
+    .withSuccessHandler(finish(savedId=>{refreshCore(()=>openProjectCard(savedId||id));}))
+    .withFailureHandler(finish(e=>alert(e.message)))
     .שמירת_פרויקט({
       authToken: currentToken(),
       id,
@@ -6356,7 +6428,7 @@ window.saveProject = function(id){
       owner:pOwner.value,
       tags:pTags.value,
       drive:pDrive.value
-    });
+    }));
 };
 
 function BH_calendarOwner(t){
@@ -6749,25 +6821,25 @@ window.calendarTasksForDate = function(d){
   };
 
   window.saveDomainBranding = function(){
-    google.script.run.withSuccessHandler((res)=>{
+    BH_UI_withBusy(null,'שומר...',finish=>google.script.run.withSuccessHandler(finish((res)=>{
         closeM();
         load(false);
         const duplicates=(res&&res.duplicateIds&&res.duplicateIds.length)?('\nנמצאו כפילויות היסטוריות שלא נמחקו: '+res.duplicateIds.join(', ')):'';
         alert('מיתוג תחום השיוך נשמר'+duplicates);
-      }).withFailureHandler(e=>alert(e.message)).שמירת_מיתוג_תחום_שיוך({
+      })).withFailureHandler(finish(e=>alert(e.message))).שמירת_מיתוג_תחום_שיוך({
         authToken: currentToken(), id: domainBrandId.value, assignmentDomain: domainBrandDomain.value,
         systemName: domainBrandName.value, logo: domainBrandLogo.value, primaryColor: domainBrandPrimary.value,
         secondaryColor: domainBrandSecondary.value, logoHeight: domainBrandLogoHeight.value, active: domainBrandActive.value
-      });
+      }));
   };
 
   window.archiveDomainBranding = function(id){
     if(!confirm('להעביר את מיתוג תחום השיוך לארכיון?')) return;
-    google.script.run.withSuccessHandler(()=>load(false)).withFailureHandler(e=>alert(e.message)).העברת_מיתוג_תחום_שיוך_לארכיון({authToken:currentToken(),id});
+    BH_UI_withBusy(null,'מארכב...',finish=>google.script.run.withSuccessHandler(finish(()=>load(false))).withFailureHandler(finish(e=>alert(e.message))).העברת_מיתוג_תחום_שיוך_לארכיון({authToken:currentToken(),id}));
   };
 
   window.restoreDomainBranding = function(id){
-    google.script.run.withSuccessHandler(()=>load(false)).withFailureHandler(e=>alert(e.message)).שחזור_מיתוג_תחום_שיוך({authToken:currentToken(),id});
+    BH_UI_withBusy(null,'משחזר...',finish=>google.script.run.withSuccessHandler(finish(()=>load(false))).withFailureHandler(finish(e=>alert(e.message))).שחזור_מיתוג_תחום_שיוך({authToken:currentToken(),id}));
   };
 })();
 </script>
@@ -6945,15 +7017,15 @@ window.calendarTasksForDate = function(d){
     };
     if(window.suCentralAssignmentDomain) payload.assignmentCentralDomain = suCentralAssignmentDomain.value;
     if(window.suAdditionalAssignmentDomains) payload.assignmentAdditionalDomains = selectedSystemUserAdditionalDomains();
-    google.script.run.withSuccessHandler(()=>{closeM();refreshCore();}).withFailureHandler(e=>alert(e.message))
-      .שמירת_משתמש_מערכת(payload);
+    BH_UI_withBusy(null,id?'מעדכן...':'יוצר...',finish=>google.script.run.withSuccessHandler(finish(()=>{closeM();refreshCore();})).withFailureHandler(finish(e=>alert(e.message)))
+      .שמירת_משתמש_מערכת(payload));
   };
 
   window.toggleSystemUserAccess = function(id, nextActive){
     const row = (DATA.contacts || []).find(c => String(c['מזהה איש קשר'] || '') === String(id || ''));
     if(!row) return alert('המשתמש לא נמצא');
-    google.script.run.withSuccessHandler(()=>refreshCore()).withFailureHandler(e=>alert(e.message))
-      .שמירת_משתמש_מערכת({authToken: currentToken(), id, systemPermission: row['הרשאת מערכת'], systemActive: nextActive});
+    BH_UI_withBusy(null,nextActive==='כן'?'מחזיר לפעיל...':'מארכב...',finish=>google.script.run.withSuccessHandler(finish(()=>refreshCore())).withFailureHandler(finish(e=>alert(e.message)))
+      .שמירת_משתמש_מערכת({authToken: currentToken(), id, systemPermission: row['הרשאת מערכת'], systemActive: nextActive}));
   };
 })();
 </script>
@@ -7159,19 +7231,6 @@ window.calendarTasksForDate = function(d){
     clearToken();
     showLogin(reason || 'החיבור פג, יש להתחבר מחדש');
   }
-  function setBusy(busy){
-    const button = modalBox && modalBox.querySelector('button.primary');
-    if(!button) return;
-    if(busy){
-      button.dataset.taskEditLabel = button.textContent;
-      button.disabled = true;
-      button.textContent = 'שומר…';
-    }else{
-      button.disabled = false;
-      if(button.dataset.taskEditLabel) button.textContent = button.dataset.taskEditLabel;
-      delete button.dataset.taskEditLabel;
-    }
-  }
   function fallbackOnce(state, reason, id, started){
     if(state.fallback) return;
     state.fallback = true;
@@ -7228,7 +7287,7 @@ window.calendarTasksForDate = function(d){
     request.clientTaskPresent = Array.isArray(DATA.tasks) && DATA.tasks.some(task=>String((task||{})['מזהה משימה']||'')===key);
     request.clientCalendarPresent = Array.isArray(DATA.calendarTasks) && DATA.calendarTasks.some(task=>String((task||{})['מזהה משימה']||'')===key);
     const started = Date.now();
-    setBusy(true);
+    const clearBusy=BH_UI_setBusy(null, id ? 'מעדכן...' : 'יוצר...');
 
     google.script.run
       .withSuccessHandler(function(response){
@@ -7242,11 +7301,11 @@ window.calendarTasksForDate = function(d){
           latestApplied[key] = state.sequence;
           metric({serverMs:serverMs,patchMs:Date.now()-patchStarted,fallback:false,fallbackReason:'',sequence:state.sequence,version:response.updatedAt,success:true});
         }catch(error){ fallbackOnce(state, 'local-patch-failed', key, started); }
-        finally{ delete pending[key]; setBusy(false); }
+        finally{ delete pending[key]; clearBusy(); }
       })
       .withFailureHandler(function(error){
         delete pending[key];
-        setBusy(false);
+        clearBusy();
         if(sessionExpired(error)){
           metric({serverMs:Date.now()-started,patchMs:0,fallback:false,fallbackReason:'session-expired',sequence:state.sequence,success:false});
           canonicalLogout((error && error.message) || 'החיבור פג');
@@ -7376,15 +7435,6 @@ window.calendarTasksForDate = function(d){
     }
   };
 
-  function setTaskStatusBusy(id, busy){
-    document.querySelectorAll('button[onclick]').forEach(button=>{
-      const call=String(button.getAttribute('onclick') || '');
-      if(call.includes("Task('" + id + "')")){
-        button.disabled=busy;
-        button.setAttribute('aria-busy', busy ? 'true' : 'false');
-      }
-    });
-  }
   function logMutation(action, serverStart, patchMs, totalStart, fallbackUsed, fallbackReason){
     console.info('taskStatusMutation', {
       'taskStatusMutation.action': action,
@@ -7399,7 +7449,8 @@ window.calendarTasksForDate = function(d){
     id=String(id || '');
     if(!canEdit()) return alert('אין לך הרשאה לעריכה');
     if(!id || pending[id]) return;
-    pending[id]=true; setTaskStatusBusy(id, true);
+    pending[id]=true;
+    const clearBusy=BH_UI_setBusy(null, action==='done' ? 'מסמן...' : 'מחזיר לפעיל...');
     const requestSequence=++mutationSequence;
     latestStartedSequenceByTask[id]=requestSequence;
     const totalStart=mutationNow(), serverStart=mutationNow();
@@ -7407,7 +7458,7 @@ window.calendarTasksForDate = function(d){
     function sessionExpired(message){
       if(fallbackStarted) return;
       fallbackStarted=true;
-      delete pending[id]; setTaskStatusBusy(id, false);
+      delete pending[id]; clearBusy();
       logMutation(action, serverStart, 0, totalStart, false, 'sessionExpired');
       if(window.BH_IDLE && typeof window.BH_IDLE.handleSessionExpired === 'function'){
         window.BH_IDLE.handleSessionExpired(message);
@@ -7418,7 +7469,7 @@ window.calendarTasksForDate = function(d){
     function fallback(reason, error, patchMs){
       if(fallbackStarted) return;
       fallbackStarted=true;
-      delete pending[id]; setTaskStatusBusy(id, false);
+      delete pending[id]; clearBusy();
       refreshCore(()=>{
         logMutation(action, serverStart, patchMs || 0, totalStart, true, reason);
         if(error) alert(error && error.message ? error.message : 'הפעולה נכשלה');
@@ -7435,7 +7486,7 @@ window.calendarTasksForDate = function(d){
         });
         const patchMs=mutationElapsed(patchStart);
         if(patched){
-          delete pending[id]; setTaskStatusBusy(id, false);
+          delete pending[id]; clearBusy();
           logMutation(action, serverStart, patchMs, totalStart, false, '');
           return;
         }

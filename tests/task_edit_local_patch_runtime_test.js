@@ -17,6 +17,7 @@ const sandbox = {
   tableTasks(){renders.tasks++;}, renderDashboard(){renders.dashboard++;},
   renderCalendarDashboard(){renders.calendar++;}, renderTaskCard(){renders.card++;}, closeM(){renders.card++;},
   taskCardPayloadFromTask(task){return {task,notes:[]};},
+  BH_UI_setBusy(){ button.disabled=true; return ()=>{button.disabled=false;}; },
   google:{script:{run:{
     withSuccessHandler(fn){successHandler=fn;return this;},
     withFailureHandler(fn){failureHandler=fn;return this;},
