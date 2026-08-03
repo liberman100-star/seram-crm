@@ -11,6 +11,15 @@ let busy = 0;
 let success;
 let failure;
 let sent;
+let overlay;
+const document = {
+  createElement(){
+    return {style:{}, dataset:{}, parentNode:{removeChild(){ overlay = null; }},
+      addEventListener(type, fn){ this.listener = fn; }};
+  },
+  getElementById(){ return overlay; },
+  body:{appendChild(node){ overlay = node; }}
+};
 const runner = {
   withSuccessHandler(fn){ success = fn; return this; },
   withFailureHandler(fn){ failure = fn; return this; },
@@ -23,7 +32,8 @@ const sandbox = {
     calendarCreatorsAllowed:[], calendarCreatorPermission:{}
   },
   pName:{value:'חדש'}, pDescription:{value:'תיאור'}, pCity:{value:'תל אביב'}, pType:{value:'מגורים'},
-  pStatus:{value:'פעיל'}, pAssignmentDomain:{value:'A'}, pOwner:{value:'דנה'}, pTags:{value:'x'}, pDrive:{value:'d'},
+  pStatus:{value:'פעיל'}, pAssignmentDomain:{value:'A'}, pOwner:{value:'דנה',selectedOptions:[]}, pTags:{value:'x'}, pDrive:{value:'d'},
+  document,
   currentToken:()=> 'TOKEN', refreshCore(){ refreshes++; },
   BH_UI_setBusy(){ busy++; return ()=>busy--; },
   google:{script:{run:runner}},
@@ -98,4 +108,24 @@ assert.strictEqual(busy, 0, 'busy is cleared for a stale response');
 
 sandbox.saveProject('');
 assert.strictEqual(sandbox.createCalled, true, 'Create Project remains on the previous route');
+
+sandbox.pOwner.selectedOptions = [{value:'דנה', dataset:{linked:'no'}}];
+const sequenceBeforeChoice = sent.sequence;
+sandbox.saveProject('P1');
+assert.ok(overlay && overlay.innerHTML.includes('כן, לשייך ולהמשיך'), 'an unlinked owner opens the three-choice dialog');
+assert.strictEqual(busy, 0, 'opening or cancelling the dialog does not start Busy');
+overlay.listener({target:{getAttribute:()=> 'cancel'}});
+assert.strictEqual(overlay, null, 'cancel closes only the choice dialog');
+assert.strictEqual(sent.sequence, sequenceBeforeChoice, 'cancel does not save');
+
+sandbox.saveProject('P1');
+overlay.listener({target:{getAttribute:()=> 'without'}});
+assert.strictEqual(sent.ownerLinkMode, 'without', 'continue without link is explicit in the canonical request');
+failure(new Error('transport'));
+sandbox.saveProject('P1');
+overlay.listener({target:{getAttribute:()=> 'link'}});
+assert.strictEqual(sent.ownerLinkMode, 'link', 'link and continue is explicit in the canonical request');
+assert.strictEqual(busy, 1, 'link and save uses central Busy');
+failure(new Error('transport'));
+assert.strictEqual(busy, 0, 'Busy clears after link transport failure');
 console.log('project_edit_local_patch_runtime_test: OK');
