@@ -7605,9 +7605,39 @@ window.calendarTasksForDate = function(d){
     else { clearToken(); showLogin(message); }
   }
 
-  function selectedOwnerNeedsLinkChoice(){
-    const option = pOwner && pOwner.selectedOptions && pOwner.selectedOptions[0];
-    return !!(option && option.value && option.dataset && option.dataset.linked === 'no');
+  global.BH_PROJECT_ownerLinkState = function(projectId, selectElement){
+    const select = selectElement || (global.document && document.getElementById('pOwner')) || global.pOwner;
+    const ownerName = String(select && select.value || '').trim();
+    if(!ownerName) return 'empty';
+
+    // selectedOptions/dataset are supplementary only: HTML Service can expose
+    // the effective select without reliably exposing either convenience API.
+    const option = select && select.options && select.selectedIndex >= 0
+      ? select.options[select.selectedIndex]
+      : (select && select.selectedOptions && select.selectedOptions[0]);
+    const attr = (name)=>option && typeof option.getAttribute === 'function' ? option.getAttribute(name) : null;
+    const contactId = String(attr('data-contact-id') || option && option.dataset && option.dataset.contactId || '').trim();
+    const linkedHint = String(attr('data-linked') || option && option.dataset && option.dataset.linked || '').trim();
+    const groupLabel = String(option && option.parentElement && option.parentElement.label || '').trim();
+    const linksLoaded = !!(global.DATA && Array.isArray(DATA.links));
+
+    if(contactId && linksLoaded){
+      const activeLink = DATA.links.some(link=>
+        String((link||{})['מזהה פרויקט'] || '') === String(projectId || '') &&
+        String((link||{})['מזהה איש קשר'] || '') === contactId &&
+        String((link||{})['פעיל'] || 'כן') !== 'לא' &&
+        String((link||{})['בארכיון'] || '') !== 'כן');
+      if(activeLink) return 'linked';
+      if(linkedHint === 'no' || groupLabel === 'משתמשים נוספים') return 'unlinked';
+      return 'unknown';
+    }
+    if(linkedHint === 'no' || groupLabel === 'משתמשים נוספים') return 'unlinked';
+    return 'unknown';
+  };
+  function selectedOwnerNeedsLinkChoice(projectId){
+    const select = (global.document && document.getElementById('pOwner')) || global.pOwner;
+    const state = global.BH_PROJECT_ownerLinkState(projectId, select);
+    return state === 'unlinked' || state === 'unknown';
   }
   function closeOwnerLinkChoice(id){
     const overlay = global.document && document.getElementById('projectOwnerLinkChoice');
@@ -7642,7 +7672,7 @@ window.calendarTasksForDate = function(d){
     // Creation is intentionally untouched and retains the historical refresh.
     if(!id) return previousSaveProject.apply(this, arguments);
     if(pendingByProject[id]) return;
-    if(!ownerLinkMode && selectedOwnerNeedsLinkChoice()){ openOwnerLinkChoice(id); return; }
+    if(!ownerLinkMode && selectedOwnerNeedsLinkChoice(id)){ openOwnerLinkChoice(id); return; }
 
     const sequence = ++projectEditSequence;
     latestSequenceByProject[id] = sequence;

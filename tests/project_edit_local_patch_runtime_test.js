@@ -11,19 +11,20 @@ let busy = 0;
 let success;
 let failure;
 let sent;
+let requests = 0;
 let overlay;
 const document = {
   createElement(){
     return {style:{}, dataset:{}, parentNode:{removeChild(){ overlay = null; }},
       addEventListener(type, fn){ this.listener = fn; }};
   },
-  getElementById(){ return overlay; },
+  getElementById(id){ return id === 'projectOwnerLinkChoice' ? overlay : null; },
   body:{appendChild(node){ overlay = node; }}
 };
 const runner = {
   withSuccessHandler(fn){ success = fn; return this; },
   withFailureHandler(fn){ failure = fn; return this; },
-  שמירת_פרויקט_קנונית_Build16(payload){ sent = payload; }
+  שמירת_פרויקט_קנונית_Build16(payload){ sent = payload; requests++; }
 };
 const sandbox = {
   window:null, console, setTimeout(fn){ fn(); },
@@ -45,13 +46,22 @@ sandbox.window = sandbox;
 sandbox.saveProject = function(){ sandbox.createCalled = true; };
 vm.runInNewContext(source, sandbox);
 
+const initiallyLinkedOption = {
+  value:'דנה', dataset:{contactId:'C1'}, parentElement:{label:'משויכים לפרויקט'},
+  getAttribute(name){ return name === 'data-contact-id' ? 'C1' : null; }
+};
+sandbox.pOwner.options = [initiallyLinkedOption];
+sandbox.pOwner.selectedIndex = 0;
+sandbox.pOwner.selectedOptions = [initiallyLinkedOption];
+sandbox.DATA.links = [{'מזהה פרויקט':'P1','מזהה איש קשר':'C1','פעיל':'כן','בארכיון':'לא'}];
+
 const response = decision => ({
   ok:true, authenticated:true, route:'project-edit-canonical-v1', fullInvalidation:false,
   projectId:'P1', sequence:1, updatedAt:'2026-08-02', projectVisible:decision !== 'remove' && decision !== 'unchanged',
   projectDecision:decision, canonicalProject:(decision === 'replace' || decision === 'insert') ? {'מזהה פרויקט':'P1','שם פרויקט':'חדש'} : null,
   affectedTasks:[{'מזהה משימה':'T1','שם פרויקט':'חדש'}], tasksDecision:'replaceAll',
   affectedCalendarTasks:[{'מזהה משימה':'T1','יומן':'דנה'}], calendarTasksDecision:'replaceAll',
-  contacts:[], contactsDecision:'replaceAll', links:[], linksDecision:'replaceAll',
+  contacts:[], contactsDecision:'replaceAll', links:[{'מזהה פרויקט':'P1','מזהה איש קשר':'C1','פעיל':'כן'}], linksDecision:'replaceAll',
   dashboard:{projectsCount:1,activeProjects:[]}, calendarCreatorsAllowed:['דנה'], calendarCreatorPermission:{mode:'allowed'},
   invalidations:['projects','tasks','calendarTasks','dashboard']
 });
@@ -109,10 +119,22 @@ assert.strictEqual(busy, 0, 'busy is cleared for a stale response');
 sandbox.saveProject('');
 assert.strictEqual(sandbox.createCalled, true, 'Create Project remains on the previous route');
 
-sandbox.pOwner.selectedOptions = [{value:'דנה', dataset:{linked:'no'}}];
+const additionalOption = {
+  value:'דנה', dataset:{linked:'no',contactId:'C1'}, parentElement:{label:'משתמשים נוספים'},
+  getAttribute(name){ return name === 'data-linked' ? 'no' : name === 'data-contact-id' ? 'C1' : null; }
+};
+sandbox.pOwner.options = [additionalOption];
+sandbox.pOwner.selectedIndex = 0;
+sandbox.pOwner.selectedOptions = [additionalOption];
+sandbox.DATA.links = [];
 const sequenceBeforeChoice = sent.sequence;
+const requestsBeforeChoice = requests;
 sandbox.saveProject('P1');
 assert.ok(overlay && overlay.innerHTML.includes('כן, לשייך ולהמשיך'), 'an unlinked owner opens the three-choice dialog');
+assert.strictEqual(requests, requestsBeforeChoice, 'no server request is sent before a dialog choice');
+const firstOverlay = overlay;
+sandbox.saveProject('P1');
+assert.strictEqual(overlay, firstOverlay, 'duplicate click does not create a second dialog');
 assert.strictEqual(busy, 0, 'opening or cancelling the dialog does not start Busy');
 overlay.listener({target:{getAttribute:()=> 'cancel'}});
 assert.strictEqual(overlay, null, 'cancel closes only the choice dialog');
@@ -128,4 +150,38 @@ assert.strictEqual(sent.ownerLinkMode, 'link', 'link and continue is explicit in
 assert.strictEqual(busy, 1, 'link and save uses central Busy');
 failure(new Error('transport'));
 assert.strictEqual(busy, 0, 'Busy clears after link transport failure');
+
+const linkedOption = Object.assign({}, additionalOption, {dataset:{contactId:'C1'}, parentElement:{label:'משויכים לפרויקט'}});
+linkedOption.getAttribute = name => name === 'data-contact-id' ? 'C1' : null;
+sandbox.pOwner.options = [linkedOption];
+sandbox.pOwner.selectedOptions = [linkedOption];
+sandbox.DATA.links = [{'מזהה פרויקט':'P1','מזהה איש קשר':'C1','פעיל':'כן','בארכיון':'לא'}];
+sandbox.saveProject('P1');
+assert.strictEqual(overlay, null, 'a proven active DATA.links match saves without a dialog');
+assert.strictEqual(sent.ownerLinkMode, 'existing', 'a linked owner uses the existing-link mode');
+failure(new Error('transport'));
+
+const noDatasetOption = {value:'דנה',parentElement:{label:'משתמשים נוספים'},getAttribute(){ return null; }};
+sandbox.pOwner.options = [noDatasetOption];
+sandbox.pOwner.selectedOptions = [noDatasetOption];
+sandbox.DATA.links = [];
+sandbox.saveProject('P1');
+assert.ok(overlay, 'missing dataset with an additional-users optgroup opens the dialog');
+overlay.listener({target:{getAttribute:()=> 'cancel'}});
+
+sandbox.pOwner.options = [linkedOption];
+sandbox.pOwner.selectedOptions = [linkedOption];
+delete sandbox.DATA.links;
+sandbox.saveProject('P1');
+assert.ok(overlay, 'unloaded DATA.links produces unknown and opens the dialog');
+overlay.listener({target:{getAttribute:()=> 'cancel'}});
+
+sandbox.pOwner.value = '';
+sandbox.pOwner.options = [];
+sandbox.pOwner.selectedOptions = [];
+sandbox.pOwner.selectedIndex = -1;
+sandbox.saveProject('P1');
+assert.strictEqual(overlay, null, 'an empty owner does not open the dialog');
+assert.strictEqual(sent.ownerLinkMode, 'existing', 'empty selection proceeds through existing validation without a choice dialog');
+failure(new Error('transport'));
 console.log('project_edit_local_patch_runtime_test: OK');
