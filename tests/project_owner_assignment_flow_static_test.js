@@ -17,7 +17,12 @@ assert.match(html, /projectResponsibleSelection[\s\S]*validDesired/, 'a still-va
 
 ['האחראי אינו משויך לפרויקט', 'כן, לשייך ולהמשיך', 'המשך ללא שיוך', 'ביטול'].forEach(text =>
   assert.ok(patch.includes(text), `dialog contains ${text}`));
-assert.match(patch, /dataset\.linked === 'no'/, 'dialog is limited to an unlinked selected owner');
+assert.match(patch, /BH_PROJECT_ownerLinkState = function\(projectId, selectElement\)/, 'focused owner-link state helper exists');
+assert.match(patch, /Array\.isArray\(DATA\.links\)/, 'canonical client links must be loaded before proving a link');
+assert.match(patch, /\['מזהה פרויקט'\][\s\S]*\['מזהה איש קשר'\][\s\S]*\['פעיל'\][\s\S]*\['בארכיון'\]/, 'active link comparison uses project and contact ids');
+assert.match(patch, /return 'unknown'/, 'insufficient link evidence has an explicit unknown state');
+assert.match(patch, /state === 'unlinked' \|\| state === 'unknown'/, 'unlinked and unknown both open the dialog');
+assert.doesNotMatch(patch, /return !!\(option[\s\S]{0,180}dataset\.linked === 'no'\)/, 'selected option dataset is not the sole source of truth');
 assert.match(patch, /ownerLinkMode:ownerLinkMode \|\| 'existing'/, 'explicit link choice is sent to the atomic endpoint');
 assert.match(server, /data\.ownerLinkMode === "link"/, 'link creation only occurs for the affirmative choice');
 assert.match(server, /alreadyLinked[\s\S]*if\(!alreadyLinked\)/, 'existing links are idempotent');
