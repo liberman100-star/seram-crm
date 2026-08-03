@@ -939,13 +939,17 @@ function projectResponsibleSelection(candidates, desired='', storedOwner='', pro
   const storedValue = String(storedOwner || '').trim();
   const validDesired = rows.some(u => !u.legacy && u.name === desiredValue);
   if(validDesired) return desiredValue;
-  if(projectId && storedValue && rows.some(u => u.legacy && u.name === storedValue)) return storedValue;
   return '';
 }
 function projectResponsibleOptions(candidates, selected='', storedOwner='', projectId=''){
   const rows = Array.isArray(candidates) ? candidates : [];
   const selectedValue = projectResponsibleSelection(rows, selected, storedOwner, projectId);
-  return `<option value="">בחר אחראי</option>` + rows.map(u=>`<option value="${esc(u.name)}" ${u.name==selectedValue?'selected':''}>${esc(u.label || (u.name + (u.role ? ' (' + u.role + ')' : '')))}</option>`).join('');
+  const option = u=>`<option value="${esc(u.name)}" data-contact-id="${esc(u.contactId||'')}" data-linked="${u.linked || u.legacy ? 'yes' : 'no'}" ${u.name==selectedValue?'selected':''}>${esc(u.label || (u.name + (u.role ? ' (' + u.role + ')' : '')))}</option>`;
+  const linked = rows.filter(u=>u.linked || u.legacy);
+  const additional = rows.filter(u=>!u.linked && !u.legacy);
+  return `<option value="">בחר אחראי</option>` +
+    (linked.length ? `<optgroup label="משויכים לפרויקט">${linked.map(option).join('')}</optgroup>` : '') +
+    (additional.length ? `<optgroup label="משתמשים נוספים">${additional.map(option).join('')}</optgroup>` : '');
 }
 function loadProjectResponsibleOptions(projectId, selected, storedOwner){
   if(typeof pOwner === 'undefined') return;
@@ -7515,6 +7519,7 @@ window.calendarTasksForDate = function(d){
   'use strict';
   const previousSaveProject = global.saveProject;
   const pendingByProject = Object.create(null);
+  const ownerChoiceByProject = Object.create(null);
   const latestSequenceByProject = Object.create(null);
   let projectEditSequence = 0;
 
@@ -7600,16 +7605,79 @@ window.calendarTasksForDate = function(d){
     else { clearToken(); showLogin(message); }
   }
 
-  global.saveProject = function(id){
+  global.BH_PROJECT_ownerLinkState = function(projectId, selectElement){
+    const select = selectElement || (global.document && document.getElementById('pOwner')) || global.pOwner;
+    const ownerName = String(select && select.value || '').trim();
+    if(!ownerName) return 'empty';
+
+    // selectedOptions/dataset are supplementary only: HTML Service can expose
+    // the effective select without reliably exposing either convenience API.
+    const option = select && select.options && select.selectedIndex >= 0
+      ? select.options[select.selectedIndex]
+      : (select && select.selectedOptions && select.selectedOptions[0]);
+    const attr = (name)=>option && typeof option.getAttribute === 'function' ? option.getAttribute(name) : null;
+    const contactId = String(attr('data-contact-id') || option && option.dataset && option.dataset.contactId || '').trim();
+    const linkedHint = String(attr('data-linked') || option && option.dataset && option.dataset.linked || '').trim();
+    const groupLabel = String(option && option.parentElement && option.parentElement.label || '').trim();
+    const linksLoaded = !!(global.DATA && Array.isArray(DATA.links));
+
+    if(contactId && linksLoaded){
+      const activeLink = DATA.links.some(link=>
+        String((link||{})['מזהה פרויקט'] || '') === String(projectId || '') &&
+        String((link||{})['מזהה איש קשר'] || '') === contactId &&
+        String((link||{})['פעיל'] || 'כן') !== 'לא' &&
+        String((link||{})['בארכיון'] || '') !== 'כן');
+      if(activeLink) return 'linked';
+      if(linkedHint === 'no' || groupLabel === 'משתמשים נוספים') return 'unlinked';
+      return 'unknown';
+    }
+    if(linkedHint === 'no' || groupLabel === 'משתמשים נוספים') return 'unlinked';
+    return 'unknown';
+  };
+  function selectedOwnerNeedsLinkChoice(projectId){
+    const select = (global.document && document.getElementById('pOwner')) || global.pOwner;
+    const state = global.BH_PROJECT_ownerLinkState(projectId, select);
+    return state === 'unlinked' || state === 'unknown';
+  }
+  function closeOwnerLinkChoice(id){
+    const overlay = global.document && document.getElementById('projectOwnerLinkChoice');
+    if(overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
+    delete ownerChoiceByProject[id];
+  }
+  function openOwnerLinkChoice(id){
+    if(ownerChoiceByProject[id]) return;
+    ownerChoiceByProject[id] = true;
+    const overlay = document.createElement('div');
+    overlay.id = 'projectOwnerLinkChoice';
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:10001;background:rgba(15,23,42,.45);display:flex;align-items:center;justify-content:center;padding:20px';
+    overlay.innerHTML = `<div class="box small" role="dialog" aria-modal="true" aria-labelledby="projectOwnerLinkChoiceTitle">
+      <h3 id="projectOwnerLinkChoiceTitle">האחראי אינו משויך לפרויקט</h3>
+      <p>המשתמש שנבחר אינו משויך עדיין לפרויקט זה.<br>האם ברצונך ליצור עבורו שיוך לפרויקט?</p>
+      <div class="toolbar">
+        <button class="primary" data-owner-link-action="link">כן, לשייך ולהמשיך</button>
+        <button data-owner-link-action="without">המשך ללא שיוך</button>
+        <button data-owner-link-action="cancel">ביטול</button>
+      </div></div>`;
+    overlay.addEventListener('click', event=>{
+      const action = event.target && event.target.getAttribute('data-owner-link-action');
+      if(!action) return;
+      closeOwnerLinkChoice(id);
+      if(action === 'link' || action === 'without') global.saveProject(id, action);
+    });
+    document.body.appendChild(overlay);
+  }
+
+  global.saveProject = function(id, ownerLinkMode){
     id = String(id || '').trim();
     // Creation is intentionally untouched and retains the historical refresh.
     if(!id) return previousSaveProject.apply(this, arguments);
     if(pendingByProject[id]) return;
+    if(!ownerLinkMode && selectedOwnerNeedsLinkChoice(id)){ openOwnerLinkChoice(id); return; }
 
     const sequence = ++projectEditSequence;
     latestSequenceByProject[id] = sequence;
     pendingByProject[id] = true;
-    const clearBusy = BH_UI_setBusy(null, 'שומר...');
+    const clearBusy = BH_UI_setBusy(null, ownerLinkMode === 'link' ? 'משייך ושומר...' : 'שומר...');
     const scrollState = {x:global.scrollX || 0, y:global.scrollY || 0};
     let completed = false;
     let fallbackStarted = false;
@@ -7634,7 +7702,7 @@ window.calendarTasksForDate = function(d){
       projectDescription:(typeof pDescription !== 'undefined' ? pDescription.value : ''),
       city:pCity.value, type:pType.value, status:pStatus.value,
       assignmentDomain:(typeof pAssignmentDomain !== 'undefined' ? pAssignmentDomain.value : ''),
-      owner:pOwner.value, tags:pTags.value, drive:pDrive.value
+      owner:pOwner.value, ownerLinkMode:ownerLinkMode || 'existing', tags:pTags.value, drive:pDrive.value
     };
 
     google.script.run
@@ -7666,6 +7734,7 @@ window.calendarTasksForDate = function(d){
   global.__BH_PROJECT_EDIT_PATCH_TEST__ = {
     pendingByProject:pendingByProject,
     latestSequenceByProject:latestSequenceByProject,
+    ownerChoiceByProject:ownerChoiceByProject,
     applyProjectDecision:applyProjectDecision
   };
 })(window);
