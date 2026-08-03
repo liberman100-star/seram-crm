@@ -4615,49 +4615,24 @@ function BH_PR_candidateRows_(arg){
   const draftProject = Object.assign({}, oldProject || {}, arg.project || {});
   if (arg.assignmentDomain !== undefined) draftProject[BH_AD_CATEGORY] = arg.assignmentDomain;
   const domain = BH_AD_projectDomain_(draftProject);
-  const actorRole = String(actor && actor.role || "").trim();
-  const actorName = BH_FINAL_userName_(actor);
-  const isOwner = actor && (actor.isOwner === true || actorRole === "מנהל ראשי");
-  const relevantManagerNames = {};
-
-  contacts.filter(c => BH_PR_role_(c) === "מנהל" && BH_PR_domainMatches_(c, domain)).forEach(c => relevantManagerNames[BH_PR_name_(c)] = true);
-  if (oldProject) {
-    links.filter(l => String(l["מזהה פרויקט"] || "") === projectId && String(l["פעיל"] || "כן") !== "לא").forEach(l => {
-      const c = contacts.find(x => BH_PR_id_(x) === String(l["מזהה איש קשר"] || l["מזהה משתמש"] || ""));
-      if (c && BH_PR_role_(c) === "מנהל") relevantManagerNames[BH_PR_name_(c)] = true;
-    });
-    const ownerContact = BH_PR_contactByName_(contacts, oldProject["אחראי"]);
-    if (ownerContact && BH_PR_role_(ownerContact) === "מנהל") relevantManagerNames[BH_PR_name_(ownerContact)] = true;
-  }
-  if (actorRole === "מנהל") relevantManagerNames[actorName] = true;
-
-  return contacts.filter(c => {
-    const role = BH_PR_role_(c), name = BH_PR_name_(c);
-    if (isOwner) return true;
-    if (actorRole === "מנהל") {
-      if (name === actorName) return true;
-      if (role === "משתמש" && BH_PR_isSubordinateOf_(c, actorName)) return true;
-      if (role === "מנהל" && name !== actorName) return oldProject && BH_PR_domainMatches_(c, domain) && BH22_הרשאת_מודול_פעילה_(actor, "הרשאות");
-      return false;
-    }
-    if (actorRole === "משתמש") return name === actorName;
-    return false;
-  }).filter(c => {
-    const role = BH_PR_role_(c);
-    if (isOwner || domain === BH_AD_DEFAULT) return true;
-    if (role === "מנהל") return !!relevantManagerNames[BH_PR_name_(c)] || BH_PR_domainMatches_(c, domain);
-    if (role === "משתמש") return Object.keys(relevantManagerNames).some(m => BH_PR_isSubordinateOf_(c, m));
-    return true;
-  });
+  // Responsible eligibility is deliberately independent of assignment-domain
+  // membership. Visibility continues to be decided by Core and its existing
+  // project/domain/link rules.
+  return contacts;
 }
 function BH_PR_responsibleCandidates_(arg){
   const rows = BH_PR_candidateRows_(arg || {});
+  const projectId = String(arg && (arg.projectId || arg.id) || "").trim();
+  const linkedContactIds = {};
+  if(projectId) readSheet_(SHEETS.LINKS).forEach(function(link){
+    if(String(link["מזהה פרויקט"] || "") === projectId && String(link["פעיל"] || "כן") !== "לא" && String(link["בארכיון"] || "") !== "כן"){
+      linkedContactIds[String(link["מזהה איש קשר"] || link["מזהה משתמש"] || "")] = true;
+    }
+  });
   const seen = {};
   const out = rows.filter(r => { const n = BH_PR_name_(r); if (seen[n]) return false; seen[n] = true; return true; })
-    .map(r => ({name: BH_PR_name_(r), role: BH_PR_role_(r), contactId: BH_PR_id_(r), label: BH_PR_name_(r) + " (" + BH_PR_role_(r) + ")", legacy: false}));
-  const oldProject = (arg && (arg.projectId || arg.id)) ? readSheet_(SHEETS.PROJECTS).find(p => String(p["מזהה פרויקט"] || "") === String(arg.projectId || arg.id)) : null;
-  const legacy = String(arg && arg.currentOwner || oldProject && oldProject["אחראי"] || "").trim();
-  if (legacy && !out.some(x => x.name === legacy)) out.unshift({name: legacy, role: "ערך קיים", contactId: "", label: legacy + " (ערך קיים)", legacy: true});
+    .map(r => ({name: BH_PR_name_(r), role: BH_PR_role_(r), contactId: BH_PR_id_(r), label: BH_PR_name_(r) + " (" + BH_PR_role_(r) + ")", linked:!!linkedContactIds[BH_PR_id_(r)], legacy: false}))
+    .sort(function(a,b){ return Number(b.linked)-Number(a.linked) || a.name.localeCompare(b.name, "he"); });
   return out;
 }
 function קבלת_מועמדי_אחראי_פרויקט(arg){
@@ -4668,10 +4643,10 @@ function קבלת_מועמדי_אחראי_פרויקט(arg){
 }
 function BH_PR_assertResponsibleAllowed_(actor, data, old, owner){
   owner = String(owner || "").trim();
-  const oldOwner = String(old && old["אחראי"] || "").trim();
-  const domain = String(data && (data.assignmentDomain || data[BH_AD_CATEGORY]) || old && old[BH_AD_CATEGORY] || BH_AD_DEFAULT).trim() || BH_AD_DEFAULT;
-  const unchangedDomainOldOwner = old && String(old[BH_AD_CATEGORY] || BH_AD_DEFAULT).trim() === domain ? oldOwner : "";
-  BH_ASSIGNMENT_assertNameAllowedForDomain_(owner, domain, actor, "האחראי שנבחר", "פרויקטים", unchangedDomainOldOwner);
+  if(!owner) return true;
+  const contacts = readSheet_(SHEETS.CONTACTS);
+  const candidate = contacts.find(function(row){ return BH_PR_name_(row) === owner; });
+  if(!candidate || !BH_PR_isValidInternalCandidate_(candidate)) throw new Error("האחראי שנבחר אינו משתמש מערכת פעיל המורשה לפרויקטים.");
   return true;
 }
 
@@ -6583,7 +6558,44 @@ function BH_saveExistingProjectCanonical_(data){
 
   const sequence = Number(data.sequence || 0);
   const clientProjectPresent = data.clientProjectPresent === true;
+  const projectsBefore = readSheet_(SHEETS.PROJECTS);
+  const projectBefore = projectsBefore.find(function(project){ return String(project["מזהה פרויקט"] || "") === projectId; }) || null;
+  let createdOwnerLinkId = "";
   const savedProjectId = שמירת_פרויקט(data, data.requestId);
+  try{
+    if(data.ownerLinkMode === "link"){
+      const ownerContact = readSheet_(SHEETS.CONTACTS).find(function(contact){
+        return BH_PR_name_(contact) === String(data.owner || "").trim() && BH_PR_isValidInternalCandidate_(contact);
+      });
+      if(!ownerContact) throw new Error("האחראי שנבחר אינו משתמש מערכת פעיל המורשה לפרויקטים.");
+      const links = readSheet_(SHEETS.LINKS);
+      const alreadyLinked = links.some(function(link){
+        return String(link["מזהה פרויקט"] || "") === String(savedProjectId) &&
+          String(link["מזהה איש קשר"] || "") === BH_PR_id_(ownerContact) &&
+          String(link["פעיל"] || "כן") !== "לא" && String(link["בארכיון"] || "") !== "כן";
+      });
+      if(!alreadyLinked){
+        // The established link default is an empty role; "אחראי" is not a
+        // guaranteed category value, so this flow does not invent it. Portal
+        // visibility also retains the established safe default, "לא".
+        const linkRow = {
+          "מזהה שיוך":makeId_("שיך"), "מזהה פרויקט":String(savedProjectId),
+          "מזהה איש קשר":BH_PR_id_(ownerContact), "תפקיד / כובע":"",
+          "מורשה צפייה בפורטל":"לא", "יוצר":BH_FINAL_userName_(משתמש_מפועל_Build11_2_(data.authToken)),
+          "תאריך יצירה":new Date(), "עדכון אחרון":new Date()
+        };
+        createdOwnerLinkId = linkRow["מזהה שיוך"];
+        upsert_(SHEETS.LINKS, "מזהה שיוך", linkRow["מזהה שיוך"], linkRow);
+        log_("שמירת שיוך", linkRow["מזהה פרויקט"] + " ↔ " + linkRow["מזהה איש קשר"]);
+      }
+    }
+  }catch(error){
+    // Compensating rollback keeps the combined edit/link mutation atomic from
+    // the caller's perspective. A link is only attempted after a valid save.
+    if(createdOwnerLinkId) deleteById_(SHEETS.LINKS, "מזהה שיוך", createdOwnerLinkId);
+    if(projectBefore) upsert_(SHEETS.PROJECTS, "מזהה פרויקט", projectId, projectBefore);
+    throw error;
+  }
   const core = קבלת_נתוני_ליבה_Build13(data.authToken, data.requestId);
 
   if(!core || !core.auth || core.auth.allowed !== true){

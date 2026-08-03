@@ -8,7 +8,7 @@ const patch = html.slice(html.indexOf('<!-- Build 16: canonical local patch'));
 assert.match(patch, /if\(!id\) return previousSaveProject\.apply/, 'Create Project retains its prior refresh route');
 assert.match(patch, /pendingByProject\[id\]/, 'duplicate edits are protected per project');
 assert.match(patch, /latestSequenceByProject\[id\]/, 'project edits have sequence and stale-response protection');
-assert.match(patch, /BH_UI_setBusy\(null, 'שומר\.\.\.'\)/, 'central busy mechanism uses the required text');
+assert.match(patch, /BH_UI_setBusy\(null, ownerLinkMode === 'link' \? 'משייך ושומר\.\.\.' : 'שומר\.\.\.'\)/, 'central busy mechanism uses the required text for both choices');
 assert.match(patch, /if\(fallbackStarted\) return;[\s\S]*?refreshCore\(\)/, 'fallback is single-shot');
 assert.doesNotMatch(patch, /withSuccessHandler\([^)]*refreshCore/, 'normal edit success does not refresh Core');
 assert.match(patch, /DATA = next;[\s\S]*?global\.DATA = next/, 'validated copies are published atomically');
