@@ -24,7 +24,7 @@ has(html, /function CRM_loadFullCoreFallback_[\s\S]*?\.קבלת_נתוני_לי�
 has(html, /\.קבלת_מודול_Build13_2\(token, module\)/, 'lazy module loading uses existing module endpoint');
 has(html, /function markLoadedModulesFromFullCore_Build13_2\(d\)\{[\s\S]*?__BH_LOADED_MODULES__\.settings = true;[\s\S]*?\}/, 'full core payload initializes loaded module state');
 has(html, /d\.loadedModules\[moduleName\] === true && hasRealModuleData_Build13_2\(moduleName, d\)/, 'shell loadedModules flags are ignored unless real module data is present');
-has(html, /mergeData_Build13_2\(d\);\s*renderShell_Build13_2\(d\);[\s\S]*?__BH_LOADED_MODULES__\[module\] = true;/, 'module endpoint response shape remains compatible with existing handler');
+has(html, /mergeData_Build13_2\(d\);\s*const __moduleRenderStart[\s\S]*?renderModule_Build13_2\(module\);[\s\S]*?__BH_LOADED_MODULES__\[module\] = true;/, 'module endpoint merges and renders only the requested module');
 has(html, /function load\(forceDashboard=true, after\)\{[\s\S]*?__BH_CORE_LOADING__=true;[\s\S]*?if\(!token\)\{\s*window\.__BH_CORE_LOADING__ = false;/, 'load guard clears when the token is missing');
 has(html, /function CRM_finishInitialLoad_[\s\S]*?window\.__BH_CORE_LOADING__ = false;/, 'successful load clears the guard');
 has(html, /function CRM_loadFullCoreFallback_[\s\S]*?withFailureHandler\(e=>\{ window\.__BH_CORE_LOADING__=false;/, 'fallback failure clears the guard');

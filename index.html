@@ -3513,18 +3513,13 @@ function loadModule_Build13_2(module, after){
         return;
       }
 
-      mergeData_Build13_2(d);
-      renderShell_Build13_2(d);
-
-      tableProjects();
-      tableContacts();
-      tableTasks();
-
-      if(DATA.canSeeSettings){
-        renderSettings();
+      if(!d.loadedModules || d.loadedModules[module] !== true){
+        window.__BH_MODULE_WAITERS__[module] = [];
+        alert('התקבלו נתונים לא תקינים עבור המודול');
+        return;
       }
 
-      renderDashboard();
+      mergeData_Build13_2(d);
       const __moduleRenderStart = (typeof CRM_perfNow_ === 'function' ? CRM_perfNow_() : Date.now());
       renderModule_Build13_2(module);
       if(typeof CRM_perfLog_ === 'function') CRM_perfLog_(__modulePerf.requestId, 'renderModule_Build13_2 ' + module, CRM_perfElapsed_(__moduleRenderStart));
@@ -3553,7 +3548,7 @@ function renderModule_Build13_2(module){
     if(module==='contacts') tableContacts();
     if(module==='tasks') tableTasks();
     if(module==='settings') renderSettings();
-    if(module==='archive') renderArchive('projects');
+    if(module==='archive') renderArchive(window.ARCHIVE_TAB || 'projects');
     applySecurityUI();
   }catch(e){ console.log(e); }
   if(typeof CRM_perfLog_ === 'function') CRM_perfLog_('client-only', 'renderModule_Build13_2 ' + module, CRM_perfElapsed_(__renderModuleStart));
@@ -3704,10 +3699,7 @@ function refreshCore(after, parentRequestId){
     if(b) b.classList.add('active');
     try{
       if(id==='dashboard') renderDashboard();
-      if(id==='projects') tableProjects();
-      if(id==='contacts') tableContacts();
-      if(id==='tasks') tableTasks();
-      if(id==='settings') renderSettings();
+      else if({projects:1,contacts:1,tasks:1,settings:1,archive:1}[id]) ensureModule_Build13_2(id);
     }catch(e){}
     finalApplyUserAndBrand();
     finalActiveCalendarButtons();
@@ -6625,12 +6617,6 @@ window.calendarTasksForDate = function(d){
     if(el) el.value = value;
   }
 
-  function clickSettingsTab(id){
-    const btn = document.getElementById('set_' + id);
-    if(typeof window.settingsTab === 'function') window.settingsTab(id, btn || null);
-    else if(typeof window.renderSettings === 'function') window.renderSettings();
-  }
-
   window.resetTopLevelTabState = function(id){
     if(!TOP_LEVEL_TABS[id]) return;
 
@@ -6686,10 +6672,6 @@ window.calendarTasksForDate = function(d){
     const result = typeof previousTab === 'function'
       ? previousTab.apply(this, arguments)
       : undefined;
-
-    if(id === 'settings'){
-      clickSettingsTab('categories');
-    }
 
     return result;
   };
