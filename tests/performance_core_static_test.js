@@ -27,6 +27,7 @@ has(html, /d\.loadedModules\[moduleName\] === true && hasRealModuleData_Build13_
 has(html, /mergeData_Build13_2\(d\);\s*renderShell_Build13_2\(d\);[\s\S]*?__BH_LOADED_MODULES__\[module\] = true;/, 'module endpoint response shape remains compatible with existing handler');
 has(html, /function load\(forceDashboard=true, after\)\{[\s\S]*?__BH_CORE_LOADING__=true;[\s\S]*?if\(!token\)\{\s*window\.__BH_CORE_LOADING__ = false;/, 'load guard clears when the token is missing');
 has(html, /function CRM_finishInitialLoad_[\s\S]*?window\.__BH_CORE_LOADING__ = false;/, 'successful load clears the guard');
+has(html, /function CRM_finishInitialLoad_\(d, forceDashboard, after, perf, isFastShell\)\{[\s\S]*?if\(isFastShell\) renderShell_Build13_2\(DATA\); else render\(DATA\);/, 'fast opening shell uses the shell renderer while full core keeps the full renderer');
 has(html, /function CRM_loadFullCoreFallback_[\s\S]*?withFailureHandler\(e=>\{ window\.__BH_CORE_LOADING__=false;/, 'fallback failure clears the guard');
 has(html, /__BH_CORE_LOADING__/, 'duplicate initial core request guard exists');
 has(html, /__BH_CORE_REFRESHING__/, 'duplicate refresh guard exists');
