@@ -3704,10 +3704,7 @@ function refreshCore(after, parentRequestId){
     if(b) b.classList.add('active');
     try{
       if(id==='dashboard') renderDashboard();
-      if(id==='projects') tableProjects();
-      if(id==='contacts') tableContacts();
-      if(id==='tasks') tableTasks();
-      if(id==='settings') renderSettings();
+      if({projects:1,contacts:1,tasks:1,settings:1,archive:1}[id]) ensureModule_Build13_2(id);
     }catch(e){}
     finalApplyUserAndBrand();
     finalActiveCalendarButtons();
