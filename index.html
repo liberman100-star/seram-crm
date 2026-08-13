@@ -3372,7 +3372,7 @@ function CRM_finishInitialLoad_(d, forceDashboard, after, perf, isFastShell){
   if(isFastShell) mergeData_Build13_2(d); else markLoadedModulesFromFullCore_Build13_2(d);
   hideLogin();
   const renderStart = CRM_perfNow_();
-  render(DATA);
+  if(isFastShell) renderShell_Build13_2(DATA); else render(DATA);
   CRM_perfLog_(perf.requestId, isFastShell ? 'fastShell.firstDataRender' : 'render main', CRM_perfElapsed_(renderStart));
   if(forceDashboard){ const btn=document.getElementById('btn_dashboard'); if(btn) tab('dashboard',btn); }
   if(typeof renderCalendarDashboard === 'function') renderCalendarDashboard();
