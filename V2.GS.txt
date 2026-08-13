@@ -6986,7 +6986,7 @@ function BH_FAST_fullRows_(shape,sheetName,rowIndexes,label){
   rowIndexes.forEach(function(i){const last=groups[groups.length-1];if(last&&i===last[1]+1)last[1]=i;else groups.push([i,i]);});
   const rows=[];groups.forEach(function(group){shape.sheet.getRange(group[0]+2,1,group[1]-group[0]+1,shape.headers.length).getValues().forEach(function(row){rows.push(row);});});
   BH_FAST_trackRangeRead_(sheetName,label,rowIndexes.length,started,groups.length);
-  return rows.map(function(row){const out={};shape.headers.forEach(function(h,i){out[h]=row[i];});return out;});
+  return rows.map(function(row){const out={};shape.headers.forEach(function(h,i){out[h]=formatValue_(row[i],h);});return out;});
 }
 function BH_FAST_activeSummary_(sheetName,includeFirstRows){
   const shape=BH_FAST_sheetShape_(sheetName), archived=BH_FAST_column_(shape,sheetName,'בארכיון');
