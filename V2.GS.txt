@@ -4024,6 +4024,27 @@ function BH15_משימה_מותרת_ביומן_(t, user, maps, perms){
   });
 }
 
+function BH_calendarOwnerForTask_(task, project){
+  task = task || {};
+  project = project || {};
+  return String(
+    project["יוצר"] ||
+    project["אחראי"] ||
+    task["יוצר אירוע"] ||
+    task["אחראי"] ||
+    "ללא יוצר"
+  ).trim();
+}
+
+function BH_calendarColorIndex_(value){
+  value = String(value || "");
+  let n = 0;
+  for(let i = 0; i < value.length; i++){
+    n = (n + value.charCodeAt(i) * (i + 1)) % 8;
+  }
+  return n + 1;
+}
+
 function BH14_העשרת_נתוני_יומן_(data, user){
   data = data || {};
   user = user || {};
@@ -4080,28 +4101,6 @@ function BH14_העשרת_נתוני_יומן_(data, user){
     }
   }
 
-  function calendarOwnerForTask_(t){
-    const projectId = String(t["מזהה פרויקט"] || "").trim();
-    const p = projectsById[projectId] || {};
-
-    return String(
-      p["יוצר"] ||
-      p["אחראי"] ||
-      t["יוצר אירוע"] ||
-      t["אחראי"] ||
-      "ללא יוצר"
-    ).trim();
-  }
-
-  function hashColorIndex_(s){
-    s = String(s || "");
-    let n = 0;
-    for(let i = 0; i < s.length; i++){
-      n = (n + s.charCodeAt(i) * (i + 1)) % 8;
-    }
-    return n + 1;
-  }
-
   const enrichedTasks = (data.tasks || [])
     .filter(t => {
       if(isSuperAdmin) return true;
@@ -4117,13 +4116,14 @@ function BH14_העשרת_נתוני_יומן_(data, user){
     })
     .map(t => {
       const copy = Object.assign({}, t);
-      const owner = calendarOwnerForTask_(copy);
+      const projectId = String(copy["מזהה פרויקט"] || "").trim();
+      const owner = BH_calendarOwnerForTask_(copy, projectsById[projectId]);
 
       copy["יוצר אירוע"] = owner;
       copy["יומן"] = owner;
       copy["תג יומן"] = owner;
       copy["calendarKey"] = owner;
-      copy["calendarColorIndex"] = hashColorIndex_(owner);
+      copy["calendarColorIndex"] = BH_calendarColorIndex_(owner);
 
       return copy;
     });
@@ -6991,7 +6991,7 @@ function BH_FAST_fullRows_(shape,sheetName,rowIndexes,label){
 function BH_FAST_activeSummary_(sheetName,includeFirstRows){
   const shape=BH_FAST_sheetShape_(sheetName), archived=BH_FAST_column_(shape,sheetName,'בארכיון');
   const active=[];for(let i=0;i<shape.rows;i++) if(String(archived[i]||'').trim()!=='כן') active.push(i);
-  return {count:active.length,rows:includeFirstRows?BH_FAST_fullRows_(shape,sheetName,active.slice(0,5),'dashboardRows'):[]};
+  return {count:active.length,rows:includeFirstRows?BH_FAST_fullRows_(shape,sheetName,active.slice(0,5),'dashboardRows'):[],shape:shape};
 }
 function BH_FAST_taskSummary_(){
   const shape=BH_FAST_sheetShape_(SHEETS.TASKS), dates=BH_FAST_column_(shape,SHEETS.TASKS,'תאריך');
@@ -7001,18 +7001,41 @@ function BH_FAST_taskSummary_(){
   const placeholders=Array(Math.max(0,active.length-datedTasks.length)).fill(0).map(function(){return {};});
   return {allForDashboard:datedTasks.concat(placeholders),dated:datedTasks};
 }
+function BH_FAST_calendarProjects_(tasks,shape){
+  const wanted={};(tasks||[]).forEach(function(task){const id=String(task["מזהה פרויקט"]||'').trim();if(id)wanted[id]=true;});
+  if(!Object.keys(wanted).length) return {};
+  shape=shape||BH_FAST_sheetShape_(SHEETS.PROJECTS);
+  const ids=BH_FAST_column_(shape,SHEETS.PROJECTS,'מזהה פרויקט');
+  const creators=BH_FAST_column_(shape,SHEETS.PROJECTS,'יוצר'),owners=BH_FAST_column_(shape,SHEETS.PROJECTS,'אחראי'),out={};
+  ids.forEach(function(value,index){const id=String(value||'').trim();if(wanted[id])out[id]={"יוצר":creators[index],"אחראי":owners[index]};});
+  return out;
+}
+function BH_FAST_enrichCalendar_(tasks,user,projectShape){
+  const projects=BH_FAST_calendarProjects_(tasks,projectShape);
+  const enriched=(tasks||[]).map(function(task){
+    const copy=Object.assign({},task),projectId=String(copy["מזהה פרויקט"]||'').trim();
+    const owner=BH_calendarOwnerForTask_(copy,projects[projectId]);
+    copy["יוצר אירוע"]=owner;copy["יומן"]=owner;copy["תג יומן"]=owner;copy.calendarKey=owner;copy.calendarColorIndex=BH_calendarColorIndex_(owner);
+    return copy;
+  });
+  const creators=[...new Set(enriched.map(function(task){return String(task["יומן"]||task["יוצר אירוע"]||'').trim();}).filter(Boolean))].sort(function(a,b){return a.localeCompare(b,'he');});
+  const role=String(user&&user.role||'').trim(),isSuperAdmin=user&&user.isOwner===true||role==='מנהל ראשי';
+  return {tasks:enriched,calendarTasks:enriched,calendarCreatorsAllowed:creators,calendarCreatorPermission:{mode:isSuperAdmin?'all':'allowed',creators:creators}};
+}
 function BH_FAST_shellForPrivilegedUser_(user){
   const currentUser=BH_FAST_currentUser_(user),actions=פעולות_מותרות_Build11_2_(currentUser);
   const projectSummary=BH_FAST_activeSummary_(SHEETS.PROJECTS,true);
   const contactSummary=BH_FAST_activeSummary_(SHEETS.CONTACTS,false);
   const taskSummary=BH_FAST_taskSummary_();
+  const calendar=BH_FAST_enrichCalendar_(taskSummary.dated,currentUser,projectSummary.shape);
   const projectRows=projectSummary.rows.concat(Array(Math.max(0,projectSummary.count-projectSummary.rows.length)).fill(0).map(function(){return {};}));
   const contactRows=Array(contactSummary.count).fill(0).map(function(){return {};});
   return {schemaVersion:1,payloadType:'openingShell',auth:{allowed:true},system:מיתוג_מערכת_Build7_(),currentUser:currentUser,
     canSeeSettings:actions.canSeeSettings,canSeeDashboard:actions.canSeeDashboard,canSeeArchive:actions.canSeeArchive,
     canSeeTimeline:actions.canSeeTimeline,actionPermissions:actions,canCreate:actions.canCreate,canEdit:actions.canEdit,
     canDelete:actions.canDelete,readOnly:actions.readOnly,accessNotice:'',dashboard:calcDashboard_(projectRows,contactRows,taskSummary.allForDashboard),
-    tasks:taskSummary.dated,calendarTasks:taskSummary.dated,loadedModules:{dashboard:true}};
+    tasks:calendar.tasks,calendarTasks:calendar.calendarTasks,calendarCreatorsAllowed:calendar.calendarCreatorsAllowed,
+    calendarCreatorPermission:calendar.calendarCreatorPermission,loadedModules:{dashboard:true}};
 }
 
 // The client supplies only a rollout preference. Authentication and role eligibility remain server-owned.

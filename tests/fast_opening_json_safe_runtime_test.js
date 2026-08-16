@@ -49,7 +49,7 @@ const sandbox = {
   calcDashboard_: () => ({openTasks:1})
 };
 vm.createContext(sandbox);
-for (const name of ['formatValue_', 'BH_FAST_currentUser_', 'BH_FAST_trackRangeRead_', 'BH_FAST_sheetShape_', 'BH_FAST_column_', 'BH_FAST_fullRows_', 'BH_FAST_activeSummary_', 'BH_FAST_taskSummary_', 'BH_FAST_shellForPrivilegedUser_']) {
+for (const name of ['formatValue_', 'BH_calendarOwnerForTask_', 'BH_calendarColorIndex_', 'BH_FAST_currentUser_', 'BH_FAST_trackRangeRead_', 'BH_FAST_sheetShape_', 'BH_FAST_column_', 'BH_FAST_fullRows_', 'BH_FAST_activeSummary_', 'BH_FAST_taskSummary_', 'BH_FAST_calendarProjects_', 'BH_FAST_enrichCalendar_', 'BH_FAST_shellForPrivilegedUser_']) {
   vm.runInContext(functionSource(name), sandbox);
 }
 
