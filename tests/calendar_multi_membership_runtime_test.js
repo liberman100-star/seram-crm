@@ -116,7 +116,7 @@ const fullContext = {
   BH15_ערך_שווה_: (a, b) => String(a || '').toLowerCase() === String(b || '').toLowerCase()
 };
 vm.createContext(fullContext);
-['BH_calendarMembersForTask_', 'BH_calendarColorIndex_', 'BH14_העשרת_נתוני_יומן_']
+['BH_calendarMembersForTask_', 'BH_calendarColorIndex_', 'BH15_הרשאת_יוצרי_יומן_', 'BH14_העשרת_נתוני_יומן_']
   .forEach(name => vm.runInContext(functionSource(name), fullContext));
 const fullPayload = fullContext.BH14_העשרת_נתוני_יומן_({tasks: [sourceTask]}, {role: 'מנהל ראשי', isOwner: true});
 

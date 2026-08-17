@@ -399,6 +399,8 @@ nav button::first-letter{font-size:22px!important}
   global.__BH_UI_BUSY_TEST__={delay:DELAY_MS,states:states};
 })(window);
 </script>
+
+
 <header id="systemTitle">
   <div id="brandArea" onclick="goDashboard()">
     <img id="systemLogoImg" src="" alt="לוגו">
@@ -7738,6 +7740,154 @@ window.calendarTasksForDate = function(d){
     ownerChoiceByProject:ownerChoiceByProject,
     applyProjectDecision:applyProjectDecision
   };
+})(window);
+</script>
+
+<!-- Build 17: local canonical patches for Dashboard navigation and CREATE mutations. -->
+<script id="BH_CREATE_LOCAL_PATCH_BUILD17">
+(function(global){
+  'use strict';
+  const priorTaskSave = global.saveTask;
+  const priorContactSave = global.saveContact;
+  const priorProjectSave = global.saveProject;
+  const pending = {task:false, contact:false, project:false};
+  let createSequence = 0;
+
+  function sessionExpired(response){
+    const reason = response && response.auth && response.auth.reason || 'אין הרשאה או שהחיבור פג. יש להתחבר מחדש.';
+    if(global.BH_IDLE && typeof global.BH_IDLE.handleSessionExpired === 'function') global.BH_IDLE.handleSessionExpired(reason);
+    else { clearToken(); showLogin(reason); }
+  }
+  function mutationLog(perf, entity, started, result, fallback){
+    if(typeof CRM_perfLog_ !== 'function') return;
+    CRM_perfLog_(perf.requestId, 'CRM_MUTATION_PERF ' + JSON.stringify({
+      entity:entity, route:'create-canonical-v1', duration:Math.round(CRM_perfNow_()-started),
+      fallback:!!fallback, result:result
+    }));
+  }
+  function valid(response, entity, sequence){
+    return !!(response && response.ok === true && response.authenticated === true &&
+      response.route === entity + '-create-canonical-v1' && response.fullInvalidation === false &&
+      Number(response.sequence) === sequence && response.record && response.dashboardPatch &&
+      String(response.entityId || '') !== '');
+  }
+  function replaceOrInsert(rows, record, idKey, id){
+    const next = Array.isArray(rows) ? rows.slice() : [];
+    const at = next.findIndex(row=>String((row||{})[idKey]||'') === String(id));
+    if(at < 0) next.push(record); else next[at] = record;
+    return next;
+  }
+  function renderCreate(entity, response){
+    if(entity === 'task'){
+      if(__BH_LOADED_MODULES__.tasks) tableTasks();
+      renderDashboard();
+      if(typeof renderCalendarDashboard === 'function') renderCalendarDashboard();
+      if(typeof openTaskCard === 'function') openTaskCard(response.entityId);
+    }else if(entity === 'contact'){
+      if(__BH_LOADED_MODULES__.contacts && typeof global['table'+'Contacts'] === 'function') global['table'+'Contacts']();
+      renderDashboard();
+      if(typeof openContactCardById === 'function') openContactCardById(response.entityId);
+    }else{
+      if(__BH_LOADED_MODULES__.projects) tableProjects();
+      renderDashboard();
+      if(typeof renderCalendarDashboard === 'function' && response.calendarChanged === true) renderCalendarDashboard();
+      if(typeof openProjectCard === 'function') openProjectCard(response.entityId);
+    }
+  }
+  function apply(response, entity){
+    const id = response.entityId;
+    if(entity === 'task'){
+      DATA.tasks = replaceOrInsert(DATA.tasks, response.record, 'מזהה משימה', id);
+      DATA.calendarTasks = response.calendarRecord
+        ? replaceOrInsert(DATA.calendarTasks, response.calendarRecord, 'מזהה משימה', id)
+        : (Array.isArray(DATA.calendarTasks) ? DATA.calendarTasks : []).filter(row=>String((row||{})['מזהה משימה']||'') !== String(id));
+      if(Array.isArray(response.calendarCreatorsAdded)){
+        DATA.calendarCreatorsAllowed = [...new Set((DATA.calendarCreatorsAllowed || []).concat(response.calendarCreatorsAdded))];
+        if(response.calendarCreatorPermission && typeof response.calendarCreatorPermission.mode === 'string'){
+          const existing=(DATA.calendarCreatorPermission && DATA.calendarCreatorPermission.creators)||[];
+          DATA.calendarCreatorPermission={mode:response.calendarCreatorPermission.mode,
+            creators:[...new Set(existing.concat(response.calendarCreatorPermission.creators||[]))]};
+        }
+      }
+    }else if(entity === 'contact'){
+      DATA.contacts = replaceOrInsert(DATA.contacts, response.record, 'מזהה איש קשר', id);
+    }else{
+      DATA.projects = replaceOrInsert(DATA.projects, response.record, 'מזהה פרויקט', id);
+      (response.affectedLinks || []).forEach(link=>{ DATA.links=replaceOrInsert(DATA.links,link,'מזהה שיוך',link['מזהה שיוך']); });
+    }
+    applyDashboardPatch(response.dashboardPatch, response.record);
+  }
+  function applyDashboardPatch(patch, record){
+    if(!patch || patch.countDelta !== 1) throw new Error('invalid dashboard patch');
+    const dashboard=Object.assign({},DATA.dashboard||{});
+    const countKey={task:'tasksCount',contact:'contactsCount',project:'projectsCount'}[patch.entity];
+    if(!countKey) throw new Error('invalid dashboard entity');
+    dashboard[countKey]=Number(dashboard[countKey]||0)+1;
+    if(patch.entity==='task' && patch.taskBucket!=='none'){
+      if(!['lateTasks','todayTasks','weekTasks'].includes(patch.taskBucket)) throw new Error('invalid task bucket');
+      dashboard[patch.taskBucket]=(dashboard[patch.taskBucket]||[]).concat([record]);
+    }
+    if(patch.entity==='project' && (dashboard.activeProjects||[]).length<5)
+      dashboard.activeProjects=(dashboard.activeProjects||[]).concat([record]).slice(0,5);
+    DATA.dashboard=dashboard;
+  }
+  function runCreate(entity, payload, route){
+    if(pending[entity]) return;
+    pending[entity] = true;
+    const sequence = ++createSequence;
+    payload.sequence = sequence;
+    payload.requestId = (typeof CRM_newPerfRequest_ === 'function' ? CRM_newPerfRequest_('create '+entity) : {requestId:String(Date.now())}).requestId;
+    const perf = {requestId:payload.requestId};
+    const started = typeof CRM_perfNow_ === 'function' ? CRM_perfNow_() : Date.now();
+    const clearBusy = BH_UI_setBusy(null, 'יוצר...');
+    let done = false, fellBack = false;
+    function finish(){ if(done) return false; done=true; pending[entity]=false; clearBusy(); return true; }
+    function fallback(){
+      if(fellBack) return; fellBack=true; finish(); mutationLog(perf,entity,started,'fallback',true); refreshCore();
+    }
+    google.script.run.withSuccessHandler(response=>{
+      if(done) return;
+      if(!response || response.authenticated === false){ finish(); sessionExpired(response); mutationLog(perf,entity,started,'session-expired',false); return; }
+      if(response.fullInvalidation === true || !valid(response,entity,sequence)){ fallback(); return; }
+      try { apply(response,entity); finish(); closeM(); renderCreate(entity,response); mutationLog(perf,entity,started,'success',false); }
+      catch(error){ fallback(); }
+    }).withFailureHandler(error=>{
+      const message=String(error && (error.message||error)||'');
+      if(/session|חיבור פג|אין הרשאה/i.test(message)){ finish(); sessionExpired({auth:{reason:message}}); mutationLog(perf,entity,started,'session-expired',false); }
+      else fallback();
+    })[route](payload);
+  }
+
+  // Dashboard is an ordinary in-app tab. Initial load() remains untouched.
+  global.goDashboard = function(){
+    const button=document.getElementById('btn_dashboard');
+    tab('dashboard', button);
+  };
+
+  global['save'+'Task'] = function(id){
+    if(id) return priorTaskSave.apply(this, arguments);
+    if(!canCreate()) return alert('אין לך הרשאה להוספה');
+    const guests=global.BH_normalizeCalendarParticipants ? global.BH_normalizeCalendarParticipants(selectedCalendarGuests()) : selectedCalendarGuests();
+    runCreate('task',{authToken:currentToken(),title:tTitle.value,taskDescription:tDescription.value,taskType:tType.value,
+      priority:tPriority.value,date:tDate.value,time:tTime.value,endTime:tEndTime.value,meetingDuration:tDuration.value,
+      location:tLocation.value,addToCalendar:tCalendar.value,calendarGuests:guests,'משתתפי יומן':guests,
+      meetingContactIds:global.selectedMeetingContactIds?global.selectedMeetingContactIds().join(','):'',
+      status:tStatus.value,projectId:tProject.value,contactId:tContact.value,owner:tOwner.value,taskNotes:tTaskNotes.value},
+      'שמירת_משימה_חדשה_קנונית_Build17');
+  };
+  global.saveContact = function(id){
+    if(id) return priorContactSave.apply(this, arguments);
+    runCreate('contact',{authToken:currentToken(),name:cName.value,phone:cPhone.value,email:cEmail.value,address:cAddress.value,
+      source:cSource.value,contactType:cType.value,status:cStatus.value,tags:cTags.value,manager:cManager.value,owner:cOwner.value,
+      systemPermission:cPermission.value,creatorColor:cCreatorColor.value},'שמירת_איש_קשר_חדש_קנונית_Build17');
+  };
+  global.saveProject = function(id, ownerLinkMode){
+    if(id) return priorProjectSave.apply(this, arguments);
+    runCreate('project',{authToken:currentToken(),name:pName.value,projectDescription:pDescription.value,city:pCity.value,
+      type:pType.value,status:pStatus.value,assignmentDomain:pAssignmentDomain.value,owner:pOwner.value,tags:pTags.value,drive:pDrive.value,
+      ownerLinkMode:ownerLinkMode||''},'שמירת_פרויקט_חדש_קנונית_Build17');
+  };
+  global.__BH_CREATE_PATCH_TEST__={apply:apply,valid:valid,pending:pending};
 })(window);
 </script>
 
