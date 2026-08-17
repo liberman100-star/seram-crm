@@ -3241,6 +3241,7 @@ function mergeData_Build13_2(d){
     DATA.canSeeSettings === true ||
     (DATA.currentUser && DATA.currentUser.isOwner === true) ||
     String((DATA.currentUser && DATA.currentUser.role) || '').trim() === 'מנהל ראשי';
+  window.DATA = DATA;
   if(typeof CRM_perfLog_ === 'function') CRM_perfLog_(__perfRequestId, 'mergeData_Build13_2', CRM_perfElapsed_(__perfStart));
 }
 
@@ -3269,6 +3270,15 @@ function hasRealModuleData_Build13_2(moduleName, d){
   }
   const value = d[moduleName];
   return Array.isArray(value) ? value.length > 0 : value !== undefined && value !== null;
+}
+
+function hasValidModulePayload_Build13_2(moduleName, d){
+  if(!d || !d.loadedModules || d.loadedModules[moduleName] !== true) return false;
+  if(moduleName === 'settings'){
+    return ['realSettings','fields','permissions'].some(k=>Object.prototype.hasOwnProperty.call(d, k));
+  }
+  if(moduleName === 'archive') return hasRealModuleData_Build13_2(moduleName, d);
+  return Object.prototype.hasOwnProperty.call(d, moduleName);
 }
 
 function markLoadedModulesFromFullCore_Build13_2(d){
@@ -3513,21 +3523,22 @@ function loadModule_Build13_2(module, after){
         return;
       }
 
-      mergeData_Build13_2(d);
-      renderShell_Build13_2(d);
-
-      tableProjects();
-      tableContacts();
-      tableTasks();
-
-      if(DATA.canSeeSettings){
-        renderSettings();
+      if(!hasValidModulePayload_Build13_2(module, d)){
+        window.__BH_MODULE_WAITERS__[module] = [];
+        CRM_logModuleRenderPerf_Build13_2({
+          module:module, mergeMs:0, moduleRenderMs:0, dashboardRendered:false,
+          calendarRendered:false, shellRendered:false, renderCounts:{}, fallback:false, result:'invalid-payload'
+        });
+        return;
       }
 
-      renderDashboard();
-      const __moduleRenderStart = (typeof CRM_perfNow_ === 'function' ? CRM_perfNow_() : Date.now());
-      renderModule_Build13_2(module);
-      if(typeof CRM_perfLog_ === 'function') CRM_perfLog_(__modulePerf.requestId, 'renderModule_Build13_2 ' + module, CRM_perfElapsed_(__moduleRenderStart));
+      const previousData = BH_snapshotModuleDependencies_Build13_2(d);
+      const __mergeStart = (typeof CRM_perfNow_ === 'function' ? CRM_perfNow_() : Date.now());
+      mergeData_Build13_2(d);
+      const mergeMs = Math.max(0, Math.round((typeof CRM_perfNow_ === 'function' ? CRM_perfNow_() : Date.now()) - __mergeStart));
+      const renderPerf = BH_renderLoadedModule_Build13_2(module, d, previousData);
+      renderPerf.mergeMs = mergeMs;
+      CRM_logModuleRenderPerf_Build13_2(renderPerf);
 
       __BH_LOADED_MODULES__[module] = true;
       const moduleWaiters = window.__BH_MODULE_WAITERS__[module] || [];
@@ -3539,10 +3550,76 @@ function loadModule_Build13_2(module, after){
       __BH_LOADING_MODULE__[module] = false;
       hideModuleLoading_Build13_4(module);
       window.__BH_MODULE_WAITERS__[module] = [];
+      CRM_logModuleRenderPerf_Build13_2({
+        module:module, mergeMs:0, moduleRenderMs:0, dashboardRendered:false,
+        calendarRendered:false, shellRendered:false, renderCounts:{}, fallback:false, result:'transport-failure'
+      });
       alert(e.message);
     })
     // Historical call shape kept for static audit: .קבלת_מודול_Build13_2(token, module)
     .קבלת_מודול_Build13_2(token, module, __modulePerf.requestId);
+}
+
+// Minimal pre-merge snapshot: only references used by the dependency coordinator.
+function BH_snapshotModuleDependencies_Build13_2(payload){
+  payload = payload || {};
+  return {
+    dashboard: DATA && DATA.dashboard,
+    tasks: DATA && DATA.tasks,
+    calendarTasks: DATA && DATA.calendarTasks,
+    calendarCreatorsAllowed: DATA && DATA.calendarCreatorsAllowed,
+    calendarCreatorPermission: DATA && DATA.calendarCreatorPermission,
+    payloadHasDashboard: Object.prototype.hasOwnProperty.call(payload, 'dashboard'),
+    payloadHasCalendar: ['tasks','calendarTasks','calendarCreatorsAllowed','calendarCreatorPermission']
+      .some(k=>Object.prototype.hasOwnProperty.call(payload, k))
+  };
+}
+
+function CRM_logModuleRenderPerf_Build13_2(details){
+  if(typeof console !== 'undefined' && typeof console.log === 'function'){
+    console.log('CRM_MODULE_RENDER_PERF', details);
+  }
+}
+
+function BH_renderLoadedModule_Build13_2(module, payload, previousData){
+  previousData = previousData || {};
+  const counts = {projects:0, contacts:0, tasks:0, settings:0, archive:0, dashboard:0, calendar:0};
+  const started = (typeof CRM_perfNow_ === 'function' ? CRM_perfNow_() : Date.now());
+
+  renderModule_Build13_2(module);
+  if(Object.prototype.hasOwnProperty.call(counts, module)) counts[module] = 1;
+
+  let dashboardRendered = false;
+  let calendarRendered = false;
+  if(previousData.payloadHasDashboard && DATA.dashboard !== previousData.dashboard){
+    renderDashboard();
+    counts.dashboard = 1;
+    dashboardRendered = true;
+    // renderDashboard owns the calendar render in the current effective implementation.
+    calendarRendered = true;
+    counts.calendar = 1;
+  } else if(previousData.payloadHasCalendar && (
+    DATA.tasks !== previousData.tasks ||
+    DATA.calendarTasks !== previousData.calendarTasks ||
+    DATA.calendarCreatorsAllowed !== previousData.calendarCreatorsAllowed ||
+    DATA.calendarCreatorPermission !== previousData.calendarCreatorPermission
+  )){
+    if(typeof renderCalendarDashboard === 'function') renderCalendarDashboard();
+    calendarRendered = true;
+    counts.calendar = 1;
+  }
+
+  return {
+    module:module,
+    mergeMs:0,
+    moduleRenderMs:Math.max(0, Math.round((typeof CRM_perfNow_ === 'function' ? CRM_perfNow_() : Date.now()) - started)),
+    dashboardRendered:dashboardRendered,
+    calendarRendered:calendarRendered,
+    shellRendered:false,
+    renderCounts:counts,
+    fallback:false,
+    result:'success'
+  };
 }
 
 function renderModule_Build13_2(module){
@@ -3553,8 +3630,8 @@ function renderModule_Build13_2(module){
     if(module==='contacts') tableContacts();
     if(module==='tasks') tableTasks();
     if(module==='settings') renderSettings();
-    if(module==='archive') renderArchive('projects');
-    applySecurityUI();
+    if(module==='archive') renderArchive(window.ARCHIVE_TAB || 'projects');
+    if(module==='settings') applySecurityUI();
   }catch(e){ console.log(e); }
   if(typeof CRM_perfLog_ === 'function') CRM_perfLog_('client-only', 'renderModule_Build13_2 ' + module, CRM_perfElapsed_(__renderModuleStart));
 }
