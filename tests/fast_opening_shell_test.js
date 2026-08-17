@@ -9,6 +9,7 @@ has(html,/if\(!CRM_fastShellEnabled_\(\)\)\{ CRM_loadFullCoreFallback_[^\n]*fals
 has(html,/\.קבלת_נתוני_פתיחה_Build13_2\(token,perf\.requestId,CRM_fastShellMode_\(\)\)/,'new browser calls opening endpoint with one request');
 has(html,/withFailureHandler\(e=>CRM_loadFullCoreFallback_/,'transport failure falls back once');
 has(html,/if\(!CRM_fastShellPayloadValid_\(d\)\)\{ CRM_loadFullCoreFallback_/,'invalid schema falls back once');
+has(html,/if\(isFastShell\) renderShell_Build13_2\(DATA\); else render\(DATA\);/,'opening success bypasses the effective full render wrapper chain');
 has(html,/if\(d && d\.payloadType === 'fullCore'/,'server-owned rollout can return old mode in same request');
 has(html,/schemaVersion === 1[\s\S]*loadedModules\.dashboard === true/,'opening schema validates dashboard-only state');
 const shell=gs.slice(gs.indexOf('function BH_FAST_shellForPrivilegedUser_'),gs.indexOf('// The client supplies only a rollout preference'));
