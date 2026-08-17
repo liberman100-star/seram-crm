@@ -17,6 +17,31 @@ function functionSource(name) {
   throw new Error(`unterminated ${name}`);
 }
 
+function htmlFunctionSource(name) {
+  const start = html.lastIndexOf(`function ${name}(`);
+  assert(start >= 0, `missing client function ${name}`);
+  const brace = html.indexOf('{', start);
+  let depth = 0;
+  for (let i = brace; i < html.length; i++) {
+    if (html[i] === '{') depth++;
+    if (html[i] === '}' && --depth === 0) return html.slice(start, i + 1);
+  }
+  throw new Error(`unterminated client function ${name}`);
+}
+
+function lastWindowFunctionSource(name) {
+  const marker = `window.${name} = function(`;
+  const start = html.lastIndexOf(marker);
+  assert(start >= 0, `missing client assignment ${name}`);
+  const brace = html.indexOf('{', start);
+  let depth = 0;
+  for (let i = brace; i < html.length; i++) {
+    if (html[i] === '{') depth++;
+    if (html[i] === '}' && --depth === 0) return html.slice(start, i + 2);
+  }
+  throw new Error(`unterminated client assignment ${name}`);
+}
+
 const context = { console };
 vm.createContext(context);
 ['BH_calendarMembersForTask_', 'BH_calendarOwnerForTask_', 'BH_calendarColorIndex_', 'BH_taskCreatorForSave_']
@@ -50,9 +75,31 @@ assert(!full.includes('copy["יוצר אירוע"] ='));
 assert(!fast.includes('copy["יוצר אירוע"]=') );
 
 assert(html.includes('return BH_calendarMembers(t).includes(selected);'));
-assert(html.includes("if(selected === 'all') return true;"));
+assert(html.includes("${canAll ? '<option value=\"all\">הצג הכל</option>' : ''}"));
+assert(html.includes("if(selected === 'all') return canAll;"));
 assert(!/BH_creatorBadge\(t\)[\s\S]{0,120}taskCalendarTitleHtml\(t\)/.test(html));
 assert(html.includes('<b>נוצר ע״י:</b>'));
+
+// Client authorization regression: membership count never grants "show all".
+const clientContext = {
+  window: {BH_SELECTED_CALENDAR_OWNER: 'all'},
+  DATA: {
+    calendarTasks: [{id: 'event', 'תאריך': '2026-08-17', calendarMembers: ['A', 'B'], 'שעה': '09:00'}],
+    calendarCreatorPermission: {mode: 'allowed'}
+  },
+  fmtDateISO: () => '2026-08-17',
+  BH_ensureCalendarFilter: () => {}
+};
+vm.createContext(clientContext);
+vm.runInContext(htmlFunctionSource('BH_calendarOwner'), clientContext);
+vm.runInContext(htmlFunctionSource('BH_calendarMembers'), clientContext);
+vm.runInContext(lastWindowFunctionSource('calendarTasksForDate'), clientContext);
+assert.strictEqual(clientContext.window.calendarTasksForDate({}).length, 0, 'forged all is denied without canAll');
+clientContext.window.BH_SELECTED_CALENDAR_OWNER = 'B';
+assert.strictEqual(clientContext.window.calendarTasksForDate({}).length, 1, 'named member filter remains multi-member aware');
+clientContext.DATA.calendarCreatorPermission.mode = 'all';
+clientContext.window.BH_SELECTED_CALENDAR_OWNER = 'all';
+assert.strictEqual(clientContext.window.calendarTasksForDate({}).length, 1, 'canAll returns each authorized event once');
 
 // Runtime equivalence: Full Core and Fast Opening enrich the same authorized row
 // with identical membership, without changing historical creator fields.

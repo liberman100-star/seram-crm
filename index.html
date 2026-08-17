@@ -6475,7 +6475,7 @@ function BH_ensureCalendarFilter(){
     <select id="calendarCreatorFilter"
       style="width:150px;min-width:150px;height:34px;font-size:13px;padding:4px 10px;border-radius:10px"
       onchange="window.BH_SELECTED_CALENDAR_OWNER=this.value; renderCalendarDashboard();">
-      ${(canAll || owners.length > 1) ? '<option value="all">הצג הכל</option>' : ''}
+      ${canAll ? '<option value="all">הצג הכל</option>' : ''}
       ${owners.map(o=>`<option value="${esc(o)}">${esc(o)}</option>`).join('')}
     </select>
   `;
@@ -6495,9 +6495,7 @@ window.calendarTasksForDate = function(d){
   return source
     .filter(t => t['תאריך'] === iso)
     .filter(t => {
-      // The server has already produced the authorized calendarTasks collection.
-      // "all" changes only membership filtering and never grants task access.
-      if(selected === 'all') return true;
+      if(selected === 'all') return canAll;
       return BH_calendarMembers(t).includes(selected);
     })
     .sort((a,b)=>String(a['שעה']||'').localeCompare(String(b['שעה']||''),'he'));
