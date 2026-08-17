@@ -3,7 +3,7 @@ const vm = require('vm');
 const assert = require('assert');
 const gs = fs.readFileSync('V2.GS.txt','utf8');
 
-const start = gs.indexOf('function BH_calendarOwnerForTask_');
+const start = gs.indexOf('function BH_calendarMembersForTask_');
 const end = gs.indexOf('function התקנת_הרשאות_יומן_Build15', start);
 assert(start >= 0 && end > start, 'calendar enrichment permission helper block exists');
 const code = gs.slice(start, end);
