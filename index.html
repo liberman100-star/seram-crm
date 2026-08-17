@@ -1334,6 +1334,7 @@ function renderTaskCard(d){
       <div><b>פרויקט:</b> ${esc(d.projectName||'')}</div>
       <div><b>איש קשר:</b> ${esc(d.contactName||'')}</div>
       <div><b>אחראי:</b> ${esc(t['אחראי']||'')}</div>
+      ${String(t['יוצר']||'').trim() ? `<div><b>נוצר ע״י:</b> ${esc(t['יוצר'])}</div>` : ''}
     </div>
     <h3 class="sectionTitle">הערות / ציר זמן המשימה</h3>
     ${renderTaskNotes(d.notes||[])}
@@ -4516,9 +4517,7 @@ th{background:#f2f6fb!important;color:#17395f!important;font-weight:800!importan
         <div class="calendar-day-head">${dayName(d)} · ${fmtDateDMY(d)}</div>
         <div class="calendar-hebrew">${hebrewDate(d)}</div>
         ${tasks.map(t=>{
-          const creator = window.calendarCreatorOfTask(t);
           return `<span class="calendar-event ${priorityClass(t)}"${htmlTitleAttr(taskDescription(t))} onclick="openTaskCard('${esc(t['מזהה משימה'])}')">
-            <span class="calendar-creator-badge">${esc(creator)}</span>
             ${taskCalendarTitleHtml(t)}
           </span>`;
         }).join('')}
@@ -4722,7 +4721,6 @@ th{background:#f2f6fb!important;color:#17395f!important;font-weight:800!importan
           <div class="calendar-hebrew">${hebrewDate(d)}</div>
           ${tasks.map(t=>`
             <span class="calendar-event ${priorityClass(t)}"${htmlTitleAttr(taskDescription(t))} onclick="openTaskCard('${esc(t['מזהה משימה'])}')">
-              ${BH_creatorBadge(t)}
               ${taskCalendarTitleHtml(t)}
             </span>
           `).join('')}
@@ -6436,9 +6434,15 @@ function BH_calendarOwner(t){
   return String(t['יומן'] || t['יוצר אירוע'] || t['תג יומן'] || 'ללא יומן').trim();
 }
 
+function BH_calendarMembers(t){
+  const members = t && Array.isArray(t.calendarMembers) ? t.calendarMembers : [];
+  const clean = [...new Set(members.map(x=>String(x||'').trim()).filter(Boolean))];
+  return clean.length ? clean : [BH_calendarOwner(t)];
+}
+
 function BH_calendarOwners(){
   const source = DATA.calendarTasks || DATA.tasks || [];
-  return [...new Set(source.map(BH_calendarOwner).filter(Boolean))]
+  return [...new Set(source.reduce((all,t)=>all.concat(BH_calendarMembers(t)),[]).filter(Boolean))]
     .sort((a,b)=>a.localeCompare(b,'he'));
 }
 
@@ -6492,7 +6496,7 @@ window.calendarTasksForDate = function(d){
     .filter(t => t['תאריך'] === iso)
     .filter(t => {
       if(selected === 'all') return canAll;
-      return BH_calendarOwner(t) === selected;
+      return BH_calendarMembers(t).includes(selected);
     })
     .sort((a,b)=>String(a['שעה']||'').localeCompare(String(b['שעה']||''),'he'));
 };

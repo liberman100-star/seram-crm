@@ -4024,16 +4024,45 @@ function BH15_משימה_מותרת_ביומן_(t, user, maps, perms){
   });
 }
 
-function BH_calendarOwnerForTask_(task, project){
+/**
+ * Canonical calendar membership.  Membership is presentation metadata only: it
+ * never grants access to a task.  Callers must apply the existing project,
+ * assignment-domain and calendar authorization rules before exposing a task.
+ *
+ * "יוצר" is the immutable task creator.  The legacy "יוצר אירוע" field is not
+ * used as a membership source because older calendar enrichment wrote a project
+ * owner into it, so it is not reliable creator history.
+ */
+function BH_calendarMembersForTask_(task, project, context){
   task = task || {};
   project = project || {};
-  return String(
-    project["יוצר"] ||
-    project["אחראי"] ||
-    task["יוצר אירוע"] ||
-    task["אחראי"] ||
-    "ללא יוצר"
-  ).trim();
+  context = context || {};
+
+  const candidates = [
+    project["יוצר"],
+    project["אחראי"],
+    task["יוצר"],
+    task["אחראי"]
+  ].concat(Array.isArray(context.additionalMembers) ? context.additionalMembers : []);
+  const seen = {};
+  const members = [];
+  candidates.forEach(function(value){
+    const member = String(value || "").trim();
+    const key = member.toLowerCase();
+    if(!member || seen[key]) return;
+    if(typeof context.memberAllowed === "function" && context.memberAllowed(member, task, project) !== true) return;
+    seen[key] = true;
+    members.push(member);
+  });
+  return members;
+}
+
+// Deprecated compatibility precedence retained for callers outside enrichment.
+// It is not creator history and is not used to build calendarMembers.
+function BH_calendarOwnerForTask_(task, project, context){
+  task = task || {};
+  project = project || {};
+  return String(project["יוצר"] || project["אחראי"] || task["יוצר אירוע"] || task["אחראי"] || "ללא יוצר").trim();
 }
 
 function BH_calendarColorIndex_(value){
@@ -4117,13 +4146,16 @@ function BH14_העשרת_נתוני_יומן_(data, user){
     .map(t => {
       const copy = Object.assign({}, t);
       const projectId = String(copy["מזהה פרויקט"] || "").trim();
-      const owner = BH_calendarOwnerForTask_(copy, projectsById[projectId]);
+      const members = BH_calendarMembersForTask_(copy, projectsById[projectId]);
+      const calendarKey = members.length ? members[0] : "ללא יומן";
 
-      copy["יוצר אירוע"] = owner;
-      copy["יומן"] = owner;
-      copy["תג יומן"] = owner;
-      copy["calendarKey"] = owner;
-      copy["calendarColorIndex"] = BH_calendarColorIndex_(owner);
+      copy.calendarMembers = members;
+      // Legacy single-value calendar fields remain derived compatibility keys.
+      // "יוצר אירוע" is deliberately preserved and is never enriched.
+      copy["יומן"] = calendarKey;
+      copy["תג יומן"] = calendarKey;
+      copy["calendarKey"] = calendarKey;
+      copy["calendarColorIndex"] = BH_calendarColorIndex_(calendarKey);
 
       return copy;
     });
@@ -4146,7 +4178,8 @@ function BH14_העשרת_נתוני_יומן_(data, user){
 
   data.calendarCreatorsAllowed = [...new Set(
     data.calendarTasks
-      .map(t => String(t["יומן"] || t["יוצר אירוע"] || "").trim())
+      .reduce((members, t) => members.concat(Array.isArray(t.calendarMembers) ? t.calendarMembers : []), [])
+      .map(member => String(member || "").trim())
       .filter(Boolean)
   )].sort((a,b)=>a.localeCompare(b, "he"));
 
@@ -5159,6 +5192,10 @@ function שמירת_פרויקט(data) {
   return row["מזהה פרויקט"];
 }
 
+function BH_taskCreatorForSave_(oldTask, authenticatedUserName){
+  return oldTask ? String(oldTask["יוצר"] || "").trim() : String(authenticatedUserName || "").trim();
+}
+
 function שמירת_משימה(data) {
   const actor = דרוש_כתיבה_Build11_2_(data && data.authToken);
 
@@ -5237,7 +5274,9 @@ function שמירת_משימה(data) {
     "מזהה איש קשר": data.contactId || (old ? old["מזהה איש קשר"] : "") || "",
     "אחראי": data.owner || (old ? old["אחראי"] : "") || "",
     "הערות למשימה": data.taskNotes || (old ? old["הערות למשימה"] : "") || "",
-    "יוצר": old && old["יוצר"] ? old["יוצר"] : currentUser,
+    // Creator is server-owned.  An edit preserves the historical value exactly;
+    // missing legacy history stays unknown rather than being attributed to editor.
+    "יוצר": BH_taskCreatorForSave_(old, currentUser),
     "תאריך יצירה": data.created || (old ? old["תאריך יצירה"] : new Date()),
     "עדכון אחרון": new Date(),
     "מזהה אירוע ביומן": calendarId || ""
@@ -7014,11 +7053,11 @@ function BH_FAST_enrichCalendar_(tasks,user,projectShape){
   const projects=BH_FAST_calendarProjects_(tasks,projectShape);
   const enriched=(tasks||[]).map(function(task){
     const copy=Object.assign({},task),projectId=String(copy["מזהה פרויקט"]||'').trim();
-    const owner=BH_calendarOwnerForTask_(copy,projects[projectId]);
-    copy["יוצר אירוע"]=owner;copy["יומן"]=owner;copy["תג יומן"]=owner;copy.calendarKey=owner;copy.calendarColorIndex=BH_calendarColorIndex_(owner);
+    const members=BH_calendarMembersForTask_(copy,projects[projectId]),calendarKey=members.length?members[0]:"ללא יומן";
+    copy.calendarMembers=members;copy["יומן"]=calendarKey;copy["תג יומן"]=calendarKey;copy.calendarKey=calendarKey;copy.calendarColorIndex=BH_calendarColorIndex_(calendarKey);
     return copy;
   });
-  const creators=[...new Set(enriched.map(function(task){return String(task["יומן"]||task["יוצר אירוע"]||'').trim();}).filter(Boolean))].sort(function(a,b){return a.localeCompare(b,'he');});
+  const creators=[...new Set(enriched.reduce(function(all,task){return all.concat(task.calendarMembers||[]);},[]).map(function(member){return String(member||'').trim();}).filter(Boolean))].sort(function(a,b){return a.localeCompare(b,'he');});
   const role=String(user&&user.role||'').trim(),isSuperAdmin=user&&user.isOwner===true||role==='מנהל ראשי';
   return {tasks:enriched,calendarTasks:enriched,calendarCreatorsAllowed:creators,calendarCreatorPermission:{mode:isSuperAdmin?'all':'allowed',creators:creators}};
 }
