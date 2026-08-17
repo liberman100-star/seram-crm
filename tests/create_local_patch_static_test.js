@@ -11,6 +11,9 @@ for(const route of ['שמירת_משימה_חדשה_קנונית_Build17','שמ�
 assert(gs.includes('response.record["הרשאת מערכת"]'));
 const build17=gs.slice(gs.indexOf('Build 17 – canonical CREATE'),gs.indexOf('var BH_DIAG_originalSaveContact_',gs.indexOf('Build 17 – canonical CREATE')));
 assert(!/קבלת_נתוני_ליבה_Build13|קבלת_נתוני_מערכת_מלאים_Build10_|refreshCore/.test(build17));
+assert(!/isSuperAdmin\s*\|\|\s*projectId/.test(build17));
+assert(build17.includes('BH15_משימה_מותרת_ביומן_'));
+assert(build17.includes('BH15_הרשאת_יוצרי_יומן_'));
 assert(gs.includes('out.calendarCreatorsAdded'));
 assert(gs.includes('out.affectedLinks = []'));
 assert(gs.includes('BH_createDashboardPatch_Build17_'));

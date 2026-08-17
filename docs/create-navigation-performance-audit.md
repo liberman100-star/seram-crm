@@ -18,3 +18,7 @@ Task responses include `record`, optional `calendarRecord`, `dashboardPatch`, an
 ## Review correction: narrow server path
 
 Build 17 no longer invokes the Full Core builder inside a canonical CREATE RPC. Each established save can return its just-persisted JSON-safe row. Task creation performs only a narrow project-ID lookup for calendar membership and calculates a dashboard delta from the new task; contact creation returns its row and count delta; project creation returns its row, an empty affected-link set for the existing no-link create behavior, and its count/active-project delta. The browser applies these deltas to its already-authorized current Dashboard. System-user contact creation remains an explicit client-side Full Core invalidation exception.
+
+## Second review correction: canonical calendar authorization
+
+Task CREATE no longer treats a non-empty project ID as calendar authorization. The narrow route builds only the new task's project/contact name maps and the current user's active calendar-permission rows, then delegates the decision to `BH15_משימה_מותרת_ביומן_`. Both Full Core enrichment and the narrow response now obtain `calendarCreatorPermission` from `BH15_הרשאת_יוצרי_יומן_`, preserving one canonical metadata source without a Full Core build.

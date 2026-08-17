@@ -7803,8 +7803,11 @@ window.calendarTasksForDate = function(d){
         : (Array.isArray(DATA.calendarTasks) ? DATA.calendarTasks : []).filter(row=>String((row||{})['מזהה משימה']||'') !== String(id));
       if(Array.isArray(response.calendarCreatorsAdded)){
         DATA.calendarCreatorsAllowed = [...new Set((DATA.calendarCreatorsAllowed || []).concat(response.calendarCreatorsAdded))];
-        if(DATA.calendarCreatorPermission && Array.isArray(DATA.calendarCreatorPermission.creators))
-          DATA.calendarCreatorPermission.creators = [...new Set(DATA.calendarCreatorPermission.creators.concat(response.calendarCreatorsAdded))];
+        if(response.calendarCreatorPermission && typeof response.calendarCreatorPermission.mode === 'string'){
+          const existing=(DATA.calendarCreatorPermission && DATA.calendarCreatorPermission.creators)||[];
+          DATA.calendarCreatorPermission={mode:response.calendarCreatorPermission.mode,
+            creators:[...new Set(existing.concat(response.calendarCreatorPermission.creators||[]))]};
+        }
       }
     }else if(entity === 'contact'){
       DATA.contacts = replaceOrInsert(DATA.contacts, response.record, 'מזהה איש קשר', id);
