@@ -6704,6 +6704,60 @@ function BH_saveExistingProjectCanonical_(data){
 function שמירת_פרויקט_קנונית_Build16(data){
   return BH_saveExistingProjectCanonical_(data);
 }
+
+/*********************** Build 17 – canonical CREATE mutation responses ***********************/
+function BH_createCanonicalResponse_Build17_(entity, data, saveFunction, idKey){
+  data = data || {};
+  const sequence = Number(data.sequence || 0);
+  const id = String(saveFunction(data, data.requestId) || "");
+  const core = קבלת_נתוני_ליבה_Build13(data.authToken, data.requestId);
+  if(!core || !core.auth || core.auth.allowed !== true){
+    return {ok:false, authenticated:false, route:entity+"-create-canonical-v1", entityId:id,
+      sequence:sequence, fullInvalidation:false, auth:core && core.auth || null};
+  }
+  if(core.auth.domainSelectionRequired === true || core.domainSelectionRequired === true){
+    return {ok:true, authenticated:true, route:entity+"-create-canonical-v1", entityId:id,
+      sequence:sequence, fullInvalidation:true, invalidations:["customerDomainSelection"]};
+  }
+  const collection = entity === "task" ? core.tasks : (entity === "contact" ? core.contacts : core.projects);
+  const record = (collection || []).find(function(row){ return String((row || {})[idKey] || "") === id; }) || null;
+  if(!record || !core.dashboard){
+    return {ok:true, authenticated:true, route:entity+"-create-canonical-v1", entityId:id,
+      sequence:sequence, fullInvalidation:true, invalidations:["canonicalRecord"]};
+  }
+  const out = {ok:true, authenticated:true, route:entity+"-create-canonical-v1", entityId:id,
+    sequence:sequence, record:record, dashboard:core.dashboard, fullInvalidation:false};
+  if(entity === "task"){
+    out.calendarRecord = (core.calendarTasks || []).find(function(row){
+      return String((row || {})["מזהה משימה"] || "") === id;
+    }) || null;
+    out.calendarCreatorsAllowed = (core.calendarCreatorsAllowed || []).slice();
+    out.calendarCreatorPermission = core.calendarCreatorPermission || {mode:"allowed", creators:[]};
+  }
+  if(entity === "project") out.links = (core.links || []).slice();
+  return out;
+}
+
+function שמירת_משימה_חדשה_קנונית_Build17(data){
+  if(data && data.id) throw new Error("נתיב יצירה אינו רשאי לערוך משימה קיימת");
+  return BH_createCanonicalResponse_Build17_("task", data, שמירת_משימה, "מזהה משימה");
+}
+function שמירת_איש_קשר_חדש_קנונית_Build17(data){
+  if(data && data.id) throw new Error("נתיב יצירה אינו רשאי לערוך איש קשר קיים");
+  const requestedPermission = String(data && data.systemPermission || "ללא הרשאה").trim();
+  const response = BH_createCanonicalResponse_Build17_("contact", data, שמירת_איש_קשר, "מזהה איש קשר");
+  // Creating a login-capable system user changes security-sensitive user lists.
+  // The client must not infer those collections from a contact row.
+  if(response && response.authenticated === true && requestedPermission !== "ללא הרשאה"){
+    response.fullInvalidation = true;
+    response.invalidations = ["permissions", "systemUsers"];
+  }
+  return response;
+}
+function שמירת_פרויקט_חדש_קנונית_Build17(data){
+  if(data && data.id) throw new Error("נתיב יצירה אינו רשאי לערוך פרויקט קיים");
+  return BH_createCanonicalResponse_Build17_("project", data, שמירת_פרויקט, "מזהה פרויקט");
+}
 var BH_DIAG_originalSaveContact_ = שמירת_איש_קשר;
 שמירת_איש_קשר = function(data, requestId){ return BH_mutationPerf_('saveContact', function(){ return BH_DIAG_originalSaveContact_(data); }, requestId || (data && data.requestId)); };
 var BH_DIAG_originalSaveTask_ = שמירת_משימה;

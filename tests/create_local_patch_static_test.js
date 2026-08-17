@@ -1,0 +1,14 @@
+const fs=require('fs'),assert=require('assert');
+const html=fs.readFileSync('index.html','utf8'), gs=fs.readFileSync('V2.GS.txt','utf8');
+const block=html.match(/<script id="BH_CREATE_LOCAL_PATCH_BUILD17">([\s\S]*?)<\/script>/)[1];
+assert(/goDashboard\s*=\s*function\(\)[\s\S]*tab\('dashboard'/.test(block));
+assert(!/goDashboard\s*=\s*function\(\)[\s\S]{0,150}(hardRefresh|load\(|refreshCore\()/.test(block));
+for(const entity of ['task','contact','project']) assert(block.includes("runCreate('"+entity+"'"));
+assert(block.includes('if(fellBack) return'));
+assert(block.includes('if(pending[entity]) return'));
+assert(block.includes('CRM_MUTATION_PERF'));
+for(const route of ['שמירת_משימה_חדשה_קנונית_Build17','שמירת_איש_קשר_חדש_קנונית_Build17','שמירת_פרויקט_חדש_קנונית_Build17']) assert(gs.includes('function '+route));
+assert(gs.includes('requestedPermission !== "ללא הרשאה"'));
+assert(gs.includes('out.calendarCreatorsAllowed'));
+assert(gs.includes('out.links = (core.links || []).slice()'));
+console.log('create local patch static test passed');
