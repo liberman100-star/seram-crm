@@ -7768,7 +7768,7 @@ window.calendarTasksForDate = function(d){
   function valid(response, entity, sequence){
     return !!(response && response.ok === true && response.authenticated === true &&
       response.route === entity + '-create-canonical-v1' && response.fullInvalidation === false &&
-      Number(response.sequence) === sequence && response.record && response.dashboard &&
+      Number(response.sequence) === sequence && response.record && response.dashboardPatch &&
       String(response.entityId || '') !== '');
   }
   function replaceOrInsert(rows, record, idKey, id){
@@ -7801,15 +7801,32 @@ window.calendarTasksForDate = function(d){
       DATA.calendarTasks = response.calendarRecord
         ? replaceOrInsert(DATA.calendarTasks, response.calendarRecord, 'מזהה משימה', id)
         : (Array.isArray(DATA.calendarTasks) ? DATA.calendarTasks : []).filter(row=>String((row||{})['מזהה משימה']||'') !== String(id));
-      if(Array.isArray(response.calendarCreatorsAllowed)) DATA.calendarCreatorsAllowed = response.calendarCreatorsAllowed.slice();
-      if(response.calendarCreatorPermission) DATA.calendarCreatorPermission = response.calendarCreatorPermission;
+      if(Array.isArray(response.calendarCreatorsAdded)){
+        DATA.calendarCreatorsAllowed = [...new Set((DATA.calendarCreatorsAllowed || []).concat(response.calendarCreatorsAdded))];
+        if(DATA.calendarCreatorPermission && Array.isArray(DATA.calendarCreatorPermission.creators))
+          DATA.calendarCreatorPermission.creators = [...new Set(DATA.calendarCreatorPermission.creators.concat(response.calendarCreatorsAdded))];
+      }
     }else if(entity === 'contact'){
       DATA.contacts = replaceOrInsert(DATA.contacts, response.record, 'מזהה איש קשר', id);
     }else{
       DATA.projects = replaceOrInsert(DATA.projects, response.record, 'מזהה פרויקט', id);
-      if(Array.isArray(response.links)) DATA.links = response.links.slice();
+      (response.affectedLinks || []).forEach(link=>{ DATA.links=replaceOrInsert(DATA.links,link,'מזהה שיוך',link['מזהה שיוך']); });
     }
-    DATA.dashboard = response.dashboard;
+    applyDashboardPatch(response.dashboardPatch, response.record);
+  }
+  function applyDashboardPatch(patch, record){
+    if(!patch || patch.countDelta !== 1) throw new Error('invalid dashboard patch');
+    const dashboard=Object.assign({},DATA.dashboard||{});
+    const countKey={task:'tasksCount',contact:'contactsCount',project:'projectsCount'}[patch.entity];
+    if(!countKey) throw new Error('invalid dashboard entity');
+    dashboard[countKey]=Number(dashboard[countKey]||0)+1;
+    if(patch.entity==='task' && patch.taskBucket!=='none'){
+      if(!['lateTasks','todayTasks','weekTasks'].includes(patch.taskBucket)) throw new Error('invalid task bucket');
+      dashboard[patch.taskBucket]=(dashboard[patch.taskBucket]||[]).concat([record]);
+    }
+    if(patch.entity==='project' && (dashboard.activeProjects||[]).length<5)
+      dashboard.activeProjects=(dashboard.activeProjects||[]).concat([record]).slice(0,5);
+    DATA.dashboard=dashboard;
   }
   function runCreate(entity, payload, route){
     if(pending[entity]) return;

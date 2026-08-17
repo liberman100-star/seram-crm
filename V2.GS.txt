@@ -5135,7 +5135,7 @@ function שמירת_איש_קשר(data) {
   סנכרון_איש_קשר_למשתמש_Build6_2(row);
   log_("שמירת איש קשר", row["שם מלא"]);
 
-  return id;
+  return data.returnCanonicalRow === true ? BH_normalizeTaskMutationValue_(row, "") : id;
 }
 
 function שמירת_פרויקט(data) {
@@ -5189,7 +5189,7 @@ function שמירת_פרויקט(data) {
 
   upsert_(SHEETS.PROJECTS, "מזהה פרויקט", row["מזהה פרויקט"], row);
   log_("שמירת פרויקט", row["שם פרויקט"]);
-  return row["מזהה פרויקט"];
+  return data.returnCanonicalRow === true ? BH_normalizeTaskMutationValue_(row, "") : row["מזהה פרויקט"];
 }
 
 function BH_taskCreatorForSave_(oldTask, authenticatedUserName){
@@ -5304,6 +5304,7 @@ function שמירת_משימה(data) {
 
   log_("שמירת משימה", row["כותרת"]);
 
+  if (data.returnCanonicalRow === true) return BH_assertTaskMutationSerializable_(BH_normalizeTaskMutationValue_(row, ""), "task");
   if (!data.clientSequence) return id;
 
   // Reuse the effective Full Core pipeline so visibility, calendar enrichment and
@@ -6709,33 +6710,69 @@ function שמירת_פרויקט_קנונית_Build16(data){
 function BH_createCanonicalResponse_Build17_(entity, data, saveFunction, idKey){
   data = data || {};
   const sequence = Number(data.sequence || 0);
-  const id = String(saveFunction(data, data.requestId) || "");
-  const core = קבלת_נתוני_ליבה_Build13(data.authToken, data.requestId);
-  if(!core || !core.auth || core.auth.allowed !== true){
-    return {ok:false, authenticated:false, route:entity+"-create-canonical-v1", entityId:id,
-      sequence:sequence, fullInvalidation:false, auth:core && core.auth || null};
-  }
-  if(core.auth.domainSelectionRequired === true || core.domainSelectionRequired === true){
-    return {ok:true, authenticated:true, route:entity+"-create-canonical-v1", entityId:id,
-      sequence:sequence, fullInvalidation:true, invalidations:["customerDomainSelection"]};
-  }
-  const collection = entity === "task" ? core.tasks : (entity === "contact" ? core.contacts : core.projects);
-  const record = (collection || []).find(function(row){ return String((row || {})[idKey] || "") === id; }) || null;
-  if(!record || !core.dashboard){
+  const saveData = Object.assign({}, data, {returnCanonicalRow:true});
+  const record = saveFunction(saveData, data.requestId);
+  const id = String(record && record[idKey] || "");
+  if(!record || !id){
     return {ok:true, authenticated:true, route:entity+"-create-canonical-v1", entityId:id,
       sequence:sequence, fullInvalidation:true, invalidations:["canonicalRecord"]};
   }
   const out = {ok:true, authenticated:true, route:entity+"-create-canonical-v1", entityId:id,
-    sequence:sequence, record:record, dashboard:core.dashboard, fullInvalidation:false};
+    sequence:sequence, record:record, dashboardPatch:BH_createDashboardPatch_Build17_(entity, record), fullInvalidation:false};
   if(entity === "task"){
-    out.calendarRecord = (core.calendarTasks || []).find(function(row){
-      return String((row || {})["מזהה משימה"] || "") === id;
-    }) || null;
-    out.calendarCreatorsAllowed = (core.calendarCreatorsAllowed || []).slice();
-    out.calendarCreatorPermission = core.calendarCreatorPermission || {mode:"allowed", creators:[]};
+    const user = משתמש_מפועל_Build11_2_(data.authToken);
+    const project = BH_createFindRow_Build17_(SHEETS.PROJECTS, "מזהה פרויקט", record["מזהה פרויקט"]);
+    const enrichedRecord = BH_createCalendarRecord_Build17_(record, project);
+    const isSuperAdmin = user && (user.isOwner === true || String(user.role || "") === "מנהל ראשי");
+    const projectId = String(record["מזהה פרויקט"] || "").trim();
+    const contactId = String(record["מזהה איש קשר"] || "").trim();
+    const calendarVisible = !!(isSuperAdmin || projectId || (!projectId && contactId && contactId === String(user && user.contactId || "")));
+    out.record = enrichedRecord;
+    out.calendarRecord = calendarVisible ? enrichedRecord : null;
+    out.calendarCreatorsAdded = calendarVisible ? (enrichedRecord.calendarMembers || []).slice() : [];
+    out.calendarPermissionMode = isSuperAdmin ? "all" : "allowed";
   }
-  if(entity === "project") out.links = (core.links || []).slice();
+  if(entity === "project") out.affectedLinks = [];
   return out;
+}
+
+function BH_createDashboardPatch_Build17_(entity, record){
+  const patch = {entity:entity, countDelta:1};
+  if(entity === "project") patch.activeProject = record;
+  if(entity === "task"){
+    const status = String(record["סטטוס"] || "");
+    const date = record["תאריך"] ? new Date(record["תאריך"]) : null;
+    const today = new Date(); today.setHours(0,0,0,0);
+    const week = new Date(today); week.setDate(week.getDate()+7);
+    if(date) date.setHours(0,0,0,0);
+    patch.taskBucket = status === "בוצע" || status === "בוטל" || !date ? "none" :
+      (date < today ? "lateTasks" : (date.getTime() === today.getTime() ? "todayTasks" : (date <= week ? "weekTasks" : "none")));
+  }
+  return patch;
+}
+
+function BH_createFindRow_Build17_(sheetName, idHeader, id){
+  id = String(id || "").trim();
+  if(!id) return {};
+  const sheet = getSS_().getSheetByName(sheetName);
+  if(!sheet || !sheet.getLastRow() || !sheet.getLastColumn()) return {};
+  const headers = sheet.getRange(1,1,1,sheet.getLastColumn()).getValues()[0].map(function(value){ return String(value || "").trim(); });
+  const idColumn = headers.indexOf(idHeader);
+  if(idColumn < 0 || sheet.getLastRow() < 2) return {};
+  const match = sheet.getRange(2,idColumn+1,sheet.getLastRow()-1,1).createTextFinder(id).matchEntireCell(true).findNext();
+  if(!match) return {};
+  const values = sheet.getRange(match.getRow(),1,1,headers.length).getValues()[0];
+  const row = {}; headers.forEach(function(header,index){ row[header]=formatValue_(values[index],header); });
+  return row;
+}
+
+function BH_createCalendarRecord_Build17_(task, project){
+  const record = Object.assign({}, task);
+  const members = BH_calendarMembersForTask_(record, project || {});
+  const key = members.length ? members[0] : "ללא יומן";
+  record.calendarMembers=members; record["יומן"]=key; record["תג יומן"]=key;
+  record.calendarKey=key; record.calendarColorIndex=BH_calendarColorIndex_(key);
+  return BH_normalizeTaskMutationValue_(record, "");
 }
 
 function שמירת_משימה_חדשה_קנונית_Build17(data){
@@ -6744,11 +6781,10 @@ function שמירת_משימה_חדשה_קנונית_Build17(data){
 }
 function שמירת_איש_קשר_חדש_קנונית_Build17(data){
   if(data && data.id) throw new Error("נתיב יצירה אינו רשאי לערוך איש קשר קיים");
-  const requestedPermission = String(data && data.systemPermission || "ללא הרשאה").trim();
   const response = BH_createCanonicalResponse_Build17_("contact", data, שמירת_איש_קשר, "מזהה איש קשר");
   // Creating a login-capable system user changes security-sensitive user lists.
   // The client must not infer those collections from a contact row.
-  if(response && response.authenticated === true && requestedPermission !== "ללא הרשאה"){
+  if(response && response.authenticated === true && String(response.record && response.record["הרשאת מערכת"] || "ללא הרשאה").trim() !== "ללא הרשאה"){
     response.fullInvalidation = true;
     response.invalidations = ["permissions", "systemUsers"];
   }
