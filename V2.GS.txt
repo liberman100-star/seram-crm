@@ -3053,7 +3053,7 @@ function קבלת_כרטיס_משימה_Build10(arg) {
   };
 }
 
-function שליחת_זימון_יומן_למשימה_Build11(arg) { const x = חילוץ_מזהה_וטוקן_Build11_2_(arg); דרוש_כתיבה_Build11_2_(x.token); const rows = readSheet_(SHEETS.TASKS); const task = rows.find(t => t["מזהה משימה"] === x.id); if (!task) throw new Error("המשימה לא נמצאה"); if (task["כניסה ליומן"] !== "כן") throw new Error("המשימה אינה מסומנת לכניסה ליומן"); if (!task["תאריך"] || !task["שעה"]) throw new Error("כדי לשלוח זימון ליומן חובה למלא תאריך ושעה"); if (task["סוג משימה"] === "פגישה" && !task["שעת סיום"]) throw new Error("בפגישה חובה למלא שעת סיום"); const before = task["מזהה אירוע ביומן"] || ""; task["מזהה אירוע ביומן"] = syncCalendarEvent_(task); task["עדכון אחרון"] = new Date(); upsert_(SHEETS.TASKS, "מזהה משימה", x.id, task); return { ok: true, eventId: task["מזהה אירוע ביומן"], message: before ? "עדכון הזימון נשלח/עודכן ביומן" : "הזימון נשלח למשתתפים" }; }
+function שליחת_זימון_יומן_למשימה_Build11(arg) { const x = חילוץ_מזהה_וטוקן_Build11_2_(arg); דרוש_כתיבה_Build11_2_(x.token); const rows = readSheet_(SHEETS.TASKS); const task = rows.find(t => t["מזהה משימה"] === x.id); if (!task) throw new Error("המשימה לא נמצאה"); if (task["כניסה ליומן"] !== "כן") throw new Error("המשימה אינה מסומנת לכניסה ליומן"); if (!task["תאריך"] || !task["שעה"]) throw new Error("כדי לשלוח זימון ליומן חובה למלא תאריך ושעה"); if (task["סוג משימה"] === "פגישה" && !task["שעת סיום"]) throw new Error("בפגישה חובה למלא שעת סיום"); const before = task["מזהה אירוע ביומן"] || ""; task["מזהה אירוע ביומן"] = syncCalendarEvent_(task, { includeGuests: true, sendUpdates: "all" }); task["עדכון אחרון"] = new Date(); upsert_(SHEETS.TASKS, "מזהה משימה", x.id, task); return { ok: true, eventId: task["מזהה אירוע ביומן"], message: before ? "עדכון הזימון נשלח/עודכן ביומן" : "הזימון נשלח למשתתפים" }; }
 
 
 /* הוסר: מופע ישן של function שמירת_הרשאות_תפקיד_Build8 — נשמרה הגרסה המאוחרת בקובץ */
@@ -3562,7 +3562,7 @@ function buildTaskEndDateTime_(task, start) {
   return new Date(start.getTime() + minutes * 60 * 1000);
 }
 
-function BH_calendarEventResource_(task, start, end) {
+function BH_calendarEventResource_(task, start, end, includeGuests) {
   const meetingIds = BH_splitContactIds_(task && task["אנשי קשר בפגישה"]);
   const guestEmails = meetingIds.length
     ? BH_meetingContactEmailsForTask_(task)
@@ -3581,9 +3581,9 @@ function BH_calendarEventResource_(task, start, end) {
     location: task["מיקום"] || task["מיקום פגישה"] || "",
     start: { dateTime: start.toISOString(), timeZone: CONFIG.TIMEZONE },
     end: { dateTime: end.toISOString(), timeZone: CONFIG.TIMEZONE },
-    attendees: guests,
     reminders: { useDefault: false, overrides: [{ method: "email", minutes: 60 }, { method: "popup", minutes: 60 }] }
   };
+  if (includeGuests === true) resource.attendees = guests;
   return resource;
 }
 
@@ -3591,7 +3591,8 @@ function BH_calendarApiEventId_(eventId) {
   return String(eventId || "").split("@")[0];
 }
 
-function syncCalendarEvent_(task) {
+function syncCalendarEvent_(task, options) {
+  options = options || {};
   if (typeof Calendar === "undefined" || !Calendar.Events) {
     throw new Error("יש להפעיל את שירות Google Calendar API (Advanced Calendar Service) בפרויקט Apps Script לפני שניתן לשלוח זימונים.");
   }
@@ -3599,19 +3600,24 @@ function syncCalendarEvent_(task) {
   const calendarId = task["מזהה יומן"] || CONFIG.CALENDAR_ID || "primary";
   const start = buildDateTime_(task["תאריך"], task["שעה"]);
   const end = buildTaskEndDateTime_(task, start);
-  const resource = BH_calendarEventResource_(task, start, end);
+  const resource = BH_calendarEventResource_(task, start, end, options.includeGuests === true);
+  const sendUpdates = options.sendUpdates || "none";
   const existingId = BH_calendarApiEventId_(task["מזהה אירוע ביומן"] || "");
 
   if (existingId) {
     try {
-      const updated = Calendar.Events.update(resource, calendarId, existingId, { sendUpdates: "all" });
+      // A normal save patches event fields so omitted attendees remain untouched.
+      // The dedicated invitation action performs a full update with its guest list.
+      const updated = options.includeGuests === true
+        ? Calendar.Events.update(resource, calendarId, existingId, { sendUpdates: sendUpdates })
+        : Calendar.Events.patch(resource, calendarId, existingId, { sendUpdates: sendUpdates });
       return updated.id || existingId;
     } catch (e) {
       throw new Error("עדכון אירוע קיים נכשל: " + (e && e.message ? e.message : e));
     }
   }
 
-  const created = Calendar.Events.insert(resource, calendarId, { sendUpdates: "all" });
+  const created = Calendar.Events.insert(resource, calendarId, { sendUpdates: sendUpdates });
   return created.id;
 }
 
@@ -5301,11 +5307,15 @@ function שמירת_משימה(data) {
     BH_ASSIGNMENT_assertCalendarParticipants_(row["משתתפי יומן"], row["מזהה פרויקט"], actor, old ? old["משתתפי יומן"] : "", {domain: taskProjectDomain, projects: validationProjects, contacts: validationContacts, links: validationLinks});
   }
 
+  if (row["כניסה ליומן"] === "כן" && row["תאריך"] && row["שעה"]) {
+    row["מזהה אירוע ביומן"] = syncCalendarEvent_(row, { includeGuests: false, sendUpdates: "none" });
+  }
+
   upsert_ללא_אימות_(SHEETS.TASKS, "מזהה משימה", id, row);
   BH_ASSIGNMENT_logTaskDateChange_(old, row);
 
-  // Issue #40: saving a task must only persist CRM data.
-  // Calendar creation/update/deletion is intentionally limited to שליחת_זימון_יומן_למשימה_Build11.
+  // Saving synchronizes the event itself. Guest invitations remain exclusive to
+  // שליחת_זימון_יומן_למשימה_Build11; changing the flag to "לא" keeps any historical event.
 
   log_("שמירת משימה", row["כותרת"]);
 
@@ -7193,12 +7203,13 @@ function BH_FAST_shellForPrivilegedUser_(user){
   const calendar=BH_FAST_enrichCalendar_(taskSummary.dated,currentUser,projectSummary.shape);
   const projectRows=projectSummary.rows.concat(Array(Math.max(0,projectSummary.count-projectSummary.rows.length)).fill(0).map(function(){return {};}));
   const contactRows=Array(contactSummary.count).fill(0).map(function(){return {};});
-  return {schemaVersion:1,payloadType:'openingShell',auth:{allowed:true},system:מיתוג_מערכת_Build7_(),currentUser:currentUser,
+  const shell={schemaVersion:1,payloadType:'openingShell',auth:{allowed:true},system:מיתוג_מערכת_Build7_(),currentUser:currentUser,
     canSeeSettings:actions.canSeeSettings,canSeeDashboard:actions.canSeeDashboard,canSeeArchive:actions.canSeeArchive,
     canSeeTimeline:actions.canSeeTimeline,actionPermissions:actions,canCreate:actions.canCreate,canEdit:actions.canEdit,
     canDelete:actions.canDelete,readOnly:actions.readOnly,accessNotice:'',dashboard:calcDashboard_(projectRows,contactRows,taskSummary.allForDashboard),
     tasks:calendar.tasks,calendarTasks:calendar.calendarTasks,calendarCreatorsAllowed:calendar.calendarCreatorsAllowed,
     calendarCreatorPermission:calendar.calendarCreatorPermission,loadedModules:{dashboard:true}};
+  return BH_DB_attachCoreBranding_(shell);
 }
 
 // The client supplies only a rollout preference. Authentication and role eligibility remain server-owned.
@@ -7236,7 +7247,10 @@ function BH_FAST_moduleForAuthorizedUser_(token,module){
   if(module==='projects'){out.projects=filtered.projects||[];out.categories=קבלת_קטגוריות_לבחירה_Build4_4();out.realSettings=קבלת_הגדרות_לממשק_Build4_3();}
   if(module==='contacts'){out.contacts=filtered.contacts||[];out.categories=קבלת_קטגוריות_לבחירה_Build4_4();out.realSettings=קבלת_הגדרות_לממשק_Build4_3();}
   if(module==='tasks'){out.tasks=filtered.tasks||[];out.projects=filtered.projects||[];out.contacts=filtered.contacts||[];out.links=filtered.links||[];out.categories=קבלת_קטגוריות_לבחירה_Build4_4();out.realSettings=קבלת_הגדרות_לממשק_Build4_3();}
-  if(module==='settings'){out.categories=data.categories;out.realSettings=data.realSettings;out.fields=data.fields;out.permissions=data.permissions;}
+  if(module==='settings'){
+    out.categories=data.categories;out.realSettings=data.realSettings;out.fields=data.fields;out.permissions=data.permissions;
+    out=BH_DB_attachCoreBranding_(out);
+  }
   if(module==='archive')out=BH13_4_archivePayloadFromCanonical_(out,filtered,currentUser);
   out.loadedModules=out.loadedModules||{};out.loadedModules[module]=true;
   return BH13_4_applyCustomerDomainIfNeeded_(out,token,module);

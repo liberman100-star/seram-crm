@@ -579,6 +579,8 @@ function hideLogin(){ loginScreen.classList.add('hidden'); }
 function currentToken(){ return localStorage.getItem('CRM_SESSION_TOKEN') || ''; }
 function setToken(t){ localStorage.setItem('CRM_SESSION_TOKEN', t); }
 function clearToken(){ localStorage.removeItem('CRM_SESSION_TOKEN'); }
+let CRM_LOGIN_VERIFY_IN_FLIGHT = false;
+let CRM_LOGIN_VERIFY_ATTEMPT = 0;
 
 function sendLoginCode(){
   const email = (loginEmail.value || '').trim();
@@ -595,6 +597,9 @@ function sendLoginCode(){
 }
 
 function verifyLoginCode(){
+  if(CRM_LOGIN_VERIFY_IN_FLIGHT) return;
+  CRM_LOGIN_VERIFY_IN_FLIGHT = true;
+  const attempt = ++CRM_LOGIN_VERIFY_ATTEMPT;
   const email = (loginEmail.value || '').trim();
   const code = (loginCode.value || '').trim();
 
@@ -602,7 +607,9 @@ function verifyLoginCode(){
 
   BH_UI_withBusy(null,'מתחבר...',finish=>google.script.run
     .withSuccessHandler(finish(res=>{
+      if(attempt !== CRM_LOGIN_VERIFY_ATTEMPT) return;
       if(!res || !res.ok){
+        CRM_LOGIN_VERIFY_IN_FLIGHT = false;
         loginMessage.textContent = (res && res.message) || 'קוד שגוי';
         return;
       }
@@ -616,9 +623,15 @@ function verifyLoginCode(){
       }catch(e){}
 
       loginMessage.textContent = '';
-      window.location.replace(CRM_WEB_APP_URL + "?refresh=" + Date.now());
+      CRM_LOGIN_VERIFY_IN_FLIGHT = false;
+      hideLogin();
+      load(true);
     }))
-    .withFailureHandler(finish(e=> loginMessage.textContent = e.message))
+    .withFailureHandler(finish(e=>{
+      if(attempt !== CRM_LOGIN_VERIFY_ATTEMPT) return;
+      CRM_LOGIN_VERIFY_IN_FLIGHT = false;
+      showLogin(e && e.message ? e.message : 'שגיאה באימות הקוד');
+    }))
     .אימות_קוד_כניסה_Build7(email, code));
 }
 

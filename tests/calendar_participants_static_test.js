@@ -17,11 +17,11 @@ has(gs, /const meetingIds = BH_splitContactIds_\(task && task\["אנשי קשר 
 has(gs, /meetingIds\.length\s*\? BH_meetingContactEmailsForTask_\(task\)/, 'calendar attendees are derived from meeting contacts when ids exist');
 has(gs, /: נרמול_רשימת_מיילים_Build11_\(task\["משתתפי יומן"\]/, 'legacy calendar participants remain compatible when no meeting ids exist');
 has(gs, /יש להפעיל את שירות Google Calendar API \(Advanced Calendar Service\)/, 'advanced calendar missing-service error is administrator friendly');
-has(gs, /Calendar\.Events\.insert\(resource, calendarId, \{ sendUpdates: "all" \}\)/, 'dedicated invitation path creates calendar events');
-has(gs, /Calendar\.Events\.update\(resource, calendarId, existingId, \{ sendUpdates: "all" \}\)/, 'dedicated invitation path updates calendar events');
-has(gs, /attendees: guests/, 'calendar resource contains guests');
+has(gs, /syncCalendarEvent_\(task, \{ includeGuests: true, sendUpdates: "all" \}\)/, 'dedicated invitation path creates calendar events with guest updates');
+has(gs, /Calendar\.Events\.update\(resource, calendarId, existingId, \{ sendUpdates: sendUpdates \}\)/, 'shared event path honors invitation update semantics');
+has(gs, /includeGuests === true\) resource\.attendees = guests/, 'calendar resource contains guests only when explicitly requested');
 has(gs, /const existingId = BH_calendarApiEventId_\(task\["מזהה אירוע ביומן"\]/, 'existing event id is reused');
-not(gs, /שמירת_משימה[\s\S]*?syncCalendarEvent_\(row\)/, 'saveTask does not create or update calendar events');
+has(gs, /שמירת_משימה[\s\S]*?syncCalendarEvent_\(row, \{ includeGuests: false, sendUpdates: "none" \}\)/, 'saveTask syncs calendar events without invitations');
 not(gs, /שמירת_משימה[\s\S]*?מחיקת_אירוע_יומן_אם_קיים_\(calendarId\)/, 'saveTask does not delete calendar events');
 
 has(html, /BH_normalizeCalendarParticipants/, 'client keeps legacy participant normalization helper for backwards compatibility');

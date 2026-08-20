@@ -1,0 +1,12 @@
+const fs=require('fs'),assert=require('assert');
+const html=fs.readFileSync('index.html','utf8'),gs=fs.readFileSync('V2.GS.txt','utf8');
+assert(html.includes("if(SETTINGS_TAB==='branding') return renderBrandingSettings()"),'Settings branding tab retains general branding renderer');
+assert(html.includes("const oldRenderBrandingSettings = window.renderBrandingSettings"),'assignment-domain UI extends the existing general editor');
+assert(html.includes('מיתוגי תחומי שיוך')&&html.includes('openDomainBrandingEditor()'),'assignment-domain list and add editor remain present');
+assert(html.includes('archiveDomainBranding')&&html.includes('restoreDomainBranding'),'active/archive management remains present');
+assert(html.includes('.שמירת_מיתוג_תחום_שיוך({')&&gs.includes('function קבלת_מיתוג_תחומי_שיוך_לניהול(token)'),'existing APIs are reused');
+assert(gs.includes('if(module===\'settings\'){\n    out.categories=data.categories;out.realSettings=data.realSettings;out.fields=data.fields;out.permissions=data.permissions;\n    out=BH_DB_attachCoreBranding_(out);'),'lazy Settings payload attaches canonical authorized branding data');
+assert(gs.includes('if(data.currentUser && (data.currentUser.isOwner === true || String(data.currentUser.role||"").trim() === "מנהל ראשי"))'),'admin branding payload remains owner/super-admin only');
+assert(gs.includes('return BH_DB_attachCoreBranding_(shell);'),'Fast Opening uses canonical root branding helper');
+assert(!gs.includes('domainBrandingAdmin = BH_DB_adminPayload_();\n    data.domainBrandingAdmin = BH_DB_adminPayload_();'),'no duplicate branding model introduced');
+console.log('branding settings/Fast Opening assertions passed');
