@@ -1,14 +1,15 @@
 const fs=require('fs'),vm=require('vm'),assert=require('assert');
 const html=fs.readFileSync('index.html','utf8');
 const block=html.match(/<script id="BH_CREATE_LOCAL_PATCH_BUILD17">([\s\S]*?)<\/script>/)[1];
-let dashboard=0, calendar=0, tabCalls=0, loads=0, refreshes=0;
+let dashboard=0, calendar=0, tabCalls=0, loads=0, refreshes=0, warnings=0, createSuccess;
 const context={console,window:null,DATA:{tasks:[],calendarTasks:[],contacts:[],projects:[],links:[],dashboard:{}},
   __BH_LOADED_MODULES__:{tasks:true,contacts:true,projects:true},document:{getElementById:()=>({})},
   tab:(id)=>{assert.equal(id,'dashboard');tabCalls++},renderDashboard:()=>dashboard++,renderCalendarDashboard:()=>calendar++,
   tableTasks(){},tableContacts(){},tableProjects(){},openTaskCard(){},openContactCardById(){},openProjectCard(){},
   saveTask(){},saveContact(){},saveProject(){},refreshCore:()=>refreshes++,load:()=>loads++,currentToken:()=>'',
   clearToken(){},showLogin(){},closeM(){},BH_UI_setBusy:()=>()=>{},CRM_perfNow_:()=>0,CRM_perfLog_(){},
-  canCreate:()=>true,alert(){},google:{script:{run:{}}}};context.window=context;
+  BH_showTaskCalendarSyncWarning(response){if(response.calendarSync&&response.calendarSync.ok===false){warnings++;return true}return false},
+  canCreate:()=>true,alert(){},google:{script:{run:{withSuccessHandler(fn){createSuccess=fn;return this},withFailureHandler(){return this},createTaskRoute(){return this}}}}};context.window=context;
 vm.createContext(context);vm.runInContext(block,context);
 context.goDashboard();
 assert.equal(tabCalls,1);assert.equal(loads,0);assert.equal(refreshes,0);assert.deepEqual(context.__BH_LOADED_MODULES__,{tasks:true,contacts:true,projects:true});
@@ -21,4 +22,9 @@ api.apply({entityId:'p1',record:{'מזהה פרויקט':'p1'},affectedLinks:[{'
 assert.equal(context.DATA.contacts[0]['מזהה איש קשר'],'c1');assert.equal(context.DATA.projects[0]['מזהה פרויקט'],'p1');assert.equal(context.DATA.links.length,1);
 assert(api.valid({ok:true,authenticated:true,route:'task-create-canonical-v1',fullInvalidation:false,sequence:7,entityId:'t',record:task,dashboardPatch:{entity:'task',countDelta:1}},'task',7));
 assert(!api.valid({},'task',7));
+api.runCreate('task',{},'createTaskRoute');
+createSuccess({ok:true,authenticated:true,route:'task-create-canonical-v1',fullInvalidation:false,sequence:1,entityId:'t2',record:{'מזהה משימה':'t2'},calendarRecord:null,dashboardPatch:{entity:'task',countDelta:1,taskBucket:'none'},calendarSync:{attempted:true,ok:false,message:'warning'}});
+assert.equal(context.DATA.tasks.some(t=>t['מזהה משימה']==='t2'),true,'calendar failure still applies CREATE task locally');
+assert.equal(refreshes,0,'calendar warning does not trigger Full Core fallback');
+assert.equal(warnings,1,'calendar warning is shown once');
 console.log('create local patch runtime test passed');

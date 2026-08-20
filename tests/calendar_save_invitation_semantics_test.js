@@ -1,0 +1,15 @@
+const fs=require('fs'),assert=require('assert');
+const gs=fs.readFileSync('V2.GS.txt','utf8');
+const flow=gs.slice(gs.indexOf('function BH_persistTaskThenSyncCalendar_'),gs.indexOf('function שמירת_משימה(data)'));
+assert(flow.indexOf('upsert_ללא_אימות_') < flow.indexOf('syncCalendarEvent_'),'CRM persistence precedes Calendar sync');
+assert(flow.includes('includeGuests:false, sendUpdates:"none"'),'normal save syncs without guests or notifications');
+assert(flow.includes('result.ok = false')&&flow.includes('המשימה נשמרה'),'Calendar failure is a non-fatal structured warning');
+assert(flow.includes('BH_patchTaskCalendarFields_'),'successful sync narrowly patches event fields');
+assert(!flow.includes('Calendar.Events.delete'),'changing the flag to no preserves the historical event');
+const invite=gs.slice(gs.indexOf('function שליחת_זימון_יומן_למשימה_Build11'),gs.indexOf('function יצירת_משתמש_חדש_Build11',gs.indexOf('function שליחת_זימון_יומן_למשימה_Build11')));
+assert(invite.includes('includeGuests: true, sendUpdates: "all"'),'dedicated invitation action syncs guests and sends updates');
+const sync=gs.slice(gs.indexOf('function BH_calendarEventResource_'),gs.indexOf('/***********************',gs.indexOf('function BH_calendarEventResource_')));
+assert(sync.includes('if (includeGuests === true) resource.attendees = guests'),'shared resource builder only attaches guests explicitly');
+assert(sync.includes('options.sendUpdates || "none"'),'event sync defaults to no notifications');
+assert(fs.readFileSync('tests/create_local_patch_runtime_test.js','utf8').includes("route:'task-create-canonical-v1'"),'CREATE local-patch regression coverage remains present');
+console.log('calendar save/invitation semantics assertions passed');

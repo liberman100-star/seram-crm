@@ -35,5 +35,5 @@ has(html, /<button class="primary" onclick='openTask\(\$\{JSON\.stringify\(t\)\}
 has(gs, /function משימה_מותרת_לפתיחה_Build11_2_\(user, task\)[\s\S]*?משתמש_רשאי_לפרויקט_Build11_2_\(user, projectId\)[\s\S]*?משתמש_רשאי_לאיש_קשר_Build11_2_\(user, contactId\)/, 'task list filtering reuses the same project/contact open permissions');
 has(gs, /out\.tasks = \(data\.tasks \|\| \[\]\)\.filter\(t => משימה_מותרת_לפתיחה_Build11_2_\(user, t\)\)/, 'authorized task lists are filtered before dashboard/table/calendar payloads are built');
 has(gs, /if \(!משימה_מותרת_לפתיחה_Build11_2_\(user, task\)\) \{[\s\S]*?throw new Error\("אין הרשאה לצפייה במשימה זו"\);[\s\S]*?\}/, 'task card open path uses the shared task permission predicate');
-has(gs, /Calendar\.Events\.insert\(resource, calendarId, \{ sendUpdates: "all" \}\)/, 'calendar invitation sending remains intact');
+has(gs, /syncCalendarEvent_\(task, \{ includeGuests: true, sendUpdates: "all" \}\)/, 'calendar invitation sending remains intact');
 console.log('live regression static assertions passed');

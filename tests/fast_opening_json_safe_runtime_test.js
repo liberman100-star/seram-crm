@@ -46,7 +46,8 @@ const sandbox = {
   __BH_REQUEST_PERF__: null,
   פעולות_מותרות_Build11_2_: () => ({canSeeSettings:true, canSeeDashboard:true, canSeeArchive:true, canSeeTimeline:true, canCreate:true, canEdit:true, canDelete:true, readOnly:false}),
   מיתוג_מערכת_Build7_: () => ({name:'CRM'}),
-  calcDashboard_: () => ({openTasks:1})
+  calcDashboard_: () => ({openTasks:1}),
+  BH_DB_attachCoreBranding_: data => data
 };
 vm.createContext(sandbox);
 for (const name of ['formatValue_', 'BH_calendarMembersForTask_', 'BH_calendarOwnerForTask_', 'BH_calendarColorIndex_', 'BH_FAST_currentUser_', 'BH_FAST_trackRangeRead_', 'BH_FAST_sheetShape_', 'BH_FAST_column_', 'BH_FAST_fullRows_', 'BH_FAST_activeSummary_', 'BH_FAST_taskSummary_', 'BH_FAST_calendarProjects_', 'BH_FAST_enrichCalendar_', 'BH_FAST_shellForPrivilegedUser_']) {
