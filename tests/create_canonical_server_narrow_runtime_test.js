@@ -6,7 +6,7 @@ const source=gs.slice(start,end);
 let task, user, saves=0, helperCalls=[];
 const context={Date,Set,Object,Array,String,Number,BH15_CAL_PERMS_SHEET:'calendar permissions',
   SHEETS:{PROJECTS:'projects',CONTACTS:'contacts'},
-  שמירת_משימה:data=>{saves++;assert.strictEqual(data.returnCanonicalRow,true);return task;},
+  שמירת_משימה:data=>{saves++;assert.strictEqual(data.returnCanonicalRow,true);return {record:task,calendarSync:{attempted:true,ok:true,eventId:'EV-1',message:''}};},
   שמירת_איש_קשר:data=>({'מזהה איש קשר':'c1'}),שמירת_פרויקט:data=>({'מזהה פרויקט':'p1'}),
   משתמש_מפועל_Build11_2_:()=>user,
   BH_calendarMembersForTask_:row=>[row['יוצר'],row['אחראי']].filter(Boolean),BH_calendarColorIndex_:()=>1,
@@ -27,7 +27,7 @@ function create(overrides={},current={role:'משתמש',isOwner:false}){
 permissionRows=[];let response=create();
 assert.equal(response.calendarRecord,null,'a non-empty projectId must not make a denied task visible');
 permissionRows=[{allow:true,domain:'A'}];response=create();
-assert(response.calendarRecord,'canonical helper allowance includes the task');
+assert(response.calendarRecord,'canonical helper allowance includes the task');assert.equal(response.record['מזהה משימה'],'t1');assert.equal(response.calendarSync.eventId,'EV-1','canonical response carries narrow calendar result');
 permissionRows=[{allow:true,domain:'B'}];response=create();
 assert.equal(response.calendarRecord,null,'assignment-domain/permission mismatch remains denied');
 permissionRows=[];response=create({}, {role:'מנהל ראשי',isOwner:false});

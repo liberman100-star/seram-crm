@@ -7298,6 +7298,13 @@ window.calendarTasksForDate = function(d){
     else closeM();
   }
 
+  window.BH_showTaskCalendarSyncWarning = function(response){
+    const sync = response && response.calendarSync;
+    if(!sync || sync.attempted !== true || sync.ok !== false) return false;
+    alert(sync.message || 'המשימה נשמרה, אך הסנכרון ליומן Google נכשל');
+    return true;
+  };
+
   window.BH_saveTaskEditLocal = function(id, request){
     const key = String(id || '');
     if(!key || pending[key]) return false;
@@ -7318,6 +7325,7 @@ window.calendarTasksForDate = function(d){
           if(state.sequence < (latestApplied[key] || 0)) return fallbackOnce(state, 'stale-response', key, started);
           const patchStarted = Date.now();
           patch(response);
+          window.BH_showTaskCalendarSyncWarning(response);
           latestApplied[key] = state.sequence;
           metric({serverMs:serverMs,patchMs:Date.now()-patchStarted,fallback:false,fallbackReason:'',sequence:state.sequence,version:response.updatedAt,success:true});
         }catch(error){ fallbackOnce(state, 'local-patch-failed', key, started); }
@@ -7862,7 +7870,11 @@ window.calendarTasksForDate = function(d){
       if(done) return;
       if(!response || response.authenticated === false){ finish(); sessionExpired(response); mutationLog(perf,entity,started,'session-expired',false); return; }
       if(response.fullInvalidation === true || !valid(response,entity,sequence)){ fallback(); return; }
-      try { apply(response,entity); finish(); closeM(); renderCreate(entity,response); mutationLog(perf,entity,started,'success',false); }
+      try {
+        apply(response,entity);
+        if(entity === 'task' && typeof global.BH_showTaskCalendarSyncWarning === 'function') global.BH_showTaskCalendarSyncWarning(response);
+        finish(); closeM(); renderCreate(entity,response); mutationLog(perf,entity,started,'success',false);
+      }
       catch(error){ fallback(); }
     }).withFailureHandler(error=>{
       const message=String(error && (error.message||error)||'');
@@ -7900,7 +7912,7 @@ window.calendarTasksForDate = function(d){
       type:pType.value,status:pStatus.value,assignmentDomain:pAssignmentDomain.value,owner:pOwner.value,tags:pTags.value,drive:pDrive.value,
       ownerLinkMode:ownerLinkMode||''},'שמירת_פרויקט_חדש_קנונית_Build17');
   };
-  global.__BH_CREATE_PATCH_TEST__={apply:apply,valid:valid,pending:pending};
+  global.__BH_CREATE_PATCH_TEST__={apply:apply,valid:valid,pending:pending,runCreate:runCreate};
 })(window);
 </script>
 

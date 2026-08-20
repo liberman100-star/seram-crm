@@ -21,7 +21,7 @@ has(gs, /syncCalendarEvent_\(task, \{ includeGuests: true, sendUpdates: "all" \}
 has(gs, /Calendar\.Events\.update\(resource, calendarId, existingId, \{ sendUpdates: sendUpdates \}\)/, 'shared event path honors invitation update semantics');
 has(gs, /includeGuests === true\) resource\.attendees = guests/, 'calendar resource contains guests only when explicitly requested');
 has(gs, /const existingId = BH_calendarApiEventId_\(task\["מזהה אירוע ביומן"\]/, 'existing event id is reused');
-has(gs, /שמירת_משימה[\s\S]*?syncCalendarEvent_\(row, \{ includeGuests: false, sendUpdates: "none" \}\)/, 'saveTask syncs calendar events without invitations');
+has(gs, /BH_persistTaskThenSyncCalendar_[\s\S]*?syncCalendarEvent_\(row, \{ includeGuests:false, sendUpdates:"none" \}\)/, 'saveTask syncs calendar events without invitations');
 not(gs, /שמירת_משימה[\s\S]*?מחיקת_אירוע_יומן_אם_קיים_\(calendarId\)/, 'saveTask does not delete calendar events');
 
 has(html, /BH_normalizeCalendarParticipants/, 'client keeps legacy participant normalization helper for backwards compatibility');

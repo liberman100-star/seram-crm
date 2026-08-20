@@ -5207,6 +5207,56 @@ function BH_taskCreatorForSave_(oldTask, authenticatedUserName){
   return oldTask ? String(oldTask["יוצר"] || "").trim() : String(authenticatedUserName || "").trim();
 }
 
+function BH_patchTaskCalendarFields_(taskId, eventId, updatedAt){
+  const sh = getSS_().getSheetByName(SHEETS.TASKS);
+  if(!sh) throw new Error("לא נמצא גיליון משימות");
+  const lastCol = sh.getLastColumn();
+  const headers = sh.getRange(1, 1, 1, lastCol).getValues()[0].map(function(value){ return String(value || "").trim(); });
+  const idCol = headers.indexOf("מזהה משימה");
+  const eventCol = headers.indexOf("מזהה אירוע ביומן");
+  const updatedCol = headers.indexOf("עדכון אחרון");
+  if(idCol < 0 || eventCol < 0 || updatedCol < 0) throw new Error("חסרות עמודות סנכרון משימה");
+  const lastRow = sh.getLastRow();
+  const ids = lastRow > 1 ? sh.getRange(2, idCol + 1, lastRow - 1, 1).getValues() : [];
+  const index = ids.findIndex(function(value){ return String(value[0]) === String(taskId); });
+  if(index < 0) throw new Error("המשימה השמורה לא נמצאה");
+  const rowNumber = index + 2;
+  sh.getRange(rowNumber, eventCol + 1).setValue(eventId);
+  sh.getRange(rowNumber, updatedCol + 1).setValue(updatedAt);
+  clearSheetCache_(SHEETS.TASKS);
+}
+
+function BH_persistTaskThenSyncCalendar_(row, id){
+  // Sheets is authoritative: a persistence failure exits before Calendar is touched.
+  upsert_ללא_אימות_(SHEETS.TASKS, "מזהה משימה", id, row);
+  const result = {attempted:false, ok:true, eventId:String(row["מזהה אירוע ביומן"] || ""), message:""};
+  if(row["כניסה ליומן"] !== "כן" || !row["תאריך"] || !row["שעה"]) return result;
+  result.attempted = true;
+  let eventId;
+  try {
+    eventId = syncCalendarEvent_(row, { includeGuests:false, sendUpdates:"none" });
+  } catch(error) {
+    result.ok = false;
+    result.message = "המשימה נשמרה, אך הסנכרון ליומן Google נכשל";
+    return result;
+  }
+  result.eventId = String(eventId || "");
+  const persistedEventId = String(row["מזהה אירוע ביומן"] || "");
+  const persistedUpdatedAt = row["עדכון אחרון"];
+  row["מזהה אירוע ביומן"] = result.eventId;
+  row["עדכון אחרון"] = new Date();
+  try {
+    BH_patchTaskCalendarFields_(id, result.eventId, row["עדכון אחרון"]);
+  } catch(error) {
+    // Do not retry the insert in this request: Calendar may already contain the event.
+    row["מזהה אירוע ביומן"] = persistedEventId;
+    row["עדכון אחרון"] = persistedUpdatedAt;
+    result.ok = false;
+    result.message = "המשימה נשמרה והאירוע נוצר, אך שמירת מזהה האירוע במשימה נכשלה";
+  }
+  return result;
+}
+
 function שמירת_משימה(data) {
   const actor = דרוש_כתיבה_Build11_2_(data && data.authToken);
 
@@ -5307,11 +5357,7 @@ function שמירת_משימה(data) {
     BH_ASSIGNMENT_assertCalendarParticipants_(row["משתתפי יומן"], row["מזהה פרויקט"], actor, old ? old["משתתפי יומן"] : "", {domain: taskProjectDomain, projects: validationProjects, contacts: validationContacts, links: validationLinks});
   }
 
-  if (row["כניסה ליומן"] === "כן" && row["תאריך"] && row["שעה"]) {
-    row["מזהה אירוע ביומן"] = syncCalendarEvent_(row, { includeGuests: false, sendUpdates: "none" });
-  }
-
-  upsert_ללא_אימות_(SHEETS.TASKS, "מזהה משימה", id, row);
+  const calendarSync = BH_persistTaskThenSyncCalendar_(row, id);
   BH_ASSIGNMENT_logTaskDateChange_(old, row);
 
   // Saving synchronizes the event itself. Guest invitations remain exclusive to
@@ -5319,7 +5365,10 @@ function שמירת_משימה(data) {
 
   log_("שמירת משימה", row["כותרת"]);
 
-  if (data.returnCanonicalRow === true) return BH_assertTaskMutationSerializable_(BH_normalizeTaskMutationValue_(row, ""), "task");
+  if (data.returnCanonicalRow === true) return {
+    record: BH_assertTaskMutationSerializable_(BH_normalizeTaskMutationValue_(row, ""), "task"),
+    calendarSync: calendarSync
+  };
   if (!data.clientSequence) return id;
 
   // Reuse the effective Full Core pipeline so visibility, calendar enrichment and
@@ -5331,7 +5380,7 @@ function שמירת_משימה(data) {
     return {
       ok:true, authenticated:true, route:"task-edit", sequence:Number(data.clientSequence || 0),
       updatedAt:formatValue_(row["עדכון אחרון"], "עדכון אחרון"), invalidations:["core-contract"],
-      fullInvalidation:true
+      fullInvalidation:true, calendarSync:calendarSync
     };
   }
   const canonicalTask = canonicalCore.tasks.find(function(task){
@@ -5361,7 +5410,8 @@ function שמירת_משימה(data) {
     calendarCreatorPermission: canonicalCore.calendarCreatorPermission || {mode:"allowed", creators:[]},
     dashboard: canonicalCore.dashboard,
     invalidations: ["tasks", "calendarTasks", "dashboard", "calendarCreatorsAllowed"],
-    fullInvalidation: false
+    fullInvalidation: false,
+    calendarSync: calendarSync
   };
 }
 
@@ -6726,7 +6776,8 @@ function BH_createCanonicalResponse_Build17_(entity, data, saveFunction, idKey){
   data = data || {};
   const sequence = Number(data.sequence || 0);
   const saveData = Object.assign({}, data, {returnCanonicalRow:true});
-  const record = saveFunction(saveData, data.requestId);
+  const saved = saveFunction(saveData, data.requestId);
+  const record = entity === "task" && saved && saved.record ? saved.record : saved;
   const id = String(record && record[idKey] || "");
   if(!record || !id){
     return {ok:true, authenticated:true, route:entity+"-create-canonical-v1", entityId:id,
@@ -6735,6 +6786,7 @@ function BH_createCanonicalResponse_Build17_(entity, data, saveFunction, idKey){
   const out = {ok:true, authenticated:true, route:entity+"-create-canonical-v1", entityId:id,
     sequence:sequence, record:record, dashboardPatch:BH_createDashboardPatch_Build17_(entity, record), fullInvalidation:false};
   if(entity === "task"){
+    out.calendarSync = saved.calendarSync || {attempted:false, ok:true, eventId:String(record["מזהה אירוע ביומן"] || ""), message:""};
     const user = משתמש_מפועל_Build11_2_(data.authToken);
     const project = BH_createFindRow_Build17_(SHEETS.PROJECTS, "מזהה פרויקט", record["מזהה פרויקט"]);
     const contact = BH_createFindRow_Build17_(SHEETS.CONTACTS, "מזהה איש קשר", record["מזהה איש קשר"]);
