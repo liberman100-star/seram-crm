@@ -52,7 +52,8 @@ const sandbox = {
   __BH_REQUEST_PERF__: null,
   פעולות_מותרות_Build11_2_: () => ({canSeeSettings:true, canSeeDashboard:true}),
   מיתוג_מערכת_Build7_: () => ({}),
-  calcDashboard_: () => ({})
+  calcDashboard_: () => ({}),
+  BH_DB_attachCoreBranding_: data => data
 };
 vm.createContext(sandbox);
 [

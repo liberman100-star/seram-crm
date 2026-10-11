@@ -579,6 +579,8 @@ function hideLogin(){ loginScreen.classList.add('hidden'); }
 function currentToken(){ return localStorage.getItem('CRM_SESSION_TOKEN') || ''; }
 function setToken(t){ localStorage.setItem('CRM_SESSION_TOKEN', t); }
 function clearToken(){ localStorage.removeItem('CRM_SESSION_TOKEN'); }
+let CRM_LOGIN_VERIFY_IN_FLIGHT = false;
+let CRM_LOGIN_VERIFY_ATTEMPT = 0;
 
 function sendLoginCode(){
   const email = (loginEmail.value || '').trim();
@@ -595,6 +597,9 @@ function sendLoginCode(){
 }
 
 function verifyLoginCode(){
+  if(CRM_LOGIN_VERIFY_IN_FLIGHT) return;
+  CRM_LOGIN_VERIFY_IN_FLIGHT = true;
+  const attempt = ++CRM_LOGIN_VERIFY_ATTEMPT;
   const email = (loginEmail.value || '').trim();
   const code = (loginCode.value || '').trim();
 
@@ -602,7 +607,9 @@ function verifyLoginCode(){
 
   BH_UI_withBusy(null,'מתחבר...',finish=>google.script.run
     .withSuccessHandler(finish(res=>{
+      if(attempt !== CRM_LOGIN_VERIFY_ATTEMPT) return;
       if(!res || !res.ok){
+        CRM_LOGIN_VERIFY_IN_FLIGHT = false;
         loginMessage.textContent = (res && res.message) || 'קוד שגוי';
         return;
       }
@@ -616,9 +623,15 @@ function verifyLoginCode(){
       }catch(e){}
 
       loginMessage.textContent = '';
-      window.location.replace(CRM_WEB_APP_URL + "?refresh=" + Date.now());
+      CRM_LOGIN_VERIFY_IN_FLIGHT = false;
+      hideLogin();
+      load(true);
     }))
-    .withFailureHandler(finish(e=> loginMessage.textContent = e.message))
+    .withFailureHandler(finish(e=>{
+      if(attempt !== CRM_LOGIN_VERIFY_ATTEMPT) return;
+      CRM_LOGIN_VERIFY_IN_FLIGHT = false;
+      showLogin(e && e.message ? e.message : 'שגיאה באימות הקוד');
+    }))
     .אימות_קוד_כניסה_Build7(email, code));
 }
 
@@ -7285,6 +7298,13 @@ window.calendarTasksForDate = function(d){
     else closeM();
   }
 
+  window.BH_showTaskCalendarSyncWarning = function(response){
+    const sync = response && response.calendarSync;
+    if(!sync || sync.attempted !== true || sync.ok !== false) return false;
+    alert(sync.message || 'המשימה נשמרה, אך הסנכרון ליומן Google נכשל');
+    return true;
+  };
+
   window.BH_saveTaskEditLocal = function(id, request){
     const key = String(id || '');
     if(!key || pending[key]) return false;
@@ -7305,6 +7325,7 @@ window.calendarTasksForDate = function(d){
           if(state.sequence < (latestApplied[key] || 0)) return fallbackOnce(state, 'stale-response', key, started);
           const patchStarted = Date.now();
           patch(response);
+          window.BH_showTaskCalendarSyncWarning(response);
           latestApplied[key] = state.sequence;
           metric({serverMs:serverMs,patchMs:Date.now()-patchStarted,fallback:false,fallbackReason:'',sequence:state.sequence,version:response.updatedAt,success:true});
         }catch(error){ fallbackOnce(state, 'local-patch-failed', key, started); }
@@ -7849,7 +7870,11 @@ window.calendarTasksForDate = function(d){
       if(done) return;
       if(!response || response.authenticated === false){ finish(); sessionExpired(response); mutationLog(perf,entity,started,'session-expired',false); return; }
       if(response.fullInvalidation === true || !valid(response,entity,sequence)){ fallback(); return; }
-      try { apply(response,entity); finish(); closeM(); renderCreate(entity,response); mutationLog(perf,entity,started,'success',false); }
+      try {
+        apply(response,entity);
+        if(entity === 'task' && typeof global.BH_showTaskCalendarSyncWarning === 'function') global.BH_showTaskCalendarSyncWarning(response);
+        finish(); closeM(); renderCreate(entity,response); mutationLog(perf,entity,started,'success',false);
+      }
       catch(error){ fallback(); }
     }).withFailureHandler(error=>{
       const message=String(error && (error.message||error)||'');
@@ -7887,7 +7912,7 @@ window.calendarTasksForDate = function(d){
       type:pType.value,status:pStatus.value,assignmentDomain:pAssignmentDomain.value,owner:pOwner.value,tags:pTags.value,drive:pDrive.value,
       ownerLinkMode:ownerLinkMode||''},'שמירת_פרויקט_חדש_קנונית_Build17');
   };
-  global.__BH_CREATE_PATCH_TEST__={apply:apply,valid:valid,pending:pending};
+  global.__BH_CREATE_PATCH_TEST__={apply:apply,valid:valid,pending:pending,runCreate:runCreate};
 })(window);
 </script>
 

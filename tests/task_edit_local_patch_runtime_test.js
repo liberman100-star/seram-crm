@@ -5,14 +5,14 @@ const html = fs.readFileSync('index.html', 'utf8');
 const match = html.match(/<!-- Task-edit local patch:[\s\S]*?<script>([\s\S]*?)<\/script>/);
 assert(match, 'task edit local patch script exists');
 
-let successHandler, failureHandler, request, refreshes = 0, logouts = 0;
+let successHandler, failureHandler, request, refreshes = 0, logouts = 0, warnings = 0;
 const renders = {tasks:0,dashboard:0,calendar:0,card:0,projects:0,contacts:0};
 const button = {disabled:false,textContent:'שמור',dataset:{}};
 const sandbox = {
   window:{}, console:{info(){}}, Date, Object, Array, Number, String, Error,
   DATA:{tasks:[{'מזהה משימה':'T1','כותרת':'old'}],calendarTasks:[{'מזהה משימה':'T1','כותרת':'old'}],notes:[]},
   modalBox:{querySelector(){return button;}},
-  clearToken(){logouts++;}, showLogin(){logouts++;},
+  clearToken(){logouts++;}, showLogin(){logouts++;}, alert(){warnings++;},
   refreshCore(cb){refreshes++; if(cb) cb();}, openTaskCard(){},
   tableTasks(){renders.tasks++;}, renderDashboard(){renders.dashboard++;},
   renderCalendarDashboard(){renders.calendar++;}, renderTaskCard(){renders.card++;}, closeM(){renders.card++;},
@@ -35,13 +35,13 @@ function response(overrides={}){
     sequence:request.clientSequence,fullInvalidation:false,canonicalTask,taskVisible:true,taskDecision:'replace',
     calendarVisible:true,canonicalCalendarRecord:Object.assign({}, canonicalTask),calendarDecision:'replace',
     calendarCreatorsAllowed:['owner-2'],calendarCreatorPermission:{mode:'allowed',creators:['owner-2']},
-    dashboard:{lateTasks:[],todayTasks:[canonicalTask],weekTasks:[canonicalTask]},invalidations:['tasks','calendarTasks','dashboard']
+    dashboard:{lateTasks:[],todayTasks:[canonicalTask],weekTasks:[canonicalTask]},calendarSync:{attempted:true,ok:true,eventId:'EV-1',message:''},invalidations:['tasks','calendarTasks','dashboard']
   }, overrides);
 }
 assert.strictEqual(sandbox.BH_saveTaskEditLocal('T1', base), true, 'first request starts');
 assert.strictEqual(sandbox.BH_saveTaskEditLocal('T1', {}), false, 'duplicate request is rejected');
 assert.strictEqual(button.disabled, true, 'busy state is visible');
-const replaceResponse = response();
+const replaceResponse = response({calendarSync:{attempted:true,ok:false,eventId:'',message:'המשימה נשמרה, אך הסנכרון ליומן Google נכשל'}});
 successHandler(replaceResponse);
 assert.strictEqual(sandbox.DATA.tasks[0], replaceResponse.canonicalTask, 'canonical object replaces local row');
 assert.strictEqual(sandbox.DATA.calendarTasks[0], replaceResponse.canonicalCalendarRecord, 'canonical calendar record replaces local row');
@@ -51,6 +51,7 @@ assert.deepStrictEqual(sandbox.DATA.calendarCreatorsAllowed, ['owner-2'], 'calen
 assert.strictEqual(sandbox.DATA.dashboard.todayTasks.length, 1, 'canonical dashboard changes with task buckets');
 assert.deepStrictEqual(renders, {tasks:1,dashboard:1,calendar:1,card:1,projects:0,contacts:0}, 'only relevant views render');
 assert.strictEqual(refreshes, 0, 'valid mutation does not refresh core');
+assert.strictEqual(warnings, 1, 'calendar failure warns once without invalidating the local edit patch');
 assert.strictEqual(button.disabled, false, 'busy state clears after success');
 assert.strictEqual(Object.keys(sandbox.__BH_TASK_EDIT_TEST_HOOKS__.pending).length, 0, 'pending state clears');
 
